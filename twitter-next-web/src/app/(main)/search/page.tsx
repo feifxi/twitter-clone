@@ -10,6 +10,7 @@ import type { PageResponse, TweetResponse } from '@/types';
 
 
   import { useSearchUsers } from '@/hooks/useDiscovery';
+  import { queryKeys } from '@/lib/query-keys';
   import Link from 'next/link';
   import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
   import { FollowButton } from '@/components/FollowButton';
@@ -38,7 +39,7 @@ import type { PageResponse, TweetResponse } from '@/types';
 
   // Tweets Query - uses 'q' from URL, not local state
   const { data: tweetData, isLoading: isTweetLoading } = useQuery({
-    queryKey: ['search', 'tweets', q],
+    queryKey: queryKeys.search.tweets(q),
     queryFn: async (): Promise<PageResponse<TweetResponse>> => {
       const { data: res } = await axiosInstance.get<PageResponse<TweetResponse>>(
         '/search/tweets',

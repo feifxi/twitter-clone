@@ -17,9 +17,7 @@ import {
 import { useUIStore } from "@/store/useUIStore";
 import { useAuth } from "@/hooks/useAuth";
 import type { MessageResponse, UserResponse } from "@/types";
-import { useQuery } from "@tanstack/react-query";
-import { useSuggestedUsers } from "@/hooks/useDiscovery";
-import { axiosInstance } from "@/api/axiosInstance";
+import { useSearchUsers, useSuggestedUsers } from "@/hooks/useDiscovery";
 import { useDebounce } from "@/hooks/useDebounce";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -106,20 +104,12 @@ export default function MessagesPage() {
   const preventScrollFetchRef = useRef<boolean>(true);
   const messageInputRef = useRef<HTMLInputElement>(null);
 
-  const { data: searchResults, isLoading: isSearchLoading } = useQuery({
-    queryKey: ["users", "search", debouncedSearch],
-    queryFn: async () => {
-      if (!debouncedSearch) return [];
-      const res = await axiosInstance.get<{ items: UserResponse[] }>(
-        "/search/users",
-        {
-          params: { q: debouncedSearch, size: 10 },
-        },
-      );
-      return res.data.items;
-    },
-    enabled: debouncedSearch.length > 0 && isLoggedIn,
-  });
+  const { data: searchData, isLoading: isSearchLoading } = useSearchUsers(
+    debouncedSearch,
+    isLoggedIn,
+    10,
+  );
+  const searchResults = searchData?.items;
 
   const { data: suggestedUsersData, isLoading: isSuggestedLoading } =
     useSuggestedUsers(10);

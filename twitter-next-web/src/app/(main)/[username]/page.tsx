@@ -2,7 +2,7 @@
 
 import { use, Suspense } from 'react';
 import { FeedList } from '@/components/FeedList';
-import { useUserProfileByUsername, useUserFeed } from '@/hooks/useProfile';
+import { useUserProfileByUsername, useUserTimeline } from '@/hooks/useProfile';
 import { FollowButton } from '@/components/FollowButton';
 import { useAuth } from '@/hooks/useAuth';
 import { EditProfileModal } from '@/components/EditProfileModal';
@@ -16,7 +16,7 @@ function ProfileContent({ params }: { params: Promise<{ username: string }> }) {
   const { username } = use(params);
   const { data: user, isLoading: userLoading } = useUserProfileByUsername(username);
   const userId = user?.id ?? null;
-  const feed = useUserFeed(userId);
+  const feed = useUserTimeline(userId, 'posts');
   const { user: currentUser, isLoggedIn } = useAuth();
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [listType, setListType] = useState<'followers' | 'following' | null>(null);

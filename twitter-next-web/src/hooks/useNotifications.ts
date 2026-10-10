@@ -1,16 +1,14 @@
 'use client';
 
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import { axiosInstance } from '@/api/axiosInstance';
+import { queryKeys } from '@/lib/query-keys';
 import type { PageResponse, NotificationResponse } from '@/types';
-
-export const notificationQueryKey = ['notifications'] as const;
-export const unreadCountQueryKey = ['notifications', 'unread'] as const;
 
 export function useNotifications(pageSize = 20) {
     return useInfiniteQuery({
-        queryKey: notificationQueryKey,
+        queryKey: queryKeys.notifications.list,
         queryFn: async ({ pageParam }: { pageParam: string | null }): Promise<PageResponse<NotificationResponse>> => {
             const { data } = await axiosInstance.get<PageResponse<NotificationResponse>>(
                 '/notifications',
@@ -28,7 +26,7 @@ export function useNotifications(pageSize = 20) {
 export function useUnreadCount() {
     const { isLoggedIn } = useAuth();
     return useQuery({
-        queryKey: unreadCountQueryKey,
+        queryKey: queryKeys.notifications.unreadCount,
         queryFn: async (): Promise<number> => {
             const { data } = await axiosInstance.get<{ count: number }>('/notifications/unread-count');
             return data.count;
@@ -46,37 +44,18 @@ export function useMarkAllRead() {
     return useMutation({
         mutationFn: () => axiosInstance.post('/notifications/mark-read'),
         onSuccess: () => {
-            // Optimistically update unread count to 0
-            queryClient.setQueryData(unreadCountQueryKey, 0);
-
-            // Optimistically mark all loaded notifications as read
-            queryClient.setQueryData<PageResponse<NotificationResponse>>(
-                notificationQueryKey,
-                (old) => {
-                    if (!old) return old;
-                    return {
+            queryClient.setQueryData(queryKeys.notifications.unreadCount, 0);
+            queryClient.setQueryData<InfiniteData<PageResponse<NotificationResponse>>>(
+                queryKeys.notifications.list,
+                (old) =>
+                    old && {
                         ...old,
-                        items: old.items.map((n) => ({ ...n, isRead: true })),
-                    };
-                }
-            );
-            // Also need to handle infinite query structure if it's cached as such
-            queryClient.setQueriesData<{ pages: PageResponse<NotificationResponse>[] }>(
-                { queryKey: notificationQueryKey },
-                (old) => {
-                    if (!old) return old;
-                    return {
-                        ...old,
-                        pages: old.pages.map(page => ({
+                        pages: old.pages.map((page) => ({
                             ...page,
-                            items: page.items.map(n => ({ ...n, isRead: true }))
-                        }))
-                    };
-                }
+                            items: page.items.map((n) => ({ ...n, isRead: true })),
+                        })),
+                    },
             );
-
-            // Invalidate gently or not at all if we trust the optimistic update
-            // queryClient.invalidateQueries({ queryKey: unreadCountQueryKey });
         },
     });
 }

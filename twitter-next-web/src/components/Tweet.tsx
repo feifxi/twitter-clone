@@ -6,15 +6,13 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Heart, MessageCircle, Repeat2, Share, MoreHorizontal } from 'lucide-react';
 import type { TweetResponse } from '@/types';
-import { useLikeTweet, useUnlikeTweet } from '@/hooks/useLike';
-import { useRetweet, useUnretweet } from '@/hooks/useRetweet';
+import { useToggleLike, useToggleRetweet } from '@/hooks/useTweetActions';
 import { ReplyModal } from '@/components/ReplyModal';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
 import { useUIStore } from '@/store/useUIStore';
 import { useDeleteTweet } from '@/hooks/useTweet';
-import { useDebouncedToggle } from '@/hooks/useDebouncedToggle';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -60,10 +58,8 @@ interface TweetProps {
 
 export function Tweet({ tweet, disableClick }: TweetProps) {
   const router = useRouter();
-  const likeMutation = useLikeTweet();
-  const unlikeMutation = useUnlikeTweet();
-  const retweetMutation = useRetweet();
-  const unretweetMutation = useUnretweet();
+  const toggleLike = useToggleLike();
+  const toggleRetweet = useToggleRetweet();
   const deleteMutation = useDeleteTweet();
   const [showReplyModal, setShowReplyModal] = useState(false);
   const { user: currentUser, isLoggedIn } = useAuth();
@@ -82,31 +78,8 @@ export function Tweet({ tweet, disableClick }: TweetProps) {
     router.push(`/tweet/${displayTweet.id}`);
   };
 
-  const {
-      optimisticState: isLiked,
-      toggle: toggleLike,
-  } = useDebouncedToggle({
-      initialState: displayTweet.isLiked,
-      onMutate: (newState) => {
-          if (newState) likeMutation.mutate(displayTweet.id);
-          else unlikeMutation.mutate(displayTweet.id);
-      },
-  });
-
-  const {
-      optimisticState: isRetweeted,
-      toggle: toggleRetweet,
-  } = useDebouncedToggle({
-      initialState: displayTweet.isRetweeted,
-      onMutate: (newState) => {
-          if (newState) retweetMutation.mutate(displayTweet.id);
-          else unretweetMutation.mutate(displayTweet.id);
-      },
-  });
-
-  // Calculate optimistic counts
-  const likeCount = displayTweet.likeCount + (isLiked ? 1 : 0) - (displayTweet.isLiked ? 1 : 0);
-  const retweetCount = displayTweet.retweetCount + (isRetweeted ? 1 : 0) - (displayTweet.isRetweeted ? 1 : 0);
+  // Toggles update the cache right away, so these props are already optimistic.
+  const { isLiked, likeCount, isRetweeted, retweetCount } = displayTweet;
 
   const handleLike = (e: React.MouseEvent) => {
     stopProp(e);
@@ -114,7 +87,7 @@ export function Tweet({ tweet, disableClick }: TweetProps) {
       openSignInModal();
       return;
     }
-    toggleLike();
+    toggleLike(displayTweet);
   };
 
   const handleReply = (e: React.MouseEvent) => {
@@ -132,7 +105,7 @@ export function Tweet({ tweet, disableClick }: TweetProps) {
       openSignInModal();
       return;
     }
-    toggleRetweet();
+    toggleRetweet(displayTweet);
   };
 
   const handleShare = (e: React.MouseEvent) => {
@@ -198,7 +171,7 @@ export function Tweet({ tweet, disableClick }: TweetProps) {
                   <DropdownMenuItem 
                     onClick={(e) => {
                       stopProp(e);
-                      deleteMutation.mutate(displayTweet.id);
+                      deleteMutation.mutate(displayTweet);
                     }}
                     className="text-destructive focus:text-destructive focus:bg-destructive/10 cursor-pointer gap-2 font-bold"
                   >

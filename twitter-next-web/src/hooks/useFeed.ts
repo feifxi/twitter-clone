@@ -2,15 +2,12 @@
 
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { axiosInstance } from '@/api/axiosInstance';
+import { queryKeys } from '@/lib/query-keys';
 import type { PageResponse, TweetResponse } from '@/types';
 
 const PAGE_SIZE = 20;
 
 export type FeedKind = 'global' | 'following';
-
-export function feedQueryKey(kind: FeedKind) {
-  return ['feeds', kind] as const;
-}
 
 async function fetchFeed(
   kind: FeedKind,
@@ -25,7 +22,7 @@ async function fetchFeed(
 
 export function useGlobalFeed(enabled = true) {
   return useInfiniteQuery({
-    queryKey: feedQueryKey('global'),
+    queryKey: queryKeys.feeds.global,
     queryFn: ({ pageParam }) => fetchFeed('global', pageParam),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) =>
@@ -36,7 +33,7 @@ export function useGlobalFeed(enabled = true) {
 
 export function useFollowingFeed(enabled = true) {
   return useInfiniteQuery({
-    queryKey: feedQueryKey('following'),
+    queryKey: queryKeys.feeds.following,
     queryFn: ({ pageParam }) => fetchFeed('following', pageParam),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) =>

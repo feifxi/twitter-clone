@@ -63,6 +63,18 @@ The Go API keeps the session in two **httpOnly cookies** (`access_token`, `refre
 - **Realtime:** one native `EventSource` (with credentials) for notifications and DMs, `src/hooks/useRealtimeEvents.ts`.
 - **Local dev:** the web app (`localhost:3000`) and the API (`localhost:8080`) are the same site, and a `localhost` cookie reaches every port, so no extra setup is needed. In production both run on subdomains of one domain and the API sets `COOKIE_DOMAIN`.
 
+## Data fetching
+
+- Query keys: all in `src/lib/query-keys.ts`; never inline arrays.
+- Optimistic updates: `src/lib/query-cache.ts` updates every cached copy of a tweet or user (feeds, profile tabs, search, details, tweet authors).
+- Like / retweet / follow: the cache flips on click and `src/lib/debounced-toggle.ts` sends one request for the final state (none if toggled back), even if the component unmounts.
+
+## Tests
+
+```bash
+npm test   # Vitest: src/**/*.test.ts
+```
+
 ## Main Directories
 
 - `src/app`: routes/layouts

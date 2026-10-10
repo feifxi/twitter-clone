@@ -1,16 +1,13 @@
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { axiosInstance } from '@/api/axiosInstance';
 import { useAuth } from '@/hooks/useAuth';
+import { queryKeys } from '@/lib/query-keys';
 import type { ConversationResponse, MessageResponse, PageResponse } from '@/types';
-
-export const conversationsQueryKey = ['messages', 'conversations'] as const;
-export const conversationMessagesQueryKey = (conversationId: number) =>
-  ['messages', 'conversation', conversationId] as const;
 
 export function useConversations(pageSize = 20) {
   const { isLoggedIn } = useAuth();
   return useInfiniteQuery({
-    queryKey: conversationsQueryKey,
+    queryKey: queryKeys.messages.conversations,
     queryFn: async ({ pageParam }: { pageParam: string | null }): Promise<PageResponse<ConversationResponse>> => {
       const { data } = await axiosInstance.get<PageResponse<ConversationResponse>>('/messages/conversations', {
         params: { cursor: pageParam ?? undefined, size: pageSize },
@@ -27,7 +24,7 @@ export function useConversations(pageSize = 20) {
 export function useConversationMessages(conversationId: number | null, pageSize = 30) {
   const { isLoggedIn } = useAuth();
   return useInfiniteQuery({
-    queryKey: conversationId ? conversationMessagesQueryKey(conversationId) : ['messages', 'conversation', 'none'],
+    queryKey: queryKeys.messages.conversation(conversationId ?? 0),
     queryFn: async ({ pageParam }: { pageParam: string | null }): Promise<PageResponse<MessageResponse>> => {
       const { data } = await axiosInstance.get<PageResponse<MessageResponse>>(
         `/messages/conversations/${conversationId}/messages`,
@@ -53,8 +50,8 @@ export function useSendMessageToConversation() {
       return data;
     },
     onSuccess: (_message, variables) => {
-      queryClient.invalidateQueries({ queryKey: conversationsQueryKey });
-      queryClient.invalidateQueries({ queryKey: conversationMessagesQueryKey(variables.conversationId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.messages.conversations });
+      queryClient.invalidateQueries({ queryKey: queryKeys.messages.conversation(variables.conversationId) });
     },
   });
 }
@@ -70,8 +67,8 @@ export function useSendMessageToUser() {
       return data;
     },
     onSuccess: (message) => {
-      queryClient.invalidateQueries({ queryKey: conversationsQueryKey });
-      queryClient.invalidateQueries({ queryKey: conversationMessagesQueryKey(message.conversationId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.messages.conversations });
+      queryClient.invalidateQueries({ queryKey: queryKeys.messages.conversation(message.conversationId) });
     },
   });
 }

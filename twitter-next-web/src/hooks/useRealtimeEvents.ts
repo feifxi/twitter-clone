@@ -2,8 +2,7 @@ import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { refreshSession } from '@/api/axiosInstance';
 import { useAuth } from '@/hooks/useAuth';
-import { notificationQueryKey, unreadCountQueryKey } from './useNotifications';
-import { conversationMessagesQueryKey, conversationsQueryKey } from './useMessages';
+import { queryKeys } from '@/lib/query-keys';
 import type { MessageResponse } from '@/types/message';
 
 const baseURL = process.env.NEXT_PUBLIC_API_URL;
@@ -26,8 +25,7 @@ export function useRealtimeEvents() {
       if (refreshTimer) return;
       refreshTimer = setTimeout(() => {
         refreshTimer = undefined;
-        queryClient.invalidateQueries({ queryKey: unreadCountQueryKey });
-        queryClient.invalidateQueries({ queryKey: notificationQueryKey });
+        queryClient.invalidateQueries({ queryKey: queryKeys.notifications.all });
       }, 250);
     };
 
@@ -46,7 +44,7 @@ export function useRealtimeEvents() {
         // Catch up on anything missed while disconnected.
         if (connectedOnce) {
           refreshNotifications();
-          queryClient.invalidateQueries({ queryKey: conversationsQueryKey });
+          queryClient.invalidateQueries({ queryKey: queryKeys.messages.conversations });
         }
         connectedOnce = true;
       });
@@ -54,8 +52,8 @@ export function useRealtimeEvents() {
       source.addEventListener('dm', (event) => {
         try {
           const message = JSON.parse(event.data) as MessageResponse;
-          queryClient.invalidateQueries({ queryKey: conversationsQueryKey });
-          queryClient.invalidateQueries({ queryKey: conversationMessagesQueryKey(message.conversationId) });
+          queryClient.invalidateQueries({ queryKey: queryKeys.messages.conversations });
+          queryClient.invalidateQueries({ queryKey: queryKeys.messages.conversation(message.conversationId) });
         } catch {
           // Ignore malformed events; the next refetch corrects the view.
         }

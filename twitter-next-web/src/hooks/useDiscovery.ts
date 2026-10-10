@@ -2,11 +2,12 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { axiosInstance } from '@/api/axiosInstance';
+import { queryKeys } from '@/lib/query-keys';
 import type { PageResponse, HashtagResponse, UserResponse } from '@/types';
 
 export function useTrendingHashtags(limit = 10) {
   return useQuery({
-    queryKey: ['discovery', 'trending', limit],
+    queryKey: queryKeys.discovery.trending(limit),
     queryFn: async (): Promise<HashtagResponse[]> => {
       const { data } = await axiosInstance.get<HashtagResponse[]>(
         '/discovery/trending',
@@ -20,7 +21,7 @@ export function useTrendingHashtags(limit = 10) {
 
 export function useSuggestedUsers(pageSize = 5) {
   return useQuery({
-    queryKey: ['discovery', 'users', pageSize],
+    queryKey: queryKeys.discovery.users(pageSize),
     queryFn: async (): Promise<PageResponse<UserResponse>> => {
       const { data } = await axiosInstance.get<PageResponse<UserResponse>>(
         '/discovery/users',
@@ -32,13 +33,13 @@ export function useSuggestedUsers(pageSize = 5) {
   });
 }
 
-export function useSearchUsers(query: string, enabled = true) {
+export function useSearchUsers(query: string, enabled = true, size = 5) {
   return useQuery({
-    queryKey: ['search', 'users', query],
+    queryKey: queryKeys.search.users(query, size),
     queryFn: async (): Promise<PageResponse<UserResponse>> => {
       const { data } = await axiosInstance.get<PageResponse<UserResponse>>(
         '/search/users',
-        { params: { q: query, size: 5 } }
+        { params: { q: query, size } }
       );
       return data;
     },
@@ -49,7 +50,7 @@ export function useSearchUsers(query: string, enabled = true) {
 
 export function useSearchHashtags(query: string) {
   return useQuery({
-    queryKey: ['search', 'hashtags', query],
+    queryKey: queryKeys.search.hashtags(query),
     queryFn: async (): Promise<HashtagResponse[]> => {
       const { data } = await axiosInstance.get<HashtagResponse[]>(
         '/search/hashtags',
