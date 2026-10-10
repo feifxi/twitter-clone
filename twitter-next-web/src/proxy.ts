@@ -23,7 +23,7 @@ export async function proxy(request: NextRequest) {
       method: 'POST',
       headers: {
         cookie: `refresh_token=${refreshToken}`,
-        // The visitor's IP (from Caddy), so rate limits apply per visitor.
+        // The visitor's IP (from nginx), so rate limits apply per visitor.
         ...(request.headers.get('x-forwarded-for') ? { 'x-forwarded-for': request.headers.get('x-forwarded-for')! } : {}),
       },
       cache: 'no-store',

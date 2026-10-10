@@ -20,7 +20,7 @@ async function sessionCookieHeader(): Promise<string> {
 }
 
 async function get(path: string, cookie: string): Promise<Response> {
-  // Pass the visitor's IP along (Caddy sets it), so the API rate-limits per visitor
+  // Pass the visitor's IP along (nginx sets it), so the API rate-limits per visitor
   // rather than treating every server-rendered request as coming from this server.
   const forwardedFor = (await headers()).get('x-forwarded-for');
   return fetch(`${baseURL}${path}`, {
