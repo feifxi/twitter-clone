@@ -49,7 +49,7 @@ export default function GoogleLoginBtn() {
       await queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] !== 'auth' });
 
       closeSignInModal();
-      router.push('/');
+      router.push(data.onboarded ? '/' : '/onboarding');
       router.refresh(); // re-render server components with the new session
     } catch (error) {
       console.error('Login Failed:', error);

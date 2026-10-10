@@ -8,7 +8,8 @@ import { useTrendingHashtags, useSuggestedUsers, useSearchUsers, useSearchHashta
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { useDebounce } from '@/hooks/useDebounce';
-import { FollowButton } from '@/components/FollowButton';
+import { UserRow } from '@/components/UserRow';
+import { formatCount } from '@/lib/format';
 import type { HashtagResponse, UserResponse, PageResponse } from '@/types';
 import { UserAvatar } from '@/components/UserAvatar';
 
@@ -54,8 +55,8 @@ export function Sidebar() {
 
 
 
-  // If on search page, hide search bar but show other widgets
-  if (pathname === '/search' || pathname?.startsWith('/search')) {
+  // Explore and search have their own search box: show only the widgets.
+  if (pathname === '/explore' || pathname?.startsWith('/search')) {
     return (
       <div className="sticky top-0 p-4 h-screen overflow-y-auto no-scrollbar pb-10">
         <PremiumCard subscribeToPremium={subscribeToPremium} />
@@ -166,20 +167,11 @@ export function Sidebar() {
 function Footer() {
   return (
     <div className="px-4 text-[13px] text-muted-foreground space-x-2 leading-4">
-      <span>Terms of Service</span>
-      <span>Privacy Policy</span>
-      <span>Cookie Policy</span>
-      <span>Accessibility</span>
-      <span>Ads info</span>
-      <span>More ...</span>
-      <p className="mt-1">© 2026 Chanombude Corp.</p>
+      <p>© 2026 Chanombude · A learning project, not affiliated with X.</p>
     </div>
   );
 }
 
-function MoreHorizontal(props: React.SVGProps<SVGSVGElement>) {
-  return <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
-}
 
 interface SuggestedUsersListProps {
   suggested: PageResponse<UserResponse> | undefined;
@@ -208,26 +200,7 @@ function SuggestedUsersList({ suggested, suggestedLoading, currentUser }: Sugges
             ?.filter((u: UserResponse) => u.id !== currentUser?.id)
             .slice(0, 3)
             .map((u: UserResponse) => (
-              <div
-                key={u.id}
-                className="flex items-center gap-3 px-4 py-3 hover:bg-secondary/30 transition-colors cursor-pointer"
-              >
-                <Link href={`/${u.username}`} className="shrink-0">
-                  <UserAvatar user={u} />
-                </Link>
-                <div className="flex-1 min-w-0">
-                  <Link
-                    href={`/${u.username}`}
-                    className="font-bold text-foreground hover:underline block truncate text-[15px] leading-5"
-                  >
-                    {u.displayName}
-                  </Link>
-                  <p className="text-muted-foreground text-[15px] truncate leading-5">
-                    @{u.username}
-                  </p>
-                </div>
-                <FollowButton userId={u.id} isFollowing={u.isFollowing} />
-              </div>
+              <UserRow key={u.id} user={u} variant="compact" />
             ))}
           <Link href="/connect_people" className="block px-4 py-3 text-primary text-[15px] hover:bg-secondary/30 transition-colors rounded-b-2xl">
             Show more
@@ -276,18 +249,11 @@ function TrendingList({ trending, trendingLoading }: TrendingListProps) {
               href={`/search?q=${encodeURIComponent('#' + item.text)}`}
               className="block px-4 py-3 hover:bg-secondary/30 transition-colors"
             >
-              <div className="flex justify-between items-start">
-                <div>
-                  <p className="text-muted-foreground text-[13px] leading-4">Trending in generic</p>
-                  <p className="text-foreground font-bold text-[15px] pt-0.5">
-                    #{item.text}
-                  </p>
-                  <p className="text-muted-foreground text-[13px] leading-4 pt-0.5">
-                    {item.usageCount} posts
-                  </p>
-                </div>
-                <MoreHorizontal className="w-4 h-4 text-muted-foreground" />
-              </div>
+              <p className="text-muted-foreground text-[13px] leading-4">Trending</p>
+              <p className="text-foreground font-bold text-[15px] pt-0.5">#{item.text}</p>
+              <p className="text-muted-foreground text-[13px] leading-4 pt-0.5">
+                {formatCount(item.usageCount)} {item.usageCount === 1 ? 'post' : 'posts'}
+              </p>
             </Link>
           ))}
           <Link href="/explore" className="block px-4 py-3 text-primary text-[15px] hover:bg-secondary/30 transition-colors rounded-b-2xl">

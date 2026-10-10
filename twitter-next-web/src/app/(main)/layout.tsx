@@ -4,7 +4,9 @@ import { AppNav } from '@/components/AppNav';
 import { Sidebar } from '@/components/Sidebar';
 import { MobileNav } from '@/components/MobileNav';
 
-import { usePathname } from 'next/navigation';
+import { useEffect } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
+import { useAuth } from '@/hooks/useAuth';
 import { useUnreadCount } from '@/hooks/useNotifications';
 import { useRealtimeEvents } from '@/hooks/useRealtimeEvents';
 
@@ -14,6 +16,13 @@ export default function MainLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const { user } = useAuth();
+
+  // New accounts pick their username before using the app.
+  useEffect(() => {
+    if (user && !user.onboarded) router.replace('/onboarding');
+  }, [user, router]);
   const isMessagesPage = pathname?.startsWith('/messages');
   const isChanombotPage = pathname?.startsWith('/chanombot');
   const isWideLayout = isMessagesPage || isChanombotPage;

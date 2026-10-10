@@ -1,242 +1,170 @@
 'use client';
 
 import { useState } from 'react';
-
 import Link from 'next/link';
-import { Home, User, MoreHorizontal, Bell, Mail, Search, Users, BotMessageSquare, TvMinimalPlay, LogIn } from 'lucide-react';
 import { usePathname } from 'next/navigation';
-import { useAuth } from '@/hooks/useAuth';
-import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { XLogo } from '@/components/XLogo';
+import { Bell, BotMessageSquare, Home, LogIn, Mail, MoreHorizontal, Search, TvMinimalPlay, User, Users, type LucideIcon } from 'lucide-react';
 import { ComposeTweetModal } from '@/components/ComposeTweetModal';
-import { useUIStore } from '@/store/useUIStore';
+import { ConfirmModal } from '@/components/ConfirmModal';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { UserAvatar } from '@/components/UserAvatar';
+import { XLogo } from '@/components/XLogo';
+import { useAuth } from '@/hooks/useAuth';
+import { displayNameOf } from '@/lib/format';
+import { cn } from '@/lib/utils';
+import { useUIStore } from '@/store/useUIStore';
 
-type AppNavProps = {
-  unreadCount?: number;
-};
+// Active icons are drawn filled, which only reads well for solid shapes; the rest go bold.
+export const FILL_WHEN_ACTIVE = new Set<LucideIcon>([Home, Bell, User]);
 
-export function AppNav({ unreadCount = 0 }: AppNavProps) {
+/** "20+" past twenty, like X. */
+export function badgeText(count: number) {
+  return count > 20 ? '20+' : String(count);
+}
+
+/** Icon + label (label only on wide screens) + optional unread badge: the inside of every nav entry. */
+function NavItemContent({ icon: Icon, label, active, badge }: { icon: LucideIcon; label: string; active: boolean; badge?: number }) {
+  return (
+    <span className="flex items-center gap-5 rounded-full p-3 transition-colors group-hover:bg-accent xl:pr-6">
+      <span className="relative">
+        <Icon className={cn('size-7', active && FILL_WHEN_ACTIVE.has(Icon) && 'fill-current')} strokeWidth={active ? 2.5 : 2} />
+        {!!badge && (
+          <span className="absolute -right-1.5 -top-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full border border-background bg-primary px-1 text-[11px] font-bold text-primary-foreground">
+            {badgeText(badge)}
+          </span>
+        )}
+      </span>
+      <span className={cn('hidden text-[20px] leading-6 xl:inline', active && 'font-bold')}>{label}</span>
+    </span>
+  );
+}
+
+const itemClass = 'group flex w-fit cursor-pointer outline-none xl:w-full';
+
+export function AppNav({ unreadCount = 0 }: { unreadCount?: number }) {
   const pathname = usePathname();
   const { user, isLoggedIn, logout } = useAuth();
-  const [showCompose, setShowCompose] = useState(false);
   const openSignInModal = useUIStore((s) => s.openSignInModal);
+  const [composing, setComposing] = useState(false);
+  const [confirmLogout, setConfirmLogout] = useState(false);
 
-  const NAV_ITEMS = [
+  const profileHref = user ? `/${user.username}` : null;
+  const items: { label: string; icon: LucideIcon; href: string | null; badge?: number; match?: (path: string) => boolean }[] = [
     { label: 'Home', icon: Home, href: '/' },
-    { label: 'Explore', icon: Search, href: '/explore' },
-    { label: 'Notifications', icon: Bell, href: user ? '/notifications' : '#', onClick: user ? undefined : openSignInModal },
+    { label: 'Explore', icon: Search, href: '/explore', match: (p) => p === '/explore' || p === '/search' },
+    { label: 'Notifications', icon: Bell, href: user ? '/notifications' : null, badge: unreadCount },
     { label: 'Messages', icon: Mail, href: '/messages' },
     { label: 'ChanomBot', icon: BotMessageSquare, href: '/chanombot' },
     { label: 'Connect', icon: Users, href: '/connect_people' },
-    { label: 'Profile', icon: User, href: user ? `/${user.username}` : '#', onClick: user ? undefined : openSignInModal },
-    { label: 'More', icon: MoreHorizontal, href: '/brainrot' },
+    // A profile's tabs and follower pages all count as "Profile".
+    { label: 'Profile', icon: User, href: profileHref, match: (p) => !!profileHref && (p === profileHref || p.startsWith(`${profileHref}/`)) },
   ];
 
   return (
-    <nav className="flex flex-col items-end xl:items-start w-full h-screen p-2 xl:p-4 sticky top-0 justify-between overflow-y-auto no-scrollbar">
-      <div className="flex flex-col gap-1 w-full">
-        {/* Logo */}
-        <Link
-          href="/"
-          className="size-12 flex items-center justify-center rounded-full hover:bg-accent/50 transition-colors mb-1 xl:ml-0"
-        >
-          <XLogo className="w-7 h-7 fill-foreground" />
+    <nav className="no-scrollbar sticky top-0 flex h-screen w-full flex-col items-end justify-between overflow-y-auto p-2 xl:items-start xl:p-4" aria-label="Primary">
+      <div className="flex w-full flex-col items-end gap-1 xl:items-start">
+        <Link href="/" aria-label="Home" className="mb-1 flex size-[52px] items-center justify-center rounded-full transition-colors hover:bg-accent">
+          <XLogo className="size-8 text-foreground" />
         </Link>
 
-        {/* Navigation Items */}
-        {NAV_ITEMS.map((item) => {
-          const isActive = pathname === item.href;
-          
-          if (item.onClick) {
-             return (
-                <button
-                key={item.label}
-                type="button"
-                onClick={item.onClick}
-                className="group flex items-center w-fit xl:w-full"
-                >
-                <div
-                    className={`flex items-center xl:gap-5 px-3 py-3 rounded-full transition-colors group-hover:bg-accent/50 ${
-                    isActive ? 'font-bold' : 'font-normal'
-                    }`}
-                >
-                    <item.icon
-                    className={`w-7 h-7 ${
-                        isActive ? 'fill-current' : ''
-                    }`}
-                    strokeWidth={isActive ? 2.5 : 2}
-                    />
-                    <div className="relative hidden xl:block cursor-pointer">
-                        <span className="text-[20px] mr-4 leading-6">{item.label}</span>
-                         {item.label === 'Notifications' && unreadCount > 0 && (
-                            <div className="absolute -top-1 -right-1 xl:top-0 xl:-right-2 w-4 h-4 rounded-full bg-primary flex items-center justify-center text-[10px] text-foreground font-bold">
-                                {unreadCount}
-                            </div>
-                        )}
-                    </div>
-                </div>
-                </button>
-             )
-          }
-
-          if (item.label === 'More') {
-             return (
-                 <DropdownMenu key={item.label}>
-                    <DropdownMenuTrigger asChild>
-                        <button type="button" className="group flex items-center w-fit xl:w-full outline-none cursor-pointer">
-                            <div className={`flex items-center xl:gap-5 px-3 py-3 rounded-full transition-colors group-hover:bg-accent/50 ${isActive ? 'font-bold' : 'font-normal'}`}>
-                                <item.icon className={`w-7 h-7 ${isActive ? 'fill-current' : ''}`} strokeWidth={isActive ? 2.5 : 2} />
-                                <div className="relative hidden xl:block cursor-pointer">
-                                    <span className="text-[20px] mr-4 leading-6">{item.label}</span>
-                                </div>
-                            </div>
-                        </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent className="w-[200px] rounded-xl border border-border shadow-lg py-2 bg-background font-bold ml-10 xl:ml-0" align="start" side="top">
-                        <DropdownMenuItem asChild className="p-3 text-[15px] cursor-pointer focus:bg-accent">
-                            <Link href="/premium" className="flex items-center gap-4">
-                                <XLogo className="w-5 h-5 fill-current" />
-                                <span>Premium</span>
-                            </Link>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem asChild className="p-3 text-[15px] cursor-pointer focus:bg-accent">
-                            <Link href="/brainrot" className="flex items-center gap-4">
-                                <TvMinimalPlay className="w-5 h-5" />
-                                <span>Brainrot</span>
-                            </Link>
-                        </DropdownMenuItem>
-                        <ThemeToggle variant="menu-item" />
-                    </DropdownMenuContent>
-                 </DropdownMenu>
-             )
-          }
-
-          return (
-            <Link
-              key={item.label}
-              href={item.href}
-              className="group flex items-center w-fit xl:w-full"
-            >
-              <div
-                className={`flex items-center xl:gap-5 px-3 py-3 rounded-full transition-colors group-hover:bg-accent/50 ${
-                  isActive ? 'font-bold' : 'font-normal'
-                }`}
-              >
-                <item.icon
-                  className={`w-7 h-7 ${
-                    isActive ? 'fill-current' : ''
-                  }`}
-                  strokeWidth={isActive ? 2.5 : 2}
-                />
-                <div className="relative">
-                    <span className="text-[20px] mr-4 leading-6 hidden xl:block">{item.label}</span>
-                    {item.label === 'Notifications' && unreadCount > 0 && (
-                        <div className="absolute -top-1 -right-1 xl:top-0 xl:-right-2 w-4 h-4 rounded-full bg-primary flex items-center justify-center text-[10px] text-foreground font-bold">
-                            {unreadCount}
-                        </div>
-                    )}
-                </div>
-              </div>
+        {items.map((item) => {
+          const active = item.match ? item.match(pathname) : pathname === item.href;
+          const content = <NavItemContent icon={item.icon} label={item.label} active={active} badge={item.badge} />;
+          return item.href ? (
+            <Link key={item.label} href={item.href} aria-current={active ? 'page' : undefined} className={itemClass}>
+              {content}
             </Link>
+          ) : (
+            // Signed out: these need an account.
+            <button key={item.label} type="button" onClick={openSignInModal} className={itemClass}>
+              {content}
+            </button>
           );
         })}
 
-        {/* Tweet Button (Large) */}
-        {isLoggedIn && (
-          <Button
-            className="hidden xl:block mt-4 rounded-full text-[17px] font-bold shadow-lg cursor-pointer"
-            size="lg"
-            onClick={() => setShowCompose(true)}
-          >
-            Post
-          </Button>
-        )}
-        {/* Mobile Tweet Button (Circle) */}
-         {isLoggedIn && (
-          <Button
-            className="xl:hidden w-[50px] h-[50px] mt-4 rounded-full flex items-center justify-center shadow-lg p-0"
-            size="icon"
-            onClick={() => setShowCompose(true)}
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true" className="w-6 h-6 fill-white"><g><path d="M23 3c-6.62-.1-10.38 2.421-13.05 6.03C7.29 12.61 6 17.331 6 22h2c0-1.007.07-2.012.19-3H12c4.1 0 7.48-3.082 7.94-7.054C22.79 10.147 23.17 6.359 23 3zm-7 8h-1.5v2H16c.63-.016 1.2-.08 1.72-.188C16.95 15.24 14.68 17 12 17H8.55c.57-2.512 1.57-4.851 3-6.78 2.16-2.912 5.29-4.911 9.45-5.187C20.95 8.079 19.9 11 16 11zM4 9V6H1V4h3V1h2v3h3v2H6v3H4z"></path></g></svg>
-          </Button>
-        )}
-        
-        <ComposeTweetModal isOpen={showCompose} onClose={() => setShowCompose(false)} />
-      </div>
-
-      {/* User Profile / Logout */}
-      <div className="flex flex-col items-center xl:items-start w-full gap-2">
-        {isLoggedIn && user ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              className="flex items-center justify-center xl:justify-between w-fit xl:w-full h-auto p-3 rounded-full hover:bg-accent/50 mb-4 cursor-pointer"
-            >
-              <div className="flex items-center gap-3 truncate">
-                <UserAvatar user={user} />
-                <div className="hidden xl:flex flex-col items-start min-w-0">
-                  <span className="font-bold text-[15px] truncate max-w-[140px] leading-5">
-                    {user.displayName}
-                  </span>
-                  <span className="text-muted-foreground text-[15px] truncate max-w-[140px] leading-5">
-                    @{user.username}
-                  </span>
-                </div>
-              </div>
-              <MoreHorizontal className="hidden xl:block w-5 h-5 text-muted-foreground" />
-            </Button>
+            <button type="button" className={itemClass}>
+              <NavItemContent icon={MoreHorizontal} label="More" active={pathname === '/premium' || pathname === '/brainrot'} />
+            </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent
-            className="w-[300px] mb-2 rounded-xl border border-border shadow-lg py-2 bg-background font-bold"
-            side="top"
-            align="center"
-          >
-             <DropdownMenuItem 
-                className="p-3 text-[15px] cursor-pointer focus:bg-accent"
-                onClick={() => {
-                  logout();
-                  openSignInModal();
-                }}
-             >
-                Switch account
-             </DropdownMenuItem>
-            <DropdownMenuItem
-              className="p-3 text-[15px] cursor-pointer focus:bg-accent"
-              onClick={() => logout()}
-            >
-              Log out @{user.username}
+          <DropdownMenuContent side="top" align="start" className="w-[220px] rounded-xl py-2 font-bold">
+            <DropdownMenuItem asChild className="cursor-pointer gap-4 p-3 text-[15px]">
+              <Link href="/premium">
+                <XLogo className="size-5" />
+                Premium
+              </Link>
             </DropdownMenuItem>
+            <DropdownMenuItem asChild className="cursor-pointer gap-4 p-3 text-[15px]">
+              <Link href="/brainrot">
+                <TvMinimalPlay className="size-5" />
+                Brainrot
+              </Link>
+            </DropdownMenuItem>
+            <ThemeToggle variant="menu-item" />
           </DropdownMenuContent>
         </DropdownMenu>
-      ) : (
-          <div className="w-full xl:w-[240px] mb-4 flex justify-end xl:justify-start">
-              {/* Desktop Sign In Button */}
-              <Button 
-                  className="hidden xl:block w-full rounded-full font-bold h-[48px] text-[15px] cursor-pointer" 
-                  onClick={openSignInModal}
-              >
-                  Sign in
-              </Button>
-              {/* Mobile Sign In Button (Circle) */}
-               <Button
-                  className="xl:hidden w-[50px] h-[50px] rounded-full flex items-center justify-center shadow-lg p-0 cursor-pointer"
-                  onClick={openSignInModal}
-              >
-                  <LogIn className="w-6 h-6" />
-              </Button>
-          </div>
+
+        {isLoggedIn && (
+          <button
+            type="button"
+            onClick={() => setComposing(true)}
+            aria-label="Post"
+            className="mt-4 flex size-[52px] cursor-pointer items-center justify-center rounded-full bg-primary text-[17px] font-bold text-primary-foreground shadow-lg transition-opacity hover:opacity-90 xl:h-[52px] xl:w-[90%]"
+          >
+            <span className="hidden xl:inline">Post</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true" className="size-6 fill-current xl:hidden">
+              <path d="M23 3c-6.62-.1-10.38 2.421-13.05 6.03C7.29 12.61 6 17.331 6 22h2c0-1.007.07-2.012.19-3H12c4.1 0 7.48-3.082 7.94-7.054C22.79 10.147 23.17 6.359 23 3zm-7 8h-1.5v2H16c.63-.016 1.2-.08 1.72-.188C16.95 15.24 14.68 17 12 17H8.55c.57-2.512 1.57-4.851 3-6.78 2.16-2.912 5.29-4.911 9.45-5.187C20.95 8.079 19.9 11 16 11zM4 9V6H1V4h3V1h2v3h3v2H6v3H4z" />
+            </svg>
+          </button>
         )}
       </div>
+
+      <div className="mb-3 flex w-full justify-end xl:justify-start">
+        {user ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button type="button" className="flex w-fit cursor-pointer items-center gap-3 rounded-full p-3 text-left outline-none transition-colors hover:bg-accent xl:w-full" aria-label="Account menu">
+                <UserAvatar user={user} />
+                <span className="hidden min-w-0 flex-1 xl:block">
+                  <span className="block truncate text-[15px] font-bold leading-5">{displayNameOf(user)}</span>
+                  <span className="block truncate text-[15px] leading-5 text-muted-foreground">@{user.username}</span>
+                </span>
+                <MoreHorizontal className="hidden size-5 xl:block" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="top" align="center" className="w-[300px] rounded-xl py-2 font-bold">
+              <DropdownMenuItem className="cursor-pointer p-3 text-[15px]" onSelect={() => setConfirmLogout(true)}>
+                Log out @{user.username}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          <button
+            type="button"
+            onClick={openSignInModal}
+            aria-label="Sign in"
+            className="flex size-[52px] cursor-pointer items-center justify-center rounded-full bg-primary font-bold text-primary-foreground hover:opacity-90 xl:h-12 xl:w-full"
+          >
+            <span className="hidden text-[15px] xl:inline">Sign in</span>
+            <LogIn className="size-6 xl:hidden" />
+          </button>
+        )}
+      </div>
+
+      <ComposeTweetModal isOpen={composing} onClose={() => setComposing(false)} />
+      <ConfirmModal
+        open={confirmLogout}
+        title="Log out of Chanom Twitter?"
+        description="You can always log back in at any time."
+        confirmLabel="Log out"
+        onConfirm={() => {
+          setConfirmLogout(false);
+          logout();
+        }}
+        onClose={() => setConfirmLogout(false)}
+      />
     </nav>
   );
 }

@@ -233,13 +233,14 @@ Good already: `default_tags`, the modern standalone `aws_vpc_security_group_*_ru
 - [x] Server prefetch + `HydrationBoundary` for home, profile and tweet pages (viewer-specific state included); `generateMetadata` for profile/tweet; real 404s via `notFound()`. No `loading.tsx`: with it Next streams a 200 before `notFound()` can set 404
 - [x] W9 cleanup: unused `tailwind.config.ts` (Tailwind v4), `theme/tokens.ts`, `TweetCard` re-export
 - [x] `lib/query-keys.ts` (every key, W3), `lib/query-cache.ts` (one shape-aware updater for every cached copy of a tweet/user, incl. tweet authors and search results, which were previously missed), module-level `lib/debounced-toggle.ts` for like/retweet/follow (W7: survives unmount, one timer per tweet, no request if toggled back), single-flight refresh, one SSE hook; Vitest for `lib/` in CI
-- [ ] W8/W9 cleanup (keep the brainrot/premium pages); split messages page
+- [x] W8/W9 cleanup (brainrot/premium kept); messages page split in Phase 4
 
-### Phase 4: Frontend UI port (see "Frontend" verdicts)
-- [ ] Theme tokens + z-index scale; `Avatar`, `TweetActionButton`, `TweetActionsMenu`, `UserRow`, `ConfirmModal`, `ImageLightbox`, `Tabs`, `BackButton`, skeletons
-- [ ] Composer (ring, emoji, focus expand); tweet detail layout; edit profile (floating fields, location/website)
-- [ ] Profile route tabs (`/[username]/replies|media|likes`), followers/following pages, onboarding, explore `?q=` sync, notifications mark-read UX
-- [ ] Keep: mobile nav, public browsing + sign-in modal, `/{username}` URLs, DMs, ChanomBot, theme toggle
+### Phase 4: Frontend UI port (see "Frontend" verdicts) ✅
+- [x] X palette tokens (`--like`, `--retweet`, `--banner`) + z-index scale; `UserAvatar`, `TweetActionButton`, `TweetActionsMenu`, `TweetBody`, `UserRow`/`UserList`, `FeedList` with skeleton/error/empty states, `ConfirmModal` (delete, logout), `ImageLightbox`, `TabBar`, `PageHeader`/`BackButton`, `SearchBox`; `lib/format` helpers
+- [x] Composer (char ring, emoji picker, focus expand, size check, preview revoke); tweet detail layout; edit profile (floating fields, location/website, dirty check, inline server errors)
+- [x] Profile tabs as routes (`/[username]`, `/replies`, `/media` grid, `/likes` owner-only), followers/following pages, onboarding (`/onboarding`, reserved usernames rejected by the API), search tabs in the URL, notifications keep unread highlights for the visit
+- [x] Messages split (list, dialog, thread, bubble) and URL-driven (`?c=`/`?to=`); `flex-col-reverse` thread replaces timer-based scroll code (W8)
+- [x] Kept: mobile nav, public browsing + sign-in modal, `/{username}` URLs, DMs, ChanomBot, theme toggle, fun pages. Dropped fake affordances (dead footer links, "…" on trends, "Switch account")
 
 ### Phase 5: Infrastructure (Terraform) ✅
 - [x] Removed API Gateway, SQS/DLQ, Lambda, NAT instance, `infra/lambda`, `GatewayGuard`/`GATEWAY_SECRET`. EC2 SG allows 80/443 (+ SSH from the EICE only); Caddy + Redis in `infra/ec2/compose.yml`; pinned image versions; Elastic IP

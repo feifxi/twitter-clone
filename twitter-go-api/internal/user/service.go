@@ -68,6 +68,9 @@ func (s *Service) CompleteOnboarding(ctx context.Context, userID int64, username
 	if !ValidUsername(username) {
 		return domain.User{}, apperr.BadRequest("username must be 3-20 letters, numbers or underscores")
 	}
+	if ReservedUsername(username) {
+		return domain.User{}, apperr.Conflict("that username isn't available")
+	}
 	displayName = strings.TrimSpace(displayName)
 	if displayName == "" {
 		return domain.User{}, apperr.BadRequest("display name is required")
@@ -255,4 +258,18 @@ var usernamePattern = regexp.MustCompile(`^[A-Za-z0-9_]{3,20}$`)
 // ValidUsername mirrors the users.username CHECK constraint.
 func ValidUsername(username string) bool {
 	return usernamePattern.MatchString(username)
+}
+
+// reservedUsernames can't be chosen: profiles live at /{username} in the web
+// app, so these would be shadowed by its own pages (or look official).
+var reservedUsernames = map[string]bool{
+	"admin": true, "api": true, "brainrot": true, "chanombot": true, "connect_people": true,
+	"explore": true, "home": true, "login": true, "logout": true, "messages": true,
+	"notifications": true, "onboarding": true, "premium": true, "search": true,
+	"settings": true, "support": true, "tweet": true,
+}
+
+// ReservedUsername reports whether a username is reserved (case-insensitively).
+func ReservedUsername(username string) bool {
+	return reservedUsernames[strings.ToLower(username)]
 }

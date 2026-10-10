@@ -166,6 +166,14 @@ func TestCompleteOnboarding(t *testing.T) {
 		}
 	})
 
+	t.Run("reserved_username_is_a_conflict", func(t *testing.T) {
+		for _, name := range []string{"explore", "Messages", "SEARCH"} {
+			_, err := user.New(&dbtest.MockStore{}, nil, nil).CompleteOnboarding(ctx, 1, name, "Alice")
+			kind, _ := apperr.KindOf(err)
+			require.Equal(t, apperr.KindConflict, kind, name)
+		}
+	})
+
 	t.Run("taken_username_is_a_conflict", func(t *testing.T) {
 		store := &dbtest.MockStore{
 			SetUsernameFn: func(ctx context.Context, arg db.SetUsernameParams) (db.User, error) {
