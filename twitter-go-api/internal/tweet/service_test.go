@@ -10,7 +10,6 @@ import (
 	"github.com/chanombude/twitter-go-api/internal/domain"
 	"github.com/chanombude/twitter-go-api/internal/storage/storagetest"
 	"github.com/chanombude/twitter-go-api/internal/tweet"
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -156,13 +155,11 @@ func TestService_DeleteTweet(t *testing.T) {
 			ListMediaURLsInThreadFn: func(ctx context.Context, id int64) ([]*string, error) {
 				return []*string{dbtest.Ptr(storagetest.BaseURL + "/tweets/1/img.png"), dbtest.Ptr("https://elsewhere.example/tweets/2/x.png")}, nil
 			},
-			ListHashtagUsageToDecrementForDeleteRootFn: func(ctx context.Context, id int64) ([]db.ListHashtagUsageToDecrementForDeleteRootRow, error) {
-				return []db.ListHashtagUsageToDecrementForDeleteRootRow{
-					{HashtagID: 5, DecrementBy: 2},
-				}, nil
+			ListHashtagUsageInThreadFn: func(ctx context.Context, id int64) ([]db.ListHashtagUsageInThreadRow, error) {
+				return []db.ListHashtagUsageInThreadRow{{HashtagID: 5, Uses: 2}}, nil
 			},
-			DecrementHashtagUsageByFn: func(ctx context.Context, arg db.DecrementHashtagUsageByParams) error {
-				if arg.ID == 5 && arg.UsageCount == 2 {
+			DecrementHashtagUsageFn: func(ctx context.Context, arg db.DecrementHashtagUsageParams) error {
+				if arg.ID == 5 && arg.Uses == 2 {
 					decrementCalled = true
 				}
 				return nil
@@ -191,58 +188,34 @@ func TestService_DeleteTweet(t *testing.T) {
 }
 
 func TestService_Retweet(t *testing.T) {
-	t.Run("success_retweet", func(t *testing.T) {
-		successStore := &dbtest.MockStore{
-			GetTweetFn: func(ctx context.Context, arg db.GetTweetParams) (db.GetTweetRow, error) {
-				return db.GetTweetRow{Tweet: db.Tweet{ID: 10, UserID: 1}}, nil
-			},
-			CreateRetweetFn: func(ctx context.Context, arg db.CreateRetweetParams) (db.CreateRetweetRow, error) {
-				return db.CreateRetweetRow{ID: 20, UserID: 2, RetweetID: arg.RetweetID}, nil
-			},
-			GetUsersByIDsFn: func(ctx context.Context, arg db.GetUsersByIDsParams) ([]db.GetUsersByIDsRow, error) {
-				return []db.GetUsersByIDsRow{{User: db.User{ID: 2}}}, nil
-			},
-		}
+	for name, created := range map[string]bool{"new_retweet_notifies": true, "repeat_retweet_is_a_noop": false} {
+		t.Run(name, func(t *testing.T) {
+			notified := false
+			store := &dbtest.MockStore{
+				GetTweetFn: func(ctx context.Context, arg db.GetTweetParams) (db.GetTweetRow, error) {
+					return db.GetTweetRow{Tweet: db.Tweet{ID: 10, UserID: 1}, IsRetweeted: true}, nil
+				},
+				CreateRetweetFn: func(ctx context.Context, arg db.CreateRetweetParams) (bool, error) {
+					require.Equal(t, int64(10), arg.TweetID)
+					return created, nil
+				},
+				CreateNotificationFn: func(ctx context.Context, arg db.CreateNotificationParams) (db.Notification, error) {
+					notified = true
+					return db.Notification{ID: 1}, nil
+				},
+				GetUsersByIDsFn: func(ctx context.Context, arg db.GetUsersByIDsParams) ([]db.GetUsersByIDsRow, error) {
+					return []db.GetUsersByIDsRow{{User: db.User{ID: 1}}}, nil
+				},
+			}
 
-		uc := tweet.New(successStore, &storagetest.Fake{}, &mockEmbeddingPublisher{}, noopNotifier{})
+			item, err := tweet.New(store, &storagetest.Fake{}, &mockEmbeddingPublisher{}, noopNotifier{}).Retweet(context.Background(), 2, 10)
 
-		item, err := uc.Retweet(context.Background(), 2, 10)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if item.ID != 10 {
-			t.Fatalf("expected retweet to return original tweet structure with ID 10, got %v", item.ID)
-		}
-	})
-
-	t.Run("duplicate_retweet", func(t *testing.T) {
-		// Mock pgx.ErrNoRows for ON CONFLICT DO NOTHING in CreateRetweet
-		duplicateStore := &dbtest.MockStore{
-			GetTweetFn: func(ctx context.Context, arg db.GetTweetParams) (db.GetTweetRow, error) {
-				return db.GetTweetRow{Tweet: db.Tweet{ID: 10, UserID: 1}}, nil
-			},
-			CreateRetweetFn: func(ctx context.Context, arg db.CreateRetweetParams) (db.CreateRetweetRow, error) {
-				// ON CONFLICT DO NOTHING returns no row for an existing retweet.
-				return db.CreateRetweetRow{}, pgx.ErrNoRows
-			},
-			GetUserRetweetFn: func(ctx context.Context, arg db.GetUserRetweetParams) (db.Tweet, error) {
-				return db.Tweet{ID: 20, UserID: 2, RetweetID: dbtest.Ptr(int64(10))}, nil
-			},
-			GetUsersByIDsFn: func(ctx context.Context, arg db.GetUsersByIDsParams) ([]db.GetUsersByIDsRow, error) {
-				return []db.GetUsersByIDsRow{{User: db.User{ID: 2}}}, nil
-			},
-		}
-
-		uc := tweet.New(duplicateStore, &storagetest.Fake{}, &mockEmbeddingPublisher{}, noopNotifier{})
-
-		item, err := uc.Retweet(context.Background(), 2, 10)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if item.ID != 10 {
-			t.Fatalf("expected retweet to return original tweet structure with ID 10, got %v", item.ID)
-		}
-	})
+			require.NoError(t, err)
+			require.Equal(t, int64(10), item.ID, "returns the retweeted tweet itself")
+			require.True(t, item.IsRetweeted)
+			require.Equal(t, created, notified)
+		})
+	}
 }
 
 func TestService_LikeUnlike(t *testing.T) {
@@ -287,9 +260,9 @@ func TestService_UndoRetweet(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		called := false
 		store := &dbtest.MockStore{
-			DeleteRetweetByUserFn: func(ctx context.Context, arg db.DeleteRetweetByUserParams) (db.DeleteRetweetByUserRow, error) {
+			DeleteRetweetFn: func(ctx context.Context, arg db.DeleteRetweetParams) (bool, error) {
 				called = true
-				return db.DeleteRetweetByUserRow{ID: 20, UserID: userID, RetweetID: dbtest.Ptr(tweetID)}, nil
+				return true, nil
 			},
 		}
 		uc := tweet.New(store, nil, nil, noopNotifier{})

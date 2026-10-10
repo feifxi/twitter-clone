@@ -30,9 +30,9 @@ func RateLimiter(r rate.Limit, b int) gin.HandlerFunc {
 		for {
 			time.Sleep(time.Minute)
 			mu.Lock()
-			for ip, c := range clients {
+			for key, c := range clients {
 				if time.Since(c.lastSeen) > 3*time.Minute {
-					delete(clients, ip)
+					delete(clients, key)
 				}
 			}
 			mu.Unlock()
@@ -40,13 +40,14 @@ func RateLimiter(r rate.Limit, b int) gin.HandlerFunc {
 	}()
 
 	return func(c *gin.Context) {
-		ip := c.ClientIP()
+		// Per route and client, matching the Redis limiter's key.
+		key := c.FullPath() + "|" + c.ClientIP()
 		mu.Lock()
-		if _, found := clients[ip]; !found {
-			clients[ip] = &client{limiter: rate.NewLimiter(r, b)}
+		if _, found := clients[key]; !found {
+			clients[key] = &client{limiter: rate.NewLimiter(r, b)}
 		}
-		clients[ip].lastSeen = time.Now()
-		limiter := clients[ip].limiter
+		clients[key].lastSeen = time.Now()
+		limiter := clients[key].limiter
 		mu.Unlock()
 
 		if !limiter.Allow() {

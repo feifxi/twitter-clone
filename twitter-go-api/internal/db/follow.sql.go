@@ -11,22 +11,17 @@ import (
 
 const followUser = `-- name: FollowUser :one
 WITH inserted AS (
-  INSERT INTO follows (follower_id, following_id)
-  VALUES ($1, $2)
+  INSERT INTO follows (follower_id, following_id) VALUES ($1, $2)
   ON CONFLICT DO NOTHING
-  RETURNING follower_id, following_id
-),
-update_target AS (
-  UPDATE users
-  SET followers_count = followers_count + 1
+  RETURNING follower_id
+), bump_target AS (
+  UPDATE users SET followers_count = followers_count + 1
   WHERE id = $2 AND EXISTS (SELECT 1 FROM inserted)
-),
-update_actor AS (
-  UPDATE users
-  SET following_count = following_count + 1
+), bump_actor AS (
+  UPDATE users SET following_count = following_count + 1
   WHERE id = $1 AND EXISTS (SELECT 1 FROM inserted)
 )
-SELECT EXISTS(SELECT 1 FROM inserted)
+SELECT EXISTS (SELECT 1 FROM inserted) AS created
 `
 
 type FollowUserParams struct {
@@ -34,60 +29,26 @@ type FollowUserParams struct {
 	FollowingID int64 `json:"following_id"`
 }
 
+// Returns false when the follow already existed (counts are only bumped once).
 func (q *Queries) FollowUser(ctx context.Context, arg FollowUserParams) (bool, error) {
 	row := q.db.QueryRow(ctx, followUser, arg.FollowerID, arg.FollowingID)
-	var exists bool
-	err := row.Scan(&exists)
-	return exists, err
-}
-
-const getFollowedUserIDs = `-- name: GetFollowedUserIDs :many
-SELECT following_id FROM follows
-WHERE follower_id = $1 AND following_id = ANY($2::int[])
-`
-
-type GetFollowedUserIDsParams struct {
-	FollowerID int64   `json:"follower_id"`
-	Column2    []int32 `json:"column_2"`
-}
-
-func (q *Queries) GetFollowedUserIDs(ctx context.Context, arg GetFollowedUserIDsParams) ([]int64, error) {
-	rows, err := q.db.Query(ctx, getFollowedUserIDs, arg.FollowerID, arg.Column2)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []int64{}
-	for rows.Next() {
-		var following_id int64
-		if err := rows.Scan(&following_id); err != nil {
-			return nil, err
-		}
-		items = append(items, following_id)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
+	var created bool
+	err := row.Scan(&created)
+	return created, err
 }
 
 const unfollowUser = `-- name: UnfollowUser :one
 WITH deleted AS (
-  DELETE FROM follows
-  WHERE follower_id = $1 AND following_id = $2
-  RETURNING follower_id, following_id
-),
-update_target AS (
-  UPDATE users
-  SET followers_count = GREATEST(0, followers_count - 1)
+  DELETE FROM follows WHERE follower_id = $1 AND following_id = $2
+  RETURNING follower_id
+), bump_target AS (
+  UPDATE users SET followers_count = GREATEST(0, followers_count - 1)
   WHERE id = $2 AND EXISTS (SELECT 1 FROM deleted)
-),
-update_actor AS (
-  UPDATE users
-  SET following_count = GREATEST(0, following_count - 1)
+), bump_actor AS (
+  UPDATE users SET following_count = GREATEST(0, following_count - 1)
   WHERE id = $1 AND EXISTS (SELECT 1 FROM deleted)
 )
-SELECT EXISTS(SELECT 1 FROM deleted)
+SELECT EXISTS (SELECT 1 FROM deleted) AS deleted
 `
 
 type UnfollowUserParams struct {
@@ -97,7 +58,7 @@ type UnfollowUserParams struct {
 
 func (q *Queries) UnfollowUser(ctx context.Context, arg UnfollowUserParams) (bool, error) {
 	row := q.db.QueryRow(ctx, unfollowUser, arg.FollowerID, arg.FollowingID)
-	var exists bool
-	err := row.Scan(&exists)
-	return exists, err
+	var deleted bool
+	err := row.Scan(&deleted)
+	return deleted, err
 }

@@ -10,12 +10,30 @@ import (
 	"time"
 )
 
+const consumeRefreshToken = `-- name: ConsumeRefreshToken :one
+DELETE FROM refresh_tokens
+WHERE token_hash = $1
+RETURNING id, user_id, token_hash, expiry_date, created_at
+`
+
+// Deletes and returns the token in one statement, so a refresh token works at
+// most once even when two requests race with it.
+func (q *Queries) ConsumeRefreshToken(ctx context.Context, tokenHash string) (RefreshToken, error) {
+	row := q.db.QueryRow(ctx, consumeRefreshToken, tokenHash)
+	var i RefreshToken
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.TokenHash,
+		&i.ExpiryDate,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createRefreshToken = `-- name: CreateRefreshToken :one
-INSERT INTO refresh_tokens (
-  user_id, token_hash, expiry_date
-) VALUES (
-  $1, $2, $3
-)
+INSERT INTO refresh_tokens (user_id, token_hash, expiry_date)
+VALUES ($1, $2, $3)
 RETURNING id, user_id, token_hash, expiry_date, created_at
 `
 
@@ -38,6 +56,16 @@ func (q *Queries) CreateRefreshToken(ctx context.Context, arg CreateRefreshToken
 	return i, err
 }
 
+const deleteExpiredRefreshTokens = `-- name: DeleteExpiredRefreshTokens :exec
+DELETE FROM refresh_tokens
+WHERE user_id = $1 AND expiry_date < now()
+`
+
+func (q *Queries) DeleteExpiredRefreshTokens(ctx context.Context, userID int64) error {
+	_, err := q.db.Exec(ctx, deleteExpiredRefreshTokens, userID)
+	return err
+}
+
 const deleteRefreshToken = `-- name: DeleteRefreshToken :exec
 DELETE FROM refresh_tokens
 WHERE token_hash = $1
@@ -56,22 +84,4 @@ WHERE user_id = $1
 func (q *Queries) DeleteRefreshTokensByUser(ctx context.Context, userID int64) error {
 	_, err := q.db.Exec(ctx, deleteRefreshTokensByUser, userID)
 	return err
-}
-
-const getRefreshToken = `-- name: GetRefreshToken :one
-SELECT id, user_id, token_hash, expiry_date, created_at FROM refresh_tokens
-WHERE token_hash = $1 LIMIT 1
-`
-
-func (q *Queries) GetRefreshToken(ctx context.Context, tokenHash string) (RefreshToken, error) {
-	row := q.db.QueryRow(ctx, getRefreshToken, tokenHash)
-	var i RefreshToken
-	err := row.Scan(
-		&i.ID,
-		&i.UserID,
-		&i.TokenHash,
-		&i.ExpiryDate,
-		&i.CreatedAt,
-	)
-	return i, err
 }

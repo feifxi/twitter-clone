@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/chanombude/twitter-go-api/internal/apperr"
+	"github.com/chanombude/twitter-go-api/internal/pagination"
 	"github.com/gin-gonic/gin"
 )
 
@@ -25,21 +26,19 @@ func (s *Server) searchUsers(c *gin.Context) {
 		return
 	}
 
-	offset, size, ok := parseOffsetAndSize(c)
+	req, ok := parsePageRequest(c)
 	if !ok {
 		return
 	}
-	page := offset / size
 
 	viewerID := optionalViewerID(c)
-	users, err := s.svc.Search.Users(c.Request.Context(), query, page, size+1, viewerID)
+	users, err := s.svc.Search.Users(c.Request.Context(), query, req, viewerID)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 
-	response := newUserResponseList(users)
-	c.JSON(http.StatusOK, BuildPageResponse(response, size, offset))
+	c.JSON(http.StatusOK, newPageResponse(users, newUserResponse))
 }
 
 // searchTweets godoc
@@ -59,21 +58,19 @@ func (s *Server) searchTweets(c *gin.Context) {
 		return
 	}
 
-	offset, size, ok := parseOffsetAndSize(c)
+	req, ok := parsePageRequest(c)
 	if !ok {
 		return
 	}
-	page := offset / size
 
 	viewerID := optionalViewerID(c)
-	tweets, err := s.svc.Search.Tweets(c.Request.Context(), query, page, size+1, viewerID)
+	tweets, err := s.svc.Search.Tweets(c.Request.Context(), query, req, viewerID)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 
-	response := newTweetResponseList(tweets)
-	c.JSON(http.StatusOK, BuildPageResponse(response, size, offset))
+	c.JSON(http.StatusOK, newPageResponse(tweets, newTweetResponse))
 }
 
 // searchHashtags godoc
@@ -87,7 +84,7 @@ func (s *Server) searchTweets(c *gin.Context) {
 // @Router			/search/hashtags [get]
 func (s *Server) searchHashtags(c *gin.Context) {
 	query := strings.TrimSpace(c.Query("q"))
-	limit := parseLimit(c, 5, maxSize)
+	limit := parseLimit(c, 5, pagination.MaxLimit)
 	hashtags, err := s.svc.Search.Hashtags(c.Request.Context(), query, limit)
 	if err != nil {
 		writeError(c, err)

@@ -54,9 +54,6 @@ func TestService_LoginWithGoogle(t *testing.T) {
 			GetUserByEmailFn: func(ctx context.Context, e string) (db.User, error) {
 				return db.User{ID: userID, Email: e}, nil
 			},
-			DeleteRefreshTokensByUserFn: func(ctx context.Context, id int64) error {
-				return nil
-			},
 			CreateRefreshTokenFn: func(ctx context.Context, arg db.CreateRefreshTokenParams) (db.RefreshToken, error) {
 				return db.RefreshToken{}, nil
 			},
@@ -94,9 +91,6 @@ func TestService_LoginWithGoogle(t *testing.T) {
 			},
 			CreateUserFn: func(ctx context.Context, arg db.CreateUserParams) (db.User, error) {
 				return db.User{ID: userID, Email: email, Username: arg.Username}, nil
-			},
-			DeleteRefreshTokensByUserFn: func(ctx context.Context, id int64) error {
-				return nil
 			},
 			CreateRefreshTokenFn: func(ctx context.Context, arg db.CreateRefreshTokenParams) (db.RefreshToken, error) {
 				return db.RefreshToken{}, nil
@@ -146,11 +140,8 @@ func TestService_RefreshSession(t *testing.T) {
 		refreshToken := "valid-refresh-token"
 
 		store := &dbtest.MockStore{
-			GetRefreshTokenFn: func(ctx context.Context, hash string) (db.RefreshToken, error) {
+			ConsumeRefreshTokenFn: func(ctx context.Context, hash string) (db.RefreshToken, error) {
 				return db.RefreshToken{UserID: userID, ExpiryDate: time.Now().Add(time.Hour)}, nil
-			},
-			DeleteRefreshTokensByUserFn: func(ctx context.Context, id int64) error {
-				return nil
 			},
 			CreateRefreshTokenFn: func(ctx context.Context, arg db.CreateRefreshTokenParams) (db.RefreshToken, error) {
 				return db.RefreshToken{}, nil
@@ -179,51 +170,60 @@ func TestService_RefreshSession(t *testing.T) {
 		refreshToken := "expired-refresh-token"
 
 		store := &dbtest.MockStore{
-			GetRefreshTokenFn: func(ctx context.Context, hash string) (db.RefreshToken, error) {
+			ConsumeRefreshTokenFn: func(ctx context.Context, hash string) (db.RefreshToken, error) {
 				return db.RefreshToken{UserID: 123, ExpiryDate: time.Now().Add(-time.Hour)}, nil
-			},
-			DeleteRefreshTokenFn: func(ctx context.Context, hash string) error {
-				return nil
 			},
 		}
 
 		uc := auth.New(cfg, store, nil, nil)
 		_, err := uc.Refresh(ctx, refreshToken)
 
-		require.Error(t, err)
+		kind, _ := apperr.KindOf(err)
+		require.Equal(t, apperr.KindUnauthorized, kind)
+	})
+
+	t.Run("reused_token_is_rejected", func(t *testing.T) {
+		store := &dbtest.MockStore{
+			ConsumeRefreshTokenFn: func(ctx context.Context, hash string) (db.RefreshToken, error) {
+				return db.RefreshToken{}, pgx.ErrNoRows // already consumed by an earlier refresh
+			},
+		}
+		_, err := auth.New(cfg, store, nil, nil).Refresh(ctx, "already-used")
+		kind, _ := apperr.KindOf(err)
+		require.Equal(t, apperr.KindUnauthorized, kind)
 	})
 }
 
-func TestService_Logout(t *testing.T) {
-	ctx := context.Background()
+func TestService_LogoutEndsOnlyThatSession(t *testing.T) {
+	var deletedHash string
+	store := &dbtest.MockStore{
+		DeleteRefreshTokenFn: func(ctx context.Context, hash string) error {
+			deletedHash = hash
+			return nil
+		},
+		DeleteRefreshTokensByUserFn: func(ctx context.Context, id int64) error {
+			t.Fatal("logout must not end the user's other sessions")
+			return nil
+		},
+	}
 
-	t.Run("logout_by_userID", func(t *testing.T) {
-		userID := int64(123)
-		called := false
-		store := &dbtest.MockStore{
-			DeleteRefreshTokensByUserFn: func(ctx context.Context, id int64) error {
-				called = true
-				return nil
-			},
-		}
+	require.NoError(t, auth.New(auth.Config{}, store, nil, nil).Logout(context.Background(), "some-token"))
+	require.Len(t, deletedHash, 64, "tokens are stored as SHA-256 hex, never in plain text")
+}
 
-		uc := auth.New(auth.Config{}, store, nil, nil)
-		uc.Logout(ctx, &userID, nil)
-		require.True(t, called)
-	})
+func TestService_LoginKeepsOtherSessions(t *testing.T) {
+	store := &dbtest.MockStore{
+		GetUserByEmailFn: func(ctx context.Context, e string) (db.User, error) { return db.User{ID: 1, Email: e}, nil },
+		DeleteRefreshTokensByUserFn: func(ctx context.Context, id int64) error {
+			t.Fatal("signing in on one device must not sign out the others")
+			return nil
+		},
+	}
+	gv := &mockGoogleVerifier{validateFn: func(context.Context, string, string) (*idtoken.Payload, error) {
+		return &idtoken.Payload{Claims: map[string]interface{}{"email": "a@example.com", "email_verified": true}}, nil
+	}}
+	tm := &mockTokenMaker{createTokenFn: func(int64, time.Duration) (string, error) { return "access", nil }}
 
-	t.Run("logout_by_token", func(t *testing.T) {
-		token := "some-token"
-		called := false
-		store := &dbtest.MockStore{
-			DeleteRefreshTokenFn: func(ctx context.Context, hash string) error {
-				called = true
-				return nil
-			},
-		}
-
-		uc := auth.New(auth.Config{}, store, nil, nil)
-		uc.Logout(ctx, nil, &token)
-		require.True(t, called)
-	})
+	_, err := auth.New(auth.Config{RefreshTokenTTL: time.Hour}, store, tm, gv).LoginWithGoogle(context.Background(), "id-token")
+	require.NoError(t, err)
 }

@@ -7,6 +7,7 @@ import (
 	"github.com/chanombude/twitter-go-api/internal/db"
 	"github.com/chanombude/twitter-go-api/internal/db/dbtest"
 	"github.com/chanombude/twitter-go-api/internal/discovery"
+	"github.com/chanombude/twitter-go-api/internal/pagination"
 	"github.com/stretchr/testify/require"
 )
 
@@ -43,35 +44,17 @@ func TestService_GetTrendingHashtags(t *testing.T) {
 	})
 }
 
-func TestService_GetSuggestedUsers(t *testing.T) {
-	ctx := context.Background()
-	viewerID := int64(1)
+func TestService_SuggestedUsers(t *testing.T) {
+	store := &dbtest.MockStore{
+		ListSuggestedUsersFn: func(ctx context.Context, arg db.ListSuggestedUsersParams) ([]db.ListSuggestedUsersRow, error) {
+			return []db.ListSuggestedUsersRow{{User: db.User{ID: 2, Username: "suggested"}}, {User: db.User{ID: 3}}}, nil
+		},
+	}
 
-	t.Run("personalized", func(t *testing.T) {
-		store := &dbtest.MockStore{
-			ListSuggestedUsersFn: func(ctx context.Context, arg db.ListSuggestedUsersParams) ([]db.ListSuggestedUsersRow, error) {
-				return []db.ListSuggestedUsersRow{
-					{User: db.User{ID: 100, Username: "suggested"}},
-				}, nil
-			},
-		}
-		uc := discovery.New(store)
-		res, err := uc.SuggestedUsers(ctx, 0, 10, &viewerID)
-		require.NoError(t, err)
-		require.Len(t, res, 1)
-		require.Equal(t, "suggested", res[0].Username)
-	})
+	page, err := discovery.New(store).SuggestedUsers(context.Background(), pagination.Request{Limit: 1}, dbtest.Ptr(int64(1)))
 
-	t.Run("guest_fallback", func(t *testing.T) {
-		store := &dbtest.MockStore{
-			ListTopUsersFn: func(ctx context.Context, arg db.ListTopUsersParams) ([]db.User, error) {
-				return []db.User{{ID: 200, Username: "top"}}, nil
-			},
-		}
-		uc := discovery.New(store)
-		res, err := uc.SuggestedUsers(ctx, 0, 10, nil)
-		require.NoError(t, err)
-		require.Len(t, res, 1)
-		require.Equal(t, "top", res[0].Username)
-	})
+	require.NoError(t, err)
+	require.Len(t, page.Items, 1)
+	require.Equal(t, "suggested", page.Items[0].Username)
+	require.Equal(t, int32(1), page.Next.Offset)
 }

@@ -28,22 +28,27 @@ func newAuthResponse(accessToken, refreshToken string, user domain.User) AuthRes
 type CurrentUserResponse struct {
 	UserResponse
 	Email string `json:"email"`
+	// Onboarded is false until the user has chosen their own username.
+	Onboarded bool `json:"onboarded"`
 }
 
 func newCurrentUserResponse(user domain.User) CurrentUserResponse {
-	return CurrentUserResponse{UserResponse: newUserResponse(user), Email: user.Email}
+	return CurrentUserResponse{UserResponse: newUserResponse(user), Email: user.Email, Onboarded: user.Onboarded}
 }
 
 type UserResponse struct {
-	ID             int64   `json:"id"`
-	Username       string  `json:"username"`
-	DisplayName    *string `json:"displayName"`
-	Bio            *string `json:"bio"`
-	AvatarURL      *string `json:"avatarUrl"`
-	BannerURL      *string `json:"bannerUrl"`
-	IsFollowing    bool    `json:"isFollowing"`
-	FollowersCount int32   `json:"followersCount"`
-	FollowingCount int32   `json:"followingCount"`
+	ID             int64     `json:"id"`
+	Username       string    `json:"username"`
+	DisplayName    *string   `json:"displayName"`
+	Bio            *string   `json:"bio"`
+	Location       *string   `json:"location"`
+	Website        *string   `json:"website"`
+	AvatarURL      *string   `json:"avatarUrl"`
+	BannerURL      *string   `json:"bannerUrl"`
+	IsFollowing    bool      `json:"isFollowing"`
+	FollowersCount int32     `json:"followersCount"`
+	FollowingCount int32     `json:"followingCount"`
+	CreatedAt      time.Time `json:"createdAt"`
 }
 
 func newUserResponse(user domain.User) UserResponse {
@@ -52,36 +57,41 @@ func newUserResponse(user domain.User) UserResponse {
 		Username:       user.Username,
 		DisplayName:    user.DisplayName,
 		Bio:            user.Bio,
+		Location:       user.Location,
+		Website:        user.Website,
 		AvatarURL:      user.AvatarURL,
 		BannerURL:      user.BannerURL,
 		IsFollowing:    user.IsFollowing,
 		FollowersCount: user.FollowersCount,
 		FollowingCount: user.FollowingCount,
+		CreatedAt:      user.CreatedAt,
 	}
 }
 
 type TweetResponse struct {
-	ID              int64          `json:"id"`
-	Content         *string        `json:"content"`
-	MediaType       *string        `json:"mediaType"`
-	MediaURL        *string        `json:"mediaUrl"`
-	User            UserResponse   `json:"user"`
-	ReplyCount      int32          `json:"replyCount"`
-	LikeCount       int32          `json:"likeCount"`
-	RetweetCount    int32          `json:"retweetCount"`
-	IsLiked         bool           `json:"isLiked"`
-	IsRetweeted     bool           `json:"isRetweeted"`
-	RetweetedTweet  *TweetResponse `json:"retweetedTweet,omitempty"`
-	ReplyToTweetID  *int64         `json:"replyToTweetId"`
-	ReplyToUsername *string        `json:"replyToUsername"`
-	CreatedAt       time.Time      `json:"createdAt"`
+	ID              int64        `json:"id"`
+	Content         *string      `json:"content"`
+	MediaType       *string      `json:"mediaType"`
+	MediaURL        *string      `json:"mediaUrl"`
+	User            UserResponse `json:"user"`
+	ReplyCount      int32        `json:"replyCount"`
+	LikeCount       int32        `json:"likeCount"`
+	RetweetCount    int32        `json:"retweetCount"`
+	IsLiked         bool         `json:"isLiked"`
+	IsRetweeted     bool         `json:"isRetweeted"`
+	ReplyToTweetID  *int64       `json:"replyToTweetId"`
+	ReplyToUsername *string      `json:"replyToUsername"`
+	CreatedAt       time.Time    `json:"createdAt"`
+	// RetweetedBy is set when the tweet is in a timeline because this user retweeted it.
+	RetweetedBy *UserResponse `json:"retweetedBy"`
+	RetweetedAt *time.Time    `json:"retweetedAt"`
 }
 
 func newTweetResponse(tweet domain.Tweet) TweetResponse {
-	var original *TweetResponse
-	if tweet.OriginalTweet != nil {
-		r := newTweetResponse(*tweet.OriginalTweet)
-		original = &r
+	var retweetedBy *UserResponse
+	if tweet.RetweetedBy != nil {
+		r := newUserResponse(*tweet.RetweetedBy)
+		retweetedBy = &r
 	}
 
 	return TweetResponse{
@@ -95,10 +105,11 @@ func newTweetResponse(tweet domain.Tweet) TweetResponse {
 		RetweetCount:    tweet.RetweetCount,
 		IsLiked:         tweet.IsLiked,
 		IsRetweeted:     tweet.IsRetweeted,
-		RetweetedTweet:  original,
 		ReplyToTweetID:  tweet.ParentID,
 		ReplyToUsername: tweet.ParentUsername,
 		CreatedAt:       tweet.CreatedAt,
+		RetweetedBy:     retweetedBy,
+		RetweetedAt:     tweet.RetweetedAt,
 	}
 }
 
@@ -192,50 +203,10 @@ func successResponse() SuccessResponse {
 	return SuccessResponse{Success: true}
 }
 
-func newUserResponseList(users []domain.User) []UserResponse {
-	response := make([]UserResponse, 0, len(users))
-	for _, user := range users {
-		response = append(response, newUserResponse(user))
-	}
-	return response
-}
-
-func newTweetResponseList(tweets []domain.Tweet) []TweetResponse {
-	response := make([]TweetResponse, 0, len(tweets))
-	for _, t := range tweets {
-		response = append(response, newTweetResponse(t))
-	}
-	return response
-}
-
 func newHashtagResponseList(hashtags []domain.Hashtag) []HashtagResponse {
 	response := make([]HashtagResponse, 0, len(hashtags))
 	for _, h := range hashtags {
 		response = append(response, newHashtagResponse(h))
-	}
-	return response
-}
-
-func newNotificationResponseList(items []domain.Notification) []NotificationResponse {
-	response := make([]NotificationResponse, 0, len(items))
-	for _, item := range items {
-		response = append(response, newNotificationResponse(item))
-	}
-	return response
-}
-
-func newMessageResponseList(items []domain.Message) []MessageResponse {
-	response := make([]MessageResponse, 0, len(items))
-	for _, item := range items {
-		response = append(response, newMessageResponse(item))
-	}
-	return response
-}
-
-func newConversationResponseList(items []domain.Conversation) []ConversationResponse {
-	response := make([]ConversationResponse, 0, len(items))
-	for _, item := range items {
-		response = append(response, newConversationResponse(item))
 	}
 	return response
 }

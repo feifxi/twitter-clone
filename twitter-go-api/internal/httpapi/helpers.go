@@ -1,40 +1,63 @@
 package httpapi
 
 import (
-	"encoding/base64"
 	"strconv"
 	"strings"
 
 	"github.com/chanombude/twitter-go-api/internal/apperr"
 	"github.com/chanombude/twitter-go-api/internal/middleware"
+	"github.com/chanombude/twitter-go-api/internal/pagination"
 	"github.com/chanombude/twitter-go-api/internal/token"
 	"github.com/gin-gonic/gin"
 )
 
-const (
-	defaultSize = int32(20)
-	maxSize     = int32(50)
-)
-
+// PageResponse is the envelope of every paginated list. nextCursor is opaque:
+// clients pass it back as ?cursor= and must not interpret it.
 type PageResponse[T any] struct {
 	Items      []T     `json:"items"`
 	HasNext    bool    `json:"hasNext"`
 	NextCursor *string `json:"nextCursor,omitempty"`
 }
 
-func BuildPageResponse[T any](items []T, size, offset int32) PageResponse[T] {
-	if int32(len(items)) > size {
-		next := encodeCursor(offset + size)
-		return PageResponse[T]{
-			Items:      items[:size],
-			HasNext:    true,
-			NextCursor: &next,
+func newPageResponse[T, R any](page pagination.Page[T], toResponse func(T) R) PageResponse[R] {
+	items := make([]R, 0, len(page.Items))
+	for _, item := range page.Items {
+		items = append(items, toResponse(item))
+	}
+	resp := PageResponse[R]{Items: items, HasNext: page.Next != nil}
+	if page.Next != nil {
+		cursor := pagination.Encode(*page.Next)
+		resp.NextCursor = &cursor
+	}
+	return resp
+}
+
+type pageQuery struct {
+	Cursor string `form:"cursor"`
+	Size   *int32 `form:"size" binding:"omitempty,min=1"`
+}
+
+// parsePageRequest reads ?cursor=&size= (default 20, capped at 50).
+func parsePageRequest(c *gin.Context) (pagination.Request, bool) {
+	var q pageQuery
+	if err := c.ShouldBindQuery(&q); err != nil {
+		writeError(c, err)
+		return pagination.Request{}, false
+	}
+
+	req := pagination.Request{Limit: pagination.DefaultLimit}
+	if q.Size != nil {
+		req.Limit = min(*q.Size, pagination.MaxLimit)
+	}
+	if q.Cursor != "" {
+		after, err := pagination.Decode(q.Cursor)
+		if err != nil {
+			writeValidationError(c, "cursor", "invalid cursor")
+			return pagination.Request{}, false
 		}
+		req.After = after
 	}
-	return PageResponse[T]{
-		Items:   items,
-		HasNext: false,
-	}
+	return req, true
 }
 
 func currentUserID(c *gin.Context) (int64, bool) {
@@ -49,6 +72,7 @@ func currentUserID(c *gin.Context) (int64, bool) {
 	return authPayload.UserID, true
 }
 
+// requireUserID writes a 401 and returns false when the request is anonymous.
 func requireUserID(c *gin.Context) (int64, bool) {
 	userID, ok := currentUserID(c)
 	if !ok {
@@ -58,7 +82,7 @@ func requireUserID(c *gin.Context) (int64, bool) {
 	return userID, true
 }
 
-// optionalViewerID returns a pointer to the current user's ID if authenticated, or nil otherwise.
+// optionalViewerID returns the caller's ID, or nil for anonymous requests.
 func optionalViewerID(c *gin.Context) *int64 {
 	if id, ok := currentUserID(c); ok {
 		return &id
@@ -66,7 +90,7 @@ func optionalViewerID(c *gin.Context) *int64 {
 	return nil
 }
 
-// parseLimit reads a "limit" query param, applying a default and max cap.
+// parseLimit reads a "limit" query param for small, unpaginated lists.
 func parseLimit(c *gin.Context, defaultVal, max int32) int32 {
 	raw := strings.TrimSpace(c.Query("limit"))
 	if raw == "" {
@@ -76,54 +100,5 @@ func parseLimit(c *gin.Context, defaultVal, max int32) int32 {
 	if err != nil || parsed < 1 {
 		return defaultVal
 	}
-	limit := int32(parsed)
-	if limit > max {
-		return max
-	}
-	return limit
-}
-
-func parseOffsetAndSize(c *gin.Context) (int32, int32, bool) {
-	type paginationQuery struct {
-		Cursor *string `form:"cursor" binding:"omitempty"`
-		Size   *int32  `form:"size" binding:"omitempty,min=1"`
-	}
-
-	var req paginationQuery
-	if err := c.ShouldBindQuery(&req); err != nil {
-		writeError(c, err)
-		return 0, 0, false
-	}
-
-	size := defaultSize
-	if req.Size != nil {
-		size = min(*req.Size, maxSize)
-	}
-
-	if req.Cursor == nil || *req.Cursor == "" {
-		return 0, size, true
-	}
-
-	offset, err := decodeCursor(*req.Cursor)
-	if err != nil || offset < 0 {
-		writeValidationError(c, "cursor", "invalid cursor")
-		return 0, 0, false
-	}
-	return offset, size, true
-}
-
-func encodeCursor(offset int32) string {
-	return base64.RawURLEncoding.EncodeToString([]byte(strconv.FormatInt(int64(offset), 10)))
-}
-
-func decodeCursor(cursor string) (int32, error) {
-	decoded, err := base64.RawURLEncoding.DecodeString(cursor)
-	if err != nil {
-		return 0, err
-	}
-	n, err := strconv.ParseInt(string(decoded), 10, 32)
-	if err != nil {
-		return 0, err
-	}
-	return int32(n), nil
+	return min(int32(parsed), max)
 }

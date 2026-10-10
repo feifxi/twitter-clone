@@ -7,11 +7,23 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// Omitted fields are left unchanged; "" clears a field.
 type updateProfileRequest struct {
-	DisplayName *string `json:"displayName" binding:"omitempty,max=30"`
+	DisplayName *string `json:"displayName" binding:"omitempty,max=50"`
 	Bio         *string `json:"bio" binding:"omitempty,max=160"`
-	AvatarKey   *string `json:"avatarKey" binding:"omitempty"`
-	BannerKey   *string `json:"bannerKey" binding:"omitempty"`
+	Location    *string `json:"location" binding:"omitempty,max=30"`
+	Website     *string `json:"website" binding:"omitempty,max=100,http_url"`
+	AvatarKey   *string `json:"avatarKey" binding:"omitempty,max=200"`
+	BannerKey   *string `json:"bannerKey" binding:"omitempty,max=200"`
+}
+
+type onboardingRequest struct {
+	Username    string `json:"username" binding:"required,min=3,max=20"`
+	DisplayName string `json:"displayName" binding:"required,max=50"`
+}
+
+type usernameURIRequest struct {
+	Username string `uri:"username" binding:"required,max=20"`
 }
 
 // updateProfile godoc
@@ -41,6 +53,8 @@ func (s *Server) updateProfile(c *gin.Context) {
 	input := user.UpdateProfileInput{
 		DisplayName: req.DisplayName,
 		Bio:         req.Bio,
+		Location:    req.Location,
+		Website:     req.Website,
 		AvatarKey:   req.AvatarKey,
 		BannerKey:   req.BannerKey,
 	}
@@ -64,15 +78,15 @@ func (s *Server) updateProfile(c *gin.Context) {
 // @Failure		404	{object}	ErrorResponse
 // @Router			/users/{id} [get]
 func (s *Server) getUser(c *gin.Context) {
-	var req idURIRequest
-	if err := c.ShouldBindUri(&req); err != nil {
+	var path idURIRequest
+	if err := c.ShouldBindUri(&path); err != nil {
 		writeError(c, err)
 		return
 	}
 
 	viewerID := optionalViewerID(c)
 
-	u, err := s.svc.Users.Get(c.Request.Context(), req.ID, viewerID)
+	u, err := s.svc.Users.Get(c.Request.Context(), path.ID, viewerID)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -92,8 +106,8 @@ func (s *Server) getUser(c *gin.Context) {
 // @Security		BearerAuth
 // @Router			/users/{id}/follow [post]
 func (s *Server) followUser(c *gin.Context) {
-	var req idURIRequest
-	if err := c.ShouldBindUri(&req); err != nil {
+	var path idURIRequest
+	if err := c.ShouldBindUri(&path); err != nil {
 		writeError(c, err)
 		return
 	}
@@ -103,7 +117,7 @@ func (s *Server) followUser(c *gin.Context) {
 		return
 	}
 
-	_, err := s.svc.Users.Follow(c.Request.Context(), followerID, req.ID)
+	_, err := s.svc.Users.Follow(c.Request.Context(), followerID, path.ID)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -122,8 +136,8 @@ func (s *Server) followUser(c *gin.Context) {
 // @Security		BearerAuth
 // @Router			/users/{id}/follow [delete]
 func (s *Server) unfollowUser(c *gin.Context) {
-	var req idURIRequest
-	if err := c.ShouldBindUri(&req); err != nil {
+	var path idURIRequest
+	if err := c.ShouldBindUri(&path); err != nil {
 		writeError(c, err)
 		return
 	}
@@ -133,7 +147,7 @@ func (s *Server) unfollowUser(c *gin.Context) {
 		return
 	}
 
-	if err := s.svc.Users.Unfollow(c.Request.Context(), followerID, req.ID); err != nil {
+	if err := s.svc.Users.Unfollow(c.Request.Context(), followerID, path.ID); err != nil {
 		writeError(c, err)
 		return
 	}
@@ -151,26 +165,24 @@ func (s *Server) unfollowUser(c *gin.Context) {
 // @Success		200		{object}	PageResponse[UserResponse]
 // @Router			/users/{id}/followers [get]
 func (s *Server) listFollowers(c *gin.Context) {
-	var req idURIRequest
-	if err := c.ShouldBindUri(&req); err != nil {
+	var path idURIRequest
+	if err := c.ShouldBindUri(&path); err != nil {
 		writeError(c, err)
 		return
 	}
 
-	offset, size, ok := parseOffsetAndSize(c)
+	req, ok := parsePageRequest(c)
 	if !ok {
 		return
 	}
-	page := offset / size
 	viewerID := optionalViewerID(c)
-	users, err := s.svc.Users.Followers(c.Request.Context(), req.ID, page, size+1, viewerID)
+	users, err := s.svc.Users.Followers(c.Request.Context(), path.ID, req, viewerID)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 
-	response := newUserResponseList(users)
-	c.JSON(http.StatusOK, BuildPageResponse(response, size, offset))
+	c.JSON(http.StatusOK, newPageResponse(users, newUserResponse))
 }
 
 // listFollowing godoc
@@ -184,24 +196,75 @@ func (s *Server) listFollowers(c *gin.Context) {
 // @Success		200		{object}	PageResponse[UserResponse]
 // @Router			/users/{id}/following [get]
 func (s *Server) listFollowing(c *gin.Context) {
-	var req idURIRequest
-	if err := c.ShouldBindUri(&req); err != nil {
+	var path idURIRequest
+	if err := c.ShouldBindUri(&path); err != nil {
 		writeError(c, err)
 		return
 	}
 
-	offset, size, ok := parseOffsetAndSize(c)
+	req, ok := parsePageRequest(c)
 	if !ok {
 		return
 	}
-	page := offset / size
 	viewerID := optionalViewerID(c)
-	users, err := s.svc.Users.Following(c.Request.Context(), req.ID, page, size+1, viewerID)
+	users, err := s.svc.Users.Following(c.Request.Context(), path.ID, req, viewerID)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 
-	response := newUserResponseList(users)
-	c.JSON(http.StatusOK, BuildPageResponse(response, size, offset))
+	c.JSON(http.StatusOK, newPageResponse(users, newUserResponse))
+}
+
+// getUserByUsername godoc
+// @Summary		Get User by Username
+// @Description	Look a profile up by handle (case-insensitive).
+// @Tags			Users
+// @Produce		json
+// @Param			username	path		string	true	"Username"
+// @Success		200		{object}	UserResponse
+// @Failure		404		{object}	ErrorResponse
+// @Router			/users/by-username/{username} [get]
+func (s *Server) getUserByUsername(c *gin.Context) {
+	var path usernameURIRequest
+	if err := c.ShouldBindUri(&path); err != nil {
+		writeError(c, err)
+		return
+	}
+	u, err := s.svc.Users.GetByUsername(c.Request.Context(), path.Username, optionalViewerID(c))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, newUserResponse(u))
+}
+
+// completeOnboarding godoc
+// @Summary		Complete Onboarding
+// @Description	Choose a username (3-20 letters, numbers or underscores) and display name. Sign-up assigns a generated username until then.
+// @Tags			Users
+// @Accept			json
+// @Produce		json
+// @Param			request	body			onboardingRequest	true	"Chosen username and display name"
+// @Success		200		{object}	CurrentUserResponse
+// @Failure		400		{object}	ErrorResponse
+// @Failure		409		{object}	ErrorResponse	"username taken"
+// @Security		BearerAuth
+// @Router			/users/me/onboarding [post]
+func (s *Server) completeOnboarding(c *gin.Context) {
+	userID, ok := requireUserID(c)
+	if !ok {
+		return
+	}
+	var req onboardingRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeError(c, err)
+		return
+	}
+	u, err := s.svc.Users.CompleteOnboarding(c.Request.Context(), userID, req.Username, req.DisplayName)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, newCurrentUserResponse(u))
 }

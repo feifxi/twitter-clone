@@ -27,7 +27,8 @@ export function useAuth() {
 
   async function doLogout() {
     try {
-      await axiosInstance.post('/auth/logout');
+      // Ends only this device's session.
+      await axiosInstance.post('/auth/logout', { refreshToken: useAuthStore.getState().refreshToken });
     } finally {
       logout();
       queryClient.clear();

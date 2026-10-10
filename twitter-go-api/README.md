@@ -36,7 +36,7 @@ Media is served through CloudFront CDN.
 
 ## API Behavior (Important)
 
-- Pagination uses cursor model:
+- Pagination uses opaque keyset cursors (see `internal/pagination`):
   - Request: `cursor`, `size`
   - Response: `items`, `hasNext`, `nextCursor`
 - Request correlation:
@@ -96,11 +96,19 @@ make sqlc
 
 ## Testing
 
-Run all tests:
+```bash
+make test                      # unit tests (+ integration tests when TEST_DATABASE_URL is set)
+```
+
+Integration tests run the real SQL against Postgres and are skipped without `TEST_DATABASE_URL`. Use any throwaway database, for example:
 
 ```bash
-go test ./...
+docker run -d --name twm-test-pg -e POSTGRES_USER=test -e POSTGRES_PASSWORD=test \
+  -e POSTGRES_DB=twitter_test -p 55432:5432 pgvector/pgvector:pg16
+TEST_DATABASE_URL='postgres://test:test@localhost:55432/twitter_test?sslmode=disable' make test
 ```
+
+After editing `internal/db/queries`, run `make sqlc` to regenerate both the query code and `dbtest.MockStore`.
 
 ## Production Operations Baseline
 
@@ -115,9 +123,6 @@ Monitoring baseline:
 - Create alert rules for sustained 5xx spikes and failing readiness probes
 - Use `requestId` from API error response to correlate app logs for incident triage
 
-Integration test note:
-- `internal/db/store_integration_test.go` uses `TEST_DATABASE_URL`
-- It is skipped when `TEST_DATABASE_URL` is not set
 
 ## Main Directories
 

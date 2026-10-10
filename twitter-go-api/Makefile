@@ -33,8 +33,10 @@ migrateup:
 migratedown:
 	migrate -path internal/db/migrations -database "$(DB_URL)" -verbose down
 
+# Regenerates query code and the dbtest.MockStore built from it.
 sqlc:
 	sqlc generate
+	go generate ./internal/db/...
 
 swagger:
 	swag init -g cmd/api/main.go --parseInternal

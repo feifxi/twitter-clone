@@ -7,6 +7,7 @@ import (
 
 	"github.com/chanombude/twitter-go-api/internal/db"
 	"github.com/chanombude/twitter-go-api/internal/domain"
+	"github.com/chanombude/twitter-go-api/internal/pagination"
 )
 
 // EventType is the realtime event name for a new notification.
@@ -25,16 +26,26 @@ func New(store db.Store, publisher publisher) *Service {
 	return &Service{store: store, publisher: publisher}
 }
 
-func (s *Service) List(ctx context.Context, userID int64, page, size int32) ([]domain.Notification, error) {
+func (s *Service) List(ctx context.Context, userID int64, req pagination.Request) (pagination.Page[domain.Notification], error) {
 	rows, err := s.store.ListNotifications(ctx, db.ListNotificationsParams{
 		RecipientID: userID,
-		Limit:       size,
-		Offset:      page * size,
+		CursorTime:  req.AfterTime(),
+		CursorID:    req.AfterID(),
+		PageLimit:   req.FetchLimit(),
 	})
 	if err != nil {
-		return nil, err
+		return pagination.Page[domain.Notification]{}, err
 	}
-	return s.hydrate(ctx, rows)
+
+	rows, more := pagination.Trim(rows, req.Limit)
+	items, err := s.hydrate(ctx, rows)
+	if err != nil {
+		return pagination.Page[domain.Notification]{}, err
+	}
+	next := pagination.NextFrom(rows, more, func(n db.Notification) pagination.Cursor {
+		return pagination.Cursor{Time: n.CreatedAt, ID: n.ID}
+	})
+	return pagination.Page[domain.Notification]{Items: items, Next: next}, nil
 }
 
 func (s *Service) CountUnread(ctx context.Context, userID int64) (int64, error) {

@@ -1,9 +1,9 @@
 -- name: UpsertHashtag :one
 INSERT INTO hashtags (text, usage_count, last_used_at)
-VALUES ($1, 1, CURRENT_TIMESTAMP)
+VALUES ($1, 1, now())
 ON CONFLICT (text) DO UPDATE
 SET usage_count = hashtags.usage_count + 1,
-    last_used_at = CURRENT_TIMESTAMP
+    last_used_at = now()
 RETURNING *;
 
 -- name: LinkTweetHashtag :exec
@@ -13,16 +13,16 @@ ON CONFLICT DO NOTHING;
 
 -- name: SearchHashtagsByPrefix :many
 SELECT * FROM hashtags
-WHERE LOWER(text) LIKE LOWER($1 || '%')
+WHERE text LIKE lower(sqlc.arg('prefix')) || '%'
 ORDER BY usage_count DESC
-LIMIT $2;
+LIMIT sqlc.arg('result_limit');
 
 -- name: GetTrendingHashtagsLast24h :many
 SELECT h.*
 FROM hashtags h
 JOIN tweet_hashtags th ON th.hashtag_id = h.id
 JOIN tweets t ON t.id = th.tweet_id
-WHERE t.created_at >= NOW() - INTERVAL '24 hours'
+WHERE t.created_at >= now() - INTERVAL '24 hours'
 GROUP BY h.id
 ORDER BY COUNT(th.tweet_id) DESC, MAX(t.created_at) DESC
 LIMIT $1;
@@ -32,21 +32,23 @@ SELECT * FROM hashtags
 ORDER BY usage_count DESC, last_used_at DESC
 LIMIT $1;
 
--- name: ListHashtagUsageToDecrementForDeleteRoot :many
-WITH RECURSIVE tweet_tree AS (
+-- name: ListHashtagUsageInThread :many
+-- Hashtag uses in a tweet and every reply under it. Read before deleting the
+-- thread, because ON DELETE CASCADE removes the tweet_hashtags rows.
+WITH RECURSIVE thread AS (
   SELECT t.id FROM tweets t WHERE t.id = $1
   UNION ALL
-  SELECT t.id FROM tweets t INNER JOIN tweet_tree tt ON t.parent_id = tt.id OR t.retweet_id = tt.id
+  SELECT t.id FROM tweets t JOIN thread ON t.parent_id = thread.id
 )
-SELECT th.hashtag_id, COUNT(th.hashtag_id)::integer AS decrement_by
+SELECT th.hashtag_id, COUNT(*)::integer AS uses
 FROM tweet_hashtags th
-JOIN tweet_tree tt ON th.tweet_id = tt.id
+JOIN thread ON th.tweet_id = thread.id
 GROUP BY th.hashtag_id;
 
--- name: DecrementHashtagUsageBy :exec
+-- name: DecrementHashtagUsage :exec
 UPDATE hashtags
-SET usage_count = GREATEST(0, usage_count - $2)
-WHERE id = $1;
+SET usage_count = GREATEST(0, usage_count - sqlc.arg('uses')::integer)
+WHERE id = sqlc.arg('id');
 
 -- name: DeleteUnusedHashtag :exec
 DELETE FROM hashtags

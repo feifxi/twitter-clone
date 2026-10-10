@@ -10,6 +10,7 @@ import (
 	"github.com/chanombude/twitter-go-api/internal/apperr"
 	"github.com/chanombude/twitter-go-api/internal/db"
 	"github.com/chanombude/twitter-go-api/internal/domain"
+	"github.com/chanombude/twitter-go-api/internal/pagination"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -56,138 +57,111 @@ func (s *Service) fetchSender(ctx context.Context, senderID int64) (domain.User,
 	return domain.NewUser(rows[0].User, rows[0].IsFollowing), nil
 }
 
-func (s *Service) Conversations(ctx context.Context, userID int64, page, size int32) ([]domain.Conversation, error) {
+// Conversations lists the user's conversations, most recently active first.
+func (s *Service) Conversations(ctx context.Context, userID int64, req pagination.Request) (pagination.Page[domain.Conversation], error) {
 	rows, err := s.store.ListUserConversations(ctx, db.ListUserConversationsParams{
-		UserID: userID,
-		Limit:  size,
-		Offset: page * size,
+		UserID:     userID,
+		CursorTime: req.AfterTime(),
+		CursorID:   req.AfterID(),
+		PageLimit:  req.FetchLimit(),
 	})
 	if err != nil {
-		return nil, err
+		return pagination.Page[domain.Conversation]{}, err
 	}
-	if len(rows) == 0 {
-		return []domain.Conversation{}, nil
-	}
+	rows, more := pagination.Trim(rows, req.Limit)
 
-	idSet := make(map[int64]struct{}, len(rows)*2)
+	ids := make([]int64, 0, len(rows)*2)
 	for _, r := range rows {
-		idSet[r.User.ID] = struct{}{}
-		idSet[r.LastSenderID] = struct{}{}
+		ids = append(ids, r.User.ID, r.LastSenderID)
 	}
-
-	ids := make([]int64, 0, len(idSet))
-	for id := range idSet {
-		ids = append(ids, id)
-	}
-
-	viewerID := userID
-	users, err := s.store.GetUsersByIDs(ctx, db.GetUsersByIDsParams{
-		ViewerID: &viewerID,
-		UserIds:  ids,
-	})
+	users, err := s.loadUsers(ctx, ids, userID)
 	if err != nil {
-		return nil, err
-	}
-
-	userMap := make(map[int64]domain.User, len(users))
-	for _, row := range users {
-		userMap[row.User.ID] = domain.NewUser(row.User, row.IsFollowing)
+		return pagination.Page[domain.Conversation]{}, err
 	}
 
 	items := make([]domain.Conversation, 0, len(rows))
 	for _, r := range rows {
-		peer, ok := userMap[r.User.ID]
-		if !ok {
-			continue
-		}
-		lastSender, ok := userMap[r.LastSenderID]
-		if !ok {
-			continue
-		}
-
 		items = append(items, domain.Conversation{
 			ID:        r.ConversationID,
-			Peer:      peer,
+			Peer:      users[r.User.ID],
 			UpdatedAt: r.ConversationUpdatedAt,
 			LastMessage: domain.Message{
 				ID:             r.LastMessageID,
 				ConversationID: r.ConversationID,
-				Sender:         lastSender,
+				Sender:         users[r.LastSenderID],
 				Content:        r.LastMessageContent,
 				CreatedAt:      r.LastMessageCreatedAt,
 			},
 		})
 	}
-
-	return items, nil
+	next := pagination.NextFrom(rows, more, func(r db.ListUserConversationsRow) pagination.Cursor {
+		return pagination.Cursor{Time: r.LastMessageCreatedAt, ID: r.ConversationID}
+	})
+	return pagination.Page[domain.Conversation]{Items: items, Next: next}, nil
 }
 
-func (s *Service) Messages(ctx context.Context, userID, conversationID int64, page, size int32) ([]domain.Message, error) {
-	allowed, err := s.store.IsConversationParticipant(ctx, db.IsConversationParticipantParams{
-		ConversationID: conversationID,
-		UserID:         userID,
-	})
+// Messages pages backwards through a conversation: each page holds older messages,
+// returned oldest-first so they render top to bottom.
+func (s *Service) Messages(ctx context.Context, userID, conversationID int64, req pagination.Request) (pagination.Page[domain.Message], error) {
+	allowed, err := s.store.IsConversationParticipant(ctx, db.IsConversationParticipantParams{ConversationID: conversationID, UserID: userID})
 	if err != nil {
-		return nil, err
+		return pagination.Page[domain.Message]{}, err
 	}
 	if !allowed {
-		return nil, apperr.Forbidden("not allowed to access this conversation")
+		return pagination.Page[domain.Message]{}, apperr.Forbidden("not allowed to access this conversation")
 	}
 
 	rows, err := s.store.ListConversationMessages(ctx, db.ListConversationMessagesParams{
 		ConversationID: conversationID,
-		Limit:          size,
-		Offset:         page * size,
+		CursorTime:     req.AfterTime(),
+		CursorID:       req.AfterID(),
+		PageLimit:      req.FetchLimit(),
 	})
 	if err != nil {
-		return nil, err
+		return pagination.Page[domain.Message]{}, err
 	}
-	if len(rows) == 0 {
-		return []domain.Message{}, nil
-	}
+	rows, more := pagination.Trim(rows, req.Limit)
+	// rows are newest-first, so the last one is the oldest: the next page continues from it.
+	next := pagination.NextFrom(rows, more, func(m db.DirectMessage) pagination.Cursor {
+		return pagination.Cursor{Time: m.CreatedAt, ID: m.ID}
+	})
 
 	ids := make([]int64, 0, len(rows))
-	seen := make(map[int64]struct{}, len(rows))
-	for _, row := range rows {
-		if _, ok := seen[row.SenderID]; ok {
-			continue
-		}
-		seen[row.SenderID] = struct{}{}
-		ids = append(ids, row.SenderID)
+	for _, r := range rows {
+		ids = append(ids, r.SenderID)
 	}
-
-	viewerID := userID
-	users, err := s.store.GetUsersByIDs(ctx, db.GetUsersByIDsParams{
-		ViewerID: &viewerID,
-		UserIds:  ids,
-	})
+	users, err := s.loadUsers(ctx, ids, userID)
 	if err != nil {
-		return nil, err
-	}
-
-	userMap := make(map[int64]domain.User, len(users))
-	for _, row := range users {
-		userMap[row.User.ID] = domain.NewUser(row.User, row.IsFollowing)
+		return pagination.Page[domain.Message]{}, err
 	}
 
 	items := make([]domain.Message, 0, len(rows))
 	for i := len(rows) - 1; i >= 0; i-- {
-		row := rows[i] // rows are DESC in SQL; reverse to ASC for chat rendering.
-		sender, ok := userMap[row.SenderID]
-		if !ok {
-			continue
-		}
-
+		r := rows[i]
 		items = append(items, domain.Message{
-			ID:             row.ID,
-			ConversationID: row.ConversationID,
-			Sender:         sender,
-			Content:        row.Content,
-			CreatedAt:      row.CreatedAt,
+			ID:             r.ID,
+			ConversationID: r.ConversationID,
+			Sender:         users[r.SenderID],
+			Content:        r.Content,
+			CreatedAt:      r.CreatedAt,
 		})
 	}
+	return pagination.Page[domain.Message]{Items: items, Next: next}, nil
+}
 
-	return items, nil
+func (s *Service) loadUsers(ctx context.Context, ids []int64, viewerID int64) (map[int64]domain.User, error) {
+	users := make(map[int64]domain.User, len(ids))
+	if len(ids) == 0 {
+		return users, nil
+	}
+	rows, err := s.store.GetUsersByIDs(ctx, db.GetUsersByIDsParams{UserIds: ids, ViewerID: &viewerID})
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		users[r.User.ID] = domain.NewUser(r.User, r.IsFollowing)
+	}
+	return users, nil
 }
 
 // SendToUser sends to the direct conversation with recipientID, creating it on first contact.

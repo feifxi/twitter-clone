@@ -11,94 +11,11 @@ import (
 
 	"github.com/chanombude/twitter-go-api/internal/auth"
 	"github.com/chanombude/twitter-go-api/internal/domain"
+	"github.com/chanombude/twitter-go-api/internal/pagination"
 	"github.com/chanombude/twitter-go-api/internal/tweet"
 	"github.com/chanombude/twitter-go-api/internal/user"
 	"github.com/gin-gonic/gin"
 )
-
-type fakeTweets struct {
-	createTweetFn func(ctx context.Context, input tweet.CreateInput) (domain.Tweet, error)
-}
-
-func (m *fakeTweets) Create(ctx context.Context, input tweet.CreateInput) (domain.Tweet, error) {
-	return m.createTweetFn(ctx, input)
-}
-func (m *fakeTweets) Delete(context.Context, int64, int64) error { return nil }
-func (m *fakeTweets) Get(context.Context, int64, *int64) (domain.Tweet, error) {
-	return domain.Tweet{}, nil
-}
-func (m *fakeTweets) ListReplies(context.Context, int64, int32, int32, *int64) ([]domain.Tweet, error) {
-	return nil, nil
-}
-func (m *fakeTweets) Like(context.Context, int64, int64) error   { return nil }
-func (m *fakeTweets) Unlike(context.Context, int64, int64) error { return nil }
-func (m *fakeTweets) Retweet(context.Context, int64, int64) (domain.Tweet, error) {
-	return domain.Tweet{}, nil
-}
-func (m *fakeTweets) UndoRetweet(context.Context, int64, int64) error { return nil }
-
-type fakeUsers struct {
-	updateProfileFn func(ctx context.Context, userID int64, input user.UpdateProfileInput) (domain.User, error)
-	listFollowersFn func(ctx context.Context, targetUserID int64, page, size int32, viewerID *int64) ([]domain.User, error)
-	followUserFn    func(ctx context.Context, followerID, targetUserID int64) (bool, error)
-}
-
-func (m *fakeUsers) Get(context.Context, int64, *int64) (domain.User, error) {
-	return domain.User{}, nil
-}
-func (m *fakeUsers) UpdateProfile(ctx context.Context, userID int64, input user.UpdateProfileInput) (domain.User, error) {
-	return m.updateProfileFn(ctx, userID, input)
-}
-func (m *fakeUsers) Follow(ctx context.Context, followerID, targetUserID int64) (bool, error) {
-	if m.followUserFn != nil {
-		return m.followUserFn(ctx, followerID, targetUserID)
-	}
-	return true, nil
-}
-func (m *fakeUsers) Unfollow(context.Context, int64, int64) error { return nil }
-func (m *fakeUsers) Followers(ctx context.Context, targetUserID int64, page, size int32, viewerID *int64) ([]domain.User, error) {
-	if m.listFollowersFn != nil {
-		return m.listFollowersFn(ctx, targetUserID, page, size, viewerID)
-	}
-	return nil, nil
-}
-func (m *fakeUsers) Following(context.Context, int64, int32, int32, *int64) ([]domain.User, error) {
-	return nil, nil
-}
-
-type fakeFeeds struct {
-	getGlobalFeedFn func(ctx context.Context, page, size int32, viewerID *int64) ([]domain.Tweet, error)
-}
-
-func (m *fakeFeeds) Global(ctx context.Context, page, size int32, viewerID *int64) ([]domain.Tweet, error) {
-	return m.getGlobalFeedFn(ctx, page, size, viewerID)
-}
-func (m *fakeFeeds) Following(context.Context, int64, int32, int32) ([]domain.Tweet, error) {
-	return nil, nil
-}
-func (m *fakeFeeds) ForUser(context.Context, int64, int32, int32, *int64) ([]domain.Tweet, error) {
-	return nil, nil
-}
-
-type fakeAuth struct {
-	refreshSessionFn func(ctx context.Context, refreshToken string) (auth.Session, error)
-	logoutFn         func(ctx context.Context, userID *int64, refreshToken *string)
-}
-
-func (m *fakeAuth) LoginWithGoogle(context.Context, string) (auth.Session, error) {
-	return auth.Session{}, nil
-}
-func (m *fakeAuth) Refresh(ctx context.Context, refreshToken string) (auth.Session, error) {
-	return m.refreshSessionFn(ctx, refreshToken)
-}
-func (m *fakeAuth) Logout(ctx context.Context, userID *int64, refreshToken *string) {
-	if m.logoutFn != nil {
-		m.logoutFn(ctx, userID, refreshToken)
-	}
-}
-func (m *fakeAuth) Me(context.Context, int64) (domain.User, error) {
-	return domain.User{}, nil
-}
 
 func TestCreateTweetSuccessPassesMediaKey(t *testing.T) {
 	t.Parallel()
@@ -106,7 +23,7 @@ func TestCreateTweetSuccessPassesMediaKey(t *testing.T) {
 	var gotMediaKey string
 	called := false
 	mock := &fakeTweets{
-		createTweetFn: func(_ context.Context, input tweet.CreateInput) (domain.Tweet, error) {
+		createFn: func(_ context.Context, input tweet.CreateInput) (domain.Tweet, error) {
 			called = true
 			if input.MediaKey == nil {
 				t.Fatal("expected media key input")
@@ -191,7 +108,7 @@ func TestRefreshTokenSuccessSetsTokensInResponse(t *testing.T) {
 	t.Parallel()
 
 	mock := &fakeAuth{
-		refreshSessionFn: func(_ context.Context, refreshToken string) (auth.Session, error) {
+		refreshFn: func(_ context.Context, refreshToken string) (auth.Session, error) {
 			if refreshToken != "r-old" {
 				t.Fatalf("unexpected refresh token: %s", refreshToken)
 			}
@@ -227,134 +144,100 @@ func TestRefreshTokenSuccessSetsTokensInResponse(t *testing.T) {
 	}
 }
 
-func TestLogoutWithAuthPayloadCallsUsecaseWithUserID(t *testing.T) {
+func TestLogoutEndsTheSessionOfTheGivenRefreshToken(t *testing.T) {
 	t.Parallel()
 
-	called := false
-	mock := &fakeAuth{
-		logoutFn: func(_ context.Context, userID *int64, refreshToken *string) {
-			called = true
-			if userID == nil || *userID != 77 {
-				t.Fatalf("expected userID=77, got %+v", userID)
-			}
-			if refreshToken != nil {
-				t.Fatalf("expected nil refresh token, got %v", *refreshToken)
-			}
-		},
-	}
+	var got string
+	fake := &fakeAuth{logoutFn: func(_ context.Context, refreshToken string) error {
+		got = refreshToken
+		return nil
+	}}
 
-	ctx, rec := newHandlerTestContext(http.MethodPost, "/api/v1/auth/logout", nil, "")
-	setAuthorizedUser(ctx, 77)
-
-	s := &Server{svc: Services{Auth: mock}}
-	s.logout(ctx)
+	ctx, rec := newHandlerTestContext(http.MethodPost, "/api/v1/auth/logout", bytes.NewBufferString(`{"refreshToken":"r-1"}`), "application/json")
+	(&Server{svc: Services{Auth: fake}}).logout(ctx)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
-	if !called {
-		t.Fatal("expected logout service to be called")
+	if got != "r-1" {
+		t.Fatalf("expected the body's refresh token to be revoked, got %q", got)
 	}
 }
 
-func TestGetGlobalFeedReturnsItemsAndHasNext(t *testing.T) {
+func TestGetGlobalFeedPassesPageRequestAndEncodesNextCursor(t *testing.T) {
 	t.Parallel()
 
-	var gotSize int32
-	mock := &fakeFeeds{
-		getGlobalFeedFn: func(_ context.Context, _ int32, size int32, _ *int64) ([]domain.Tweet, error) {
-			gotSize = size
-			now := time.Now()
-			return []domain.Tweet{
-				{ID: 1, CreatedAt: now, Author: domain.User{ID: 11, Username: "u1", Email: "u1@example.com"}},
-				{ID: 2, CreatedAt: now, Author: domain.User{ID: 12, Username: "u2", Email: "u2@example.com"}},
-				{ID: 3, CreatedAt: now, Author: domain.User{ID: 13, Username: "u3", Email: "u3@example.com"}},
-			}, nil
-		},
-	}
+	var got pagination.Request
+	fake := &fakeFeeds{globalFn: func(_ context.Context, req pagination.Request, _ *int64) (pagination.Page[domain.Tweet], error) {
+		got = req
+		return pagination.Page[domain.Tweet]{
+			Items: []domain.Tweet{{ID: 1, CreatedAt: time.Now(), Author: domain.User{ID: 11, Email: "u1@example.com"}}},
+			Next:  &pagination.Cursor{ID: 1},
+		}, nil
+	}}
 
-	ctx, rec := newHandlerTestContext(http.MethodGet, "/api/v1/feeds/global?size=2", nil, "")
-	s := &Server{svc: Services{Feeds: mock}}
-	s.getGlobalFeed(ctx)
+	cursor := pagination.Encode(pagination.Cursor{ID: 5})
+	ctx, rec := newHandlerTestContext(http.MethodGet, "/api/v1/feeds/global?size=2&cursor="+cursor, nil, "")
+	(&Server{svc: Services{Feeds: fake}}).getGlobalFeed(ctx)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d, body=%s", rec.Code, rec.Body.String())
 	}
-	if gotSize != 3 {
-		t.Fatalf("expected service size=3 (size+1), got %d", gotSize)
+	if got.Limit != 2 || got.After == nil || got.After.ID != 5 {
+		t.Fatalf("unexpected page request: %+v", got)
 	}
 
-	var got struct {
-		Items []struct {
-			ID int64 `json:"id"`
-		} `json:"items"`
-		HasNext    bool    `json:"hasNext"`
-		NextCursor *string `json:"nextCursor"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+	var body PageResponse[TweetResponse]
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("invalid json response: %v", err)
 	}
-	if len(got.Items) != 2 {
-		t.Fatalf("expected 2 items after trim, got %d", len(got.Items))
+	if len(body.Items) != 1 || !body.HasNext || body.NextCursor == nil {
+		t.Fatalf("unexpected page: %+v", body)
 	}
-	if !got.HasNext {
-		t.Fatal("expected hasNext=true")
+	if next, err := pagination.Decode(*body.NextCursor); err != nil || next.ID != 1 {
+		t.Fatalf("next cursor does not round-trip: %v %+v", err, next)
 	}
-	if got.NextCursor == nil || *got.NextCursor == "" {
-		t.Fatal("expected nextCursor to be set")
-	}
-	if got.Items[0].ID != 1 || got.Items[1].ID != 2 {
-		t.Fatalf("unexpected trimmed items: %+v", got.Items)
+	if strings.Contains(rec.Body.String(), "u1@example.com") {
+		t.Fatal("feed must not leak author emails")
 	}
 }
 
-func TestListFollowersReturnsItemsAndHasNext(t *testing.T) {
+func TestPageRequestValidation(t *testing.T) {
 	t.Parallel()
 
-	var gotSize int32
-	mock := &fakeUsers{
-		listFollowersFn: func(_ context.Context, targetUserID int64, _ int32, size int32, _ *int64) ([]domain.User, error) {
-			gotSize = size
-			if targetUserID != 99 {
-				t.Fatalf("expected targetUserID=99, got %d", targetUserID)
-			}
-			return []domain.User{
-				{ID: 1, Username: "a", Email: "a@example.com"},
-				{ID: 2, Username: "b", Email: "b@example.com"},
-				{ID: 3, Username: "c", Email: "c@example.com"},
-			}, nil
-		},
+	for _, query := range []string{"?cursor=not-a-cursor", "?size=0", "?size=abc"} {
+		ctx, rec := newHandlerTestContext(http.MethodGet, "/api/v1/feeds/global"+query, nil, "")
+		(&Server{svc: Services{Feeds: &fakeFeeds{}}}).getGlobalFeed(ctx)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("%s: expected 400, got %d", query, rec.Code)
+		}
 	}
 
-	ctx, rec := newHandlerTestContext(http.MethodGet, "/api/v1/users/99/followers?size=2", nil, "")
+	ctx, _ := newHandlerTestContext(http.MethodGet, "/x?size=500", nil, "")
+	req, ok := parsePageRequest(ctx)
+	if !ok || req.Limit != pagination.MaxLimit {
+		t.Fatalf("expected size to be capped at %d, got %+v", pagination.MaxLimit, req)
+	}
+}
+
+func TestListFollowersUsesPathIDAndPage(t *testing.T) {
+	t.Parallel()
+
+	var gotID int64
+	fake := &fakeUsers{followersFn: func(_ context.Context, userID int64, req pagination.Request, _ *int64) (pagination.Page[domain.User], error) {
+		gotID = userID
+		return pagination.Page[domain.User]{Items: []domain.User{{ID: 1, Username: "a"}}}, nil
+	}}
+
+	ctx, rec := newHandlerTestContext(http.MethodGet, "/api/v1/users/99/followers", nil, "")
 	ctx.Params = gin.Params{gin.Param{Key: "id", Value: "99"}}
-	s := &Server{svc: Services{Users: mock}}
-	s.listFollowers(ctx)
+	(&Server{svc: Services{Users: fake}}).listFollowers(ctx)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d, body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK || gotID != 99 {
+		t.Fatalf("expected 200 for user 99, got %d (id %d)", rec.Code, gotID)
 	}
-	if gotSize != 3 {
-		t.Fatalf("expected service size=3 (size+1), got %d", gotSize)
-	}
-
-	var got struct {
-		Items []struct {
-			ID int64 `json:"id"`
-		} `json:"items"`
-		HasNext    bool    `json:"hasNext"`
-		NextCursor *string `json:"nextCursor"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatalf("invalid json response: %v", err)
-	}
-	if len(got.Items) != 2 {
-		t.Fatalf("expected 2 items after trim, got %d", len(got.Items))
-	}
-	if !got.HasNext {
-		t.Fatal("expected hasNext=true")
-	}
-	if got.NextCursor == nil || *got.NextCursor == "" {
-		t.Fatal("expected nextCursor to be set")
+	var body PageResponse[UserResponse]
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || len(body.Items) != 1 || body.HasNext {
+		t.Fatalf("unexpected page: %+v (%v)", body, err)
 	}
 }

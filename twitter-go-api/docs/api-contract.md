@@ -10,8 +10,9 @@ Base URL: `/api/v1`
 
 ## Common Query Params
 - Pagination (where supported):
-  1. `cursor` (opaque token from previous response `nextCursor`)
-  2. `size` (default `20`, max `50`)
+  1. `cursor`: opaque token from the previous response's `nextCursor`. Don't parse or build it.
+  2. `size`: default `20`, max `50`.
+- Chronological lists use keyset cursors (the sort key of the last item seen), so new posts never shift or duplicate items between pages. The ranked "For You" feed fixes its ranking time on the first page. Relevance-ranked search pages by offset.
 
 ## PageResponse<T>
 ```json
@@ -42,10 +43,14 @@ Base URL: `/api/v1`
   "username": "alice",
   "displayName": "Alice",
   "bio": "hello",
+  "location": "Bangkok",
+  "website": "https://example.com",
   "avatarUrl": "https://d1234.cloudfront.net/avatars/1/0b1c....jpg",
+  "bannerUrl": null,
   "isFollowing": false,
   "followersCount": 10,
-  "followingCount": 20
+  "followingCount": 20,
+  "createdAt": "2026-03-01T00:00:00Z"
 }
 ```
 
@@ -71,12 +76,14 @@ Base URL: `/api/v1`
   "retweetCount": 0,
   "isLiked": false,
   "isRetweeted": false,
-  "retweetedTweet": { "...TweetResponse" },
   "replyToTweetId": 123,
   "replyToUsername": "alice",
-  "createdAt": "2026-03-02T00:00:00Z"
+  "createdAt": "2026-03-02T00:00:00Z",
+  "retweetedBy": null,
+  "retweetedAt": null
 }
 ```
+- In timelines (following feed, profile posts) a retweet appears as the **original tweet** with `retweetedBy` (UserResponse) and `retweetedAt` set: "bob reposted". The same tweet can therefore appear twice in a list (as posted and as retweeted), so key list items by `retweetedBy.id` + `id`.
 
 ### HashtagResponse
 ```json
@@ -122,22 +129,21 @@ Body:
 ```json
 { "refreshToken": "string" }
 ```
-Response 200: `AuthResponse`
+Response 200: `AuthResponse` with a **new** refresh token. Each refresh token works once (rotation), so clients must store the new one and must not send concurrent refreshes with the same token.
 
 ### POST `/auth/logout`
-Body (Optional):
+Body:
 ```json
 { "refreshToken": "string" }
 ```
-- If `Authorization` header is present, it revokes the session associated with the access token.
-- If `refreshToken` is provided in the body, it explicitly revokes that refresh token.
+- Ends the session (device) the refresh token belongs to. Other devices stay signed in.
 Response 200:
 ```json
 { "success": true }
 ```
 
 ### GET `/auth/me` (private)
-Response 200: `CurrentUserResponse`: `UserResponse` plus `"email"`. Email is never included in public `UserResponse`s; `AuthResponse.user` is also a `CurrentUserResponse`.
+Response 200: `CurrentUserResponse`: `UserResponse` plus `"email"` and `"onboarded"` (false until the user has chosen a username). Email is never included in public `UserResponse`s; `AuthResponse.user` is also a `CurrentUserResponse`.
 
 ## Uploads
 
@@ -169,16 +175,37 @@ Response 200:
 ### GET `/users/:id` (optional auth)
 Response 200: `UserResponse`
 
+### GET `/users/by-username/:username` (optional auth)
+Case-insensitive lookup. Response 200: `UserResponse`; 404 when no such user.
+
+### POST `/users/me/onboarding` (private)
+Body:
+```json
+{ "username": "alice_99", "displayName": "Alice" }
+```
+- `username`: 3-20 letters, numbers or underscores; unique regardless of case (409 `CONFLICT` when taken).
+Response 200: `CurrentUserResponse` (with `onboarded: true`)
+
+### Profile tabs (optional auth)
+All take `cursor`, `size` and return `PageResponse<TweetResponse>`, newest first.
+- GET `/users/:id/posts`: top-level tweets and retweets
+- GET `/users/:id/replies`: replies the user wrote
+- GET `/users/:id/media`: tweets with an image or video
+- GET `/users/:id/likes` (private): tweets the user liked; 403 for anyone but the user themselves
+
 ### PUT `/users/profile` (private)
 Body:
 ```json
 {
   "displayName": "Alice",
   "bio": "hello world",
+  "location": "Bangkok",
+  "website": "https://example.com",
   "avatarKey": "avatars/42/0b1c....jpg",
   "bannerKey": ""
 }
 ```
+- Every field is optional: omit to keep the current value, `""` to clear it. `website` must be an http(s) URL.
 - `avatarKey` / `bannerKey`: omit to keep the current image, `""` to remove it, or an object key from the presign endpoint (must be in `avatars/{yourId}/` or `banners/{yourId}/`).
 
 Response 200: `UserResponse`
@@ -226,7 +253,7 @@ Response 200:
 ```
 
 ### POST `/tweets/:id/retweet` (private)
-Response 200: `TweetResponse`
+Idempotent. Response 200: the retweeted `TweetResponse` (with `isRetweeted: true`).
 
 ### DELETE `/tweets/:id/retweet` (private)
 Response 200:
@@ -240,11 +267,8 @@ Response 200:
 Query: `cursor`, `size`
 Response 200: `PageResponse<TweetResponse>`
 
-### GET `/feeds/user/:id` (optional auth)
-Query: `cursor`, `size`
-Response 200: `PageResponse<TweetResponse>`
-
 ### GET `/feeds/following` (private)
+Tweets and retweets by accounts you follow, newest first.
 Query: `cursor`, `size`
 Response 200: `PageResponse<TweetResponse>`
 

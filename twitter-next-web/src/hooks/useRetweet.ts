@@ -6,36 +6,15 @@ import { useUpdateTweetCache } from './useOptimisticTweetUpdate';
 
 import { useAuth } from '@/hooks/useAuth';
 
-function toggleRetweetInTweet(
-  t: TweetResponse,
-  tweetId: number,
-  retweeted: boolean,
-  currentUserId?: number
-): TweetResponse | null {
-  // If un-retweeting (retweeted === false)
-  if (!retweeted && currentUserId) {
-    // Logic: If this tweet is a Retweet Wrapper (t.retweetedTweet exists) AND
-    // the wrapper's author is ME (t.user.id === currentUserId) AND
-    // the original tweet ID matches the target tweetId (t.retweetedTweet.id === tweetId)
-    // THEN: Delete this wrapper from my feed view.
-    if (t.retweetedTweet?.id === tweetId && t.user.id === currentUserId) {
-      return null; // Delete!
-    }
+/**
+ * Applies a (un)retweet to a cached tweet. Undoing removes the timeline entry
+ * that exists only because the current user retweeted it.
+ */
+function toggleRetweetInTweet(t: TweetResponse, retweeted: boolean, currentUserId?: number): TweetResponse | null {
+  if (!retweeted && currentUserId !== undefined && t.retweetedBy?.id === currentUserId) {
+    return null;
   }
-
-  const delta = retweeted ? 1 : -1;
-  const update = (x: TweetResponse) =>
-    x.id === tweetId
-      ? { ...x, isRetweeted: retweeted, retweetCount: Math.max(0, x.retweetCount + delta) }
-      : x;
-
-  if (t.id === tweetId) return update(t) as TweetResponse;
-
-  // If it's a wrapper but NOT my wrapper (or I'm not unretweeting), just update the inner content
-  if (t.retweetedTweet?.id === tweetId)
-    return { ...t, retweetedTweet: update(t.retweetedTweet) as TweetResponse };
-
-  return t;
+  return { ...t, isRetweeted: retweeted, retweetCount: Math.max(0, t.retweetCount + (retweeted ? 1 : -1)) };
 }
 
 export function useRetweet() {
@@ -54,7 +33,7 @@ export function useRetweet() {
       await queryClient.cancelQueries({ queryKey: ['tweets'] });
       await queryClient.cancelQueries({ queryKey: ['search'] });
 
-      updateTweetCache(tweetId, (t) => toggleRetweetInTweet(t, tweetId, true, currentUserId));
+      updateTweetCache(tweetId, (t) => toggleRetweetInTweet(t, true, currentUserId));
     },
     onError: () => {
       queryClient.invalidateQueries({ queryKey: ['feeds'] });
@@ -83,7 +62,7 @@ export function useUnretweet() {
       await queryClient.cancelQueries({ queryKey: ['tweets'] });
       await queryClient.cancelQueries({ queryKey: ['search'] });
 
-      updateTweetCache(tweetId, (t) => toggleRetweetInTweet(t, tweetId, false, currentUserId));
+      updateTweetCache(tweetId, (t) => toggleRetweetInTweet(t, false, currentUserId));
     },
     onError: () => {
       queryClient.invalidateQueries({ queryKey: ['feeds'] });

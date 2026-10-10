@@ -35,6 +35,8 @@ definitions:
         type: string
       bio:
         type: string
+      createdAt:
+        type: string
       displayName:
         type: string
       email:
@@ -47,7 +49,14 @@ definitions:
         type: integer
       isFollowing:
         type: boolean
+      location:
+        type: string
+      onboarded:
+        description: Onboarded is false until the user has chosen their own username.
+        type: boolean
       username:
+        type: string
+      website:
         type: string
     type: object
   httpapi.ErrorResponse:
@@ -218,8 +227,13 @@ definitions:
         type: string
       retweetCount:
         type: integer
-      retweetedTweet:
-        $ref: '#/definitions/httpapi.TweetResponse'
+      retweetedAt:
+        type: string
+      retweetedBy:
+        allOf:
+        - $ref: '#/definitions/httpapi.UserResponse'
+        description: RetweetedBy is set when the tweet is in a timeline because this
+          user retweeted it.
       user:
         $ref: '#/definitions/httpapi.UserResponse'
     type: object
@@ -236,6 +250,8 @@ definitions:
         type: string
       bio:
         type: string
+      createdAt:
+        type: string
       displayName:
         type: string
       followersCount:
@@ -246,7 +262,11 @@ definitions:
         type: integer
       isFollowing:
         type: boolean
+      location:
+        type: string
       username:
+        type: string
+      website:
         type: string
     type: object
   httpapi.assistantHistoryItem:
@@ -294,6 +314,19 @@ definitions:
     required:
     - idToken
     type: object
+  httpapi.onboardingRequest:
+    properties:
+      displayName:
+        maxLength: 50
+        type: string
+      username:
+        maxLength: 20
+        minLength: 3
+        type: string
+    required:
+    - displayName
+    - username
+    type: object
   httpapi.presignRequest:
     properties:
       contentLength:
@@ -328,14 +361,22 @@ definitions:
   httpapi.updateProfileRequest:
     properties:
       avatarKey:
+        maxLength: 200
         type: string
       bannerKey:
+        maxLength: 200
         type: string
       bio:
         maxLength: 160
         type: string
       displayName:
+        maxLength: 50
+        type: string
+      location:
         maxLength: 30
+        type: string
+      website:
+        maxLength: 100
         type: string
     type: object
 host: localhost:8080
@@ -411,11 +452,13 @@ paths:
     post:
       consumes:
       - application/json
-      description: Revoke the user session and clear access/refresh tokens.
+      description: End the session the refresh token belongs to. Other devices stay
+        signed in.
       parameters:
-      - description: Optional Refresh Token to revoke explicitly
+      - description: Refresh token of the session to end
         in: body
         name: request
+        required: true
         schema:
           $ref: '#/definitions/httpapi.refreshTokenRequest'
       produces:
@@ -425,12 +468,6 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/httpapi.SuccessResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/httpapi.ErrorResponse'
-      security:
-      - BearerAuth: []
       summary: Logout
       tags:
       - Auth
@@ -592,33 +629,6 @@ paths:
           schema:
             $ref: '#/definitions/httpapi.PageResponse-httpapi_TweetResponse'
       summary: Global Feed
-      tags:
-      - Feeds
-  /feeds/user/{id}:
-    get:
-      description: Get a paginated list of tweets for a specific user profile.
-      parameters:
-      - description: User ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: Pagination cursor
-        in: query
-        name: cursor
-        type: string
-      - description: Number of items per page
-        in: query
-        name: size
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/httpapi.PageResponse-httpapi_TweetResponse'
-      summary: User Profile Feed
       tags:
       - Feeds
   /healthz:
@@ -1291,6 +1301,177 @@ paths:
           schema:
             $ref: '#/definitions/httpapi.PageResponse-httpapi_UserResponse'
       summary: List Following
+      tags:
+      - Users
+  /users/{id}/likes:
+    get:
+      description: Tweets the user liked, most recently liked first. Only the user
+        themselves may list their likes.
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Pagination cursor
+        in: query
+        name: cursor
+        type: string
+      - description: Number of items per page
+        in: query
+        name: size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/httpapi.PageResponse-httpapi_TweetResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/httpapi.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 'Profile: Likes'
+      tags:
+      - Users
+  /users/{id}/media:
+    get:
+      description: A user's tweets that carry an image or video, newest first.
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Pagination cursor
+        in: query
+        name: cursor
+        type: string
+      - description: Number of items per page
+        in: query
+        name: size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/httpapi.PageResponse-httpapi_TweetResponse'
+      summary: 'Profile: Media'
+      tags:
+      - Users
+  /users/{id}/posts:
+    get:
+      description: A user's top-level tweets and retweets, newest first.
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Pagination cursor
+        in: query
+        name: cursor
+        type: string
+      - description: Number of items per page
+        in: query
+        name: size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/httpapi.PageResponse-httpapi_TweetResponse'
+      summary: 'Profile: Posts'
+      tags:
+      - Users
+  /users/{id}/replies:
+    get:
+      description: Replies written by a user, newest first.
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Pagination cursor
+        in: query
+        name: cursor
+        type: string
+      - description: Number of items per page
+        in: query
+        name: size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/httpapi.PageResponse-httpapi_TweetResponse'
+      summary: 'Profile: Replies'
+      tags:
+      - Users
+  /users/by-username/{username}:
+    get:
+      description: Look a profile up by handle (case-insensitive).
+      parameters:
+      - description: Username
+        in: path
+        name: username
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/httpapi.UserResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/httpapi.ErrorResponse'
+      summary: Get User by Username
+      tags:
+      - Users
+  /users/me/onboarding:
+    post:
+      consumes:
+      - application/json
+      description: Choose a username (3-20 letters, numbers or underscores) and display
+        name. Sign-up assigns a generated username until then.
+      parameters:
+      - description: Chosen username and display name
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/httpapi.onboardingRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/httpapi.CurrentUserResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/httpapi.ErrorResponse'
+        "409":
+          description: username taken
+          schema:
+            $ref: '#/definitions/httpapi.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Complete Onboarding
       tags:
       - Users
   /users/profile:

@@ -1,3 +1,4 @@
+DROP FUNCTION IF EXISTS tweet_score;
 DROP TABLE IF EXISTS tweet_embeddings;
 DROP TABLE IF EXISTS direct_messages;
 DROP TABLE IF EXISTS conversation_participants;
@@ -6,6 +7,7 @@ DROP TABLE IF EXISTS notifications;
 DROP TABLE IF EXISTS tweet_hashtags;
 DROP TABLE IF EXISTS hashtags;
 DROP TABLE IF EXISTS tweet_likes;
+DROP TABLE IF EXISTS retweets;
 DROP TABLE IF EXISTS follows;
 DROP TABLE IF EXISTS tweets;
 DROP TABLE IF EXISTS refresh_tokens;

@@ -10,19 +10,11 @@ import (
 	"github.com/chanombude/twitter-go-api/internal/media"
 )
 
-type fakeMedia struct {
-	generatePresignedURLFn func(ctx context.Context, userID int64, contentType, folder string, contentLength int64) (media.Upload, error)
-}
-
-func (m *fakeMedia) PresignUpload(ctx context.Context, userID int64, contentType, folder string, contentLength int64) (media.Upload, error) {
-	return m.generatePresignedURLFn(ctx, userID, contentType, folder, contentLength)
-}
-
 func TestPresignUpload_Success(t *testing.T) {
 	t.Parallel()
 
 	mock := &fakeMedia{
-		generatePresignedURLFn: func(_ context.Context, userID int64, _, _ string, _ int64) (media.Upload, error) {
+		presignFn: func(_ context.Context, userID int64, _, _ string, _ int64) (media.Upload, error) {
 			if userID != 1 {
 				t.Fatalf("expected caller's user id, got %d", userID)
 			}
@@ -46,7 +38,7 @@ func TestPresignUpload_UsecaseError(t *testing.T) {
 	t.Parallel()
 
 	mock := &fakeMedia{
-		generatePresignedURLFn: func(context.Context, int64, string, string, int64) (media.Upload, error) {
+		presignFn: func(context.Context, int64, string, string, int64) (media.Upload, error) {
 			return media.Upload{}, apperr.BadRequest("file too large")
 		},
 	}

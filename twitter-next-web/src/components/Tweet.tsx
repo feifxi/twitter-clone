@@ -69,9 +69,9 @@ export function Tweet({ tweet, disableClick }: TweetProps) {
   const { user: currentUser, isLoggedIn } = useAuth();
   const openSignInModal = useUIStore((s) => s.openSignInModal);
 
-  const displayTweet = tweet.retweetedTweet ?? tweet;
+  const displayTweet = tweet;
   const user = displayTweet.user;
-  const isRetweet = !!tweet.retweetedTweet;
+  const isRetweet = !!tweet.retweetedBy;
 
   // Prevent bubbling for interactive elements
   const stopProp = (e: React.MouseEvent) => {
@@ -171,8 +171,8 @@ export function Tweet({ tweet, disableClick }: TweetProps) {
                 <div className="w-8 flex justify-end">
                     <Repeat2 className="w-4 h-4" />
                 </div>
-                <Link href={`/${tweet.user.username}`} className="hover:underline" onClick={stopProp}>
-                    {tweet.user.displayName} reposted
+                <Link href={`/${tweet.retweetedBy!.username}`} className="hover:underline" onClick={stopProp}>
+                    {tweet.retweetedBy!.displayName || tweet.retweetedBy!.username} reposted
                 </Link>
             </div>
         )}

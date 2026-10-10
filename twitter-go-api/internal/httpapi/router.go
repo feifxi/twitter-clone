@@ -105,7 +105,7 @@ func (s *Server) registerAuthRoutes(api *gin.RouterGroup, optionalAuth, required
 	authPublic := api.Group("/auth")
 	authPublic.POST("/google", strictAuthLimiter, s.loginGoogle)
 	authPublic.POST("/refresh", strictAuthLimiter, s.refreshToken)
-	authPublic.POST("/logout", strictAuthLimiter, optionalAuth, s.logout)
+	authPublic.POST("/logout", strictAuthLimiter, s.logout)
 
 	authPrivate := api.Group("/auth")
 	authPrivate.Use(requiredAuth)
@@ -116,12 +116,18 @@ func (s *Server) registerUserRoutes(api *gin.RouterGroup, optionalAuth, required
 	usersPublic := api.Group("/users")
 	usersPublic.Use(optionalAuth)
 	usersPublic.GET("/:id", s.getUser)
+	usersPublic.GET("/by-username/:username", s.getUserByUsername)
 	usersPublic.GET("/:id/followers", s.listFollowers)
 	usersPublic.GET("/:id/following", s.listFollowing)
+	usersPublic.GET("/:id/posts", s.getUserPosts)
+	usersPublic.GET("/:id/replies", s.getUserReplies)
+	usersPublic.GET("/:id/media", s.getUserMedia)
+	usersPublic.GET("/:id/likes", s.getUserLikes)
 
 	usersPrivate := api.Group("/users")
 	usersPrivate.Use(requiredAuth)
 	usersPrivate.PUT("/profile", strictWriteLimiter, s.updateProfile)
+	usersPrivate.POST("/me/onboarding", strictWriteLimiter, s.completeOnboarding)
 	usersPrivate.POST("/:id/follow", strictWriteLimiter, s.followUser)
 	usersPrivate.DELETE("/:id/follow", s.unfollowUser)
 }
@@ -150,7 +156,6 @@ func (s *Server) registerFeedRoutes(api *gin.RouterGroup, optionalAuth, required
 	feedsPublic := api.Group("/feeds")
 	feedsPublic.Use(optionalAuth)
 	feedsPublic.GET("/global", s.getGlobalFeed)
-	feedsPublic.GET("/user/:id", s.getUserFeed)
 
 	feedsPrivate := api.Group("/feeds")
 	feedsPrivate.Use(requiredAuth)

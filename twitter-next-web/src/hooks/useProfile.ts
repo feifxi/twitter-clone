@@ -21,19 +21,12 @@ export function useUserProfile(userId: number | null) {
   });
 }
 
-/** Resolve user by username via search (backend has GET /users/{id} by id). */
 export function useUserProfileByUsername(username: string) {
   return useQuery({
     queryKey: ['users', 'byUsername', username],
-    queryFn: async (): Promise<UserResponse | null> => {
-      const { data } = await axiosInstance.get<PageResponse<UserResponse>>(
-        '/search/users',
-        { params: { q: username, size: 10 } }
-      );
-      const match = data.items.find(
-        (u) => u.username.toLowerCase() === username.toLowerCase()
-      );
-      return match ?? null;
+    queryFn: async (): Promise<UserResponse> => {
+      const { data } = await axiosInstance.get<UserResponse>(`/users/by-username/${encodeURIComponent(username)}`);
+      return data;
     },
     enabled: !!username,
   });
@@ -48,7 +41,7 @@ export function useUserFeed(userId: number | null, pageSize = 20) {
       pageParam: string | null;
     }): Promise<PageResponse<TweetResponse>> => {
       const { data } = await axiosInstance.get<PageResponse<TweetResponse>>(
-        `/feeds/user/${userId}`,
+        `/users/${userId}/posts`,
         { params: { cursor: pageParam ?? undefined, size: pageSize } }
       );
       return data;

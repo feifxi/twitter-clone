@@ -1,10 +1,6 @@
 'use client';
 
-import {
-  useInfiniteQuery,
-  useQueryClient,
-  type InfiniteData,
-} from '@tanstack/react-query';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import { axiosInstance } from '@/api/axiosInstance';
 import type { PageResponse, TweetResponse } from '@/types';
 
@@ -47,37 +43,4 @@ export function useFollowingFeed(enabled = true) {
       lastPage.hasNext ? lastPage.nextCursor : undefined,
     enabled,
   });
-}
-
-/** Helper to update a single tweet in infinite feed cache (for optimistic like/retweet). */
-export function useUpdateFeedTweet() {
-  const queryClient = useQueryClient();
-
-  function updateTweetInFeed(
-    kind: FeedKind,
-    tweetId: number,
-    updater: (t: TweetResponse) => TweetResponse
-  ) {
-    queryClient.setQueryData<InfiniteData<PageResponse<TweetResponse>>>(
-      feedQueryKey(kind),
-      (old) => {
-        if (!old) return old;
-        return {
-          ...old,
-          pages: old.pages.map((page) => ({
-            ...page,
-            items: page.items.map((t) => {
-              const target = t.retweetedTweet?.id === tweetId ? t.retweetedTweet : t;
-              if (target.id === tweetId) return updater(t);
-              if (t.retweetedTweet?.id === tweetId)
-                return { ...t, retweetedTweet: updater(t.retweetedTweet!) };
-              return t;
-            }),
-          })),
-        };
-      }
-    );
-  }
-
-  return { updateTweetInFeed };
 }

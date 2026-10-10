@@ -22,16 +22,16 @@ func (s *Server) listNotifications(c *gin.Context) {
 	if !ok {
 		return
 	}
-	offset, size, ok := parseOffsetAndSize(c)
+	req, ok := parsePageRequest(c)
 	if !ok {
 		return
 	}
-	items, err := s.svc.Notifications.List(c.Request.Context(), userID, offset/size, size+1)
+	items, err := s.svc.Notifications.List(c.Request.Context(), userID, req)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, BuildPageResponse(newNotificationResponseList(items), size, offset))
+	c.JSON(http.StatusOK, newPageResponse(items, newNotificationResponse))
 }
 
 type UnreadCountResponse struct {

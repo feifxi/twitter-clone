@@ -12,68 +12,34 @@ import (
 
 const createRetweet = `-- name: CreateRetweet :one
 WITH inserted AS (
-  INSERT INTO tweets (user_id, retweet_id, media_type)
-  VALUES ($1, $2, 'NONE')
-  ON CONFLICT DO NOTHING
-  RETURNING id, user_id, content, media_type, media_url, parent_id, retweet_id, reply_count, retweet_count, like_count, created_at, updated_at, search_vector
-),
-updated AS (
-  UPDATE tweets
-  SET retweet_count = retweet_count + 1
+  INSERT INTO retweets (user_id, tweet_id) VALUES ($1, $2)
+  ON CONFLICT (user_id, tweet_id) DO NOTHING
+  RETURNING id
+), bumped AS (
+  UPDATE tweets SET retweet_count = retweet_count + 1
   WHERE id = $2 AND EXISTS (SELECT 1 FROM inserted)
 )
-SELECT id, user_id, content, media_type, media_url, parent_id, retweet_id, reply_count, retweet_count, like_count, created_at, updated_at, search_vector FROM inserted
+SELECT EXISTS (SELECT 1 FROM inserted) AS created
 `
 
 type CreateRetweetParams struct {
-	UserID    int64  `json:"user_id"`
-	RetweetID *int64 `json:"retweet_id"`
+	UserID  int64 `json:"user_id"`
+	TweetID int64 `json:"tweet_id"`
 }
 
-type CreateRetweetRow struct {
-	ID           int64       `json:"id"`
-	UserID       int64       `json:"user_id"`
-	Content      *string     `json:"content"`
-	MediaType    *string     `json:"media_type"`
-	MediaURL     *string     `json:"media_url"`
-	ParentID     *int64      `json:"parent_id"`
-	RetweetID    *int64      `json:"retweet_id"`
-	ReplyCount   int32       `json:"reply_count"`
-	RetweetCount int32       `json:"retweet_count"`
-	LikeCount    int32       `json:"like_count"`
-	CreatedAt    time.Time   `json:"created_at"`
-	UpdatedAt    time.Time   `json:"updated_at"`
-	SearchVector interface{} `json:"search_vector"`
-}
-
-func (q *Queries) CreateRetweet(ctx context.Context, arg CreateRetweetParams) (CreateRetweetRow, error) {
-	row := q.db.QueryRow(ctx, createRetweet, arg.UserID, arg.RetweetID)
-	var i CreateRetweetRow
-	err := row.Scan(
-		&i.ID,
-		&i.UserID,
-		&i.Content,
-		&i.MediaType,
-		&i.MediaURL,
-		&i.ParentID,
-		&i.RetweetID,
-		&i.ReplyCount,
-		&i.RetweetCount,
-		&i.LikeCount,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.SearchVector,
-	)
-	return i, err
+// Idempotent: returns false when the user had already retweeted.
+func (q *Queries) CreateRetweet(ctx context.Context, arg CreateRetweetParams) (bool, error) {
+	row := q.db.QueryRow(ctx, createRetweet, arg.UserID, arg.TweetID)
+	var created bool
+	err := row.Scan(&created)
+	return created, err
 }
 
 const createTweet = `-- name: CreateTweet :one
-INSERT INTO tweets (
-  user_id, content, media_type, media_url, parent_id, retweet_id
-) VALUES (
-  $1, $2, $3, $4, $5, $6
-)
-RETURNING id, user_id, content, media_type, media_url, parent_id, retweet_id, reply_count, retweet_count, like_count, created_at, updated_at, search_vector
+
+INSERT INTO tweets (user_id, content, media_type, media_url, parent_id)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, user_id, content, media_type, media_url, parent_id, reply_count, retweet_count, like_count, created_at, updated_at, search_vector
 `
 
 type CreateTweetParams struct {
@@ -82,9 +48,12 @@ type CreateTweetParams struct {
 	MediaType *string `json:"media_type"`
 	MediaURL  *string `json:"media_url"`
 	ParentID  *int64  `json:"parent_id"`
-	RetweetID *int64  `json:"retweet_id"`
 }
 
+// Every tweet-listing query returns the same columns: the tweet, the viewer's
+// flags, and (for timelines) who retweeted it. That shared shape lets the tweet
+// package hydrate any of them the same way. Cursors are keyset: they compare the
+// ORDER BY key of the last row seen instead of using OFFSET.
 func (q *Queries) CreateTweet(ctx context.Context, arg CreateTweetParams) (Tweet, error) {
 	row := q.db.QueryRow(ctx, createTweet,
 		arg.UserID,
@@ -92,7 +61,6 @@ func (q *Queries) CreateTweet(ctx context.Context, arg CreateTweetParams) (Tweet
 		arg.MediaType,
 		arg.MediaURL,
 		arg.ParentID,
-		arg.RetweetID,
 	)
 	var i Tweet
 	err := row.Scan(
@@ -102,7 +70,6 @@ func (q *Queries) CreateTweet(ctx context.Context, arg CreateTweetParams) (Tweet
 		&i.MediaType,
 		&i.MediaURL,
 		&i.ParentID,
-		&i.RetweetID,
 		&i.ReplyCount,
 		&i.RetweetCount,
 		&i.LikeCount,
@@ -113,77 +80,42 @@ func (q *Queries) CreateTweet(ctx context.Context, arg CreateTweetParams) (Tweet
 	return i, err
 }
 
-const decrementParentReplyCount = `-- name: DecrementParentReplyCount :exec
-UPDATE tweets
-SET reply_count = GREATEST(0, reply_count - 1)
-WHERE id = $1
+const decrementReplyCount = `-- name: DecrementReplyCount :exec
+UPDATE tweets SET reply_count = GREATEST(0, reply_count - 1) WHERE id = $1
 `
 
-func (q *Queries) DecrementParentReplyCount(ctx context.Context, id int64) error {
-	_, err := q.db.Exec(ctx, decrementParentReplyCount, id)
+func (q *Queries) DecrementReplyCount(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, decrementReplyCount, id)
 	return err
 }
 
-const deleteRetweetByUser = `-- name: DeleteRetweetByUser :one
+const deleteRetweet = `-- name: DeleteRetweet :one
 WITH deleted AS (
-DELETE FROM tweets
-WHERE tweets.user_id = $1 AND tweets.retweet_id = $2
-RETURNING id, user_id, content, media_type, media_url, parent_id, retweet_id, reply_count, retweet_count, like_count, created_at, updated_at, search_vector
-),
-updated AS (
-  UPDATE tweets
-  SET retweet_count = GREATEST(0, retweet_count - 1)
+  DELETE FROM retweets r WHERE r.user_id = $1 AND r.tweet_id = $2
+  RETURNING r.id
+), bumped AS (
+  UPDATE tweets SET retweet_count = GREATEST(0, retweet_count - 1)
   WHERE id = $2 AND EXISTS (SELECT 1 FROM deleted)
 )
-SELECT id, user_id, content, media_type, media_url, parent_id, retweet_id, reply_count, retweet_count, like_count, created_at, updated_at, search_vector FROM deleted
+SELECT EXISTS (SELECT 1 FROM deleted) AS deleted
 `
 
-type DeleteRetweetByUserParams struct {
-	UserID    int64  `json:"user_id"`
-	RetweetID *int64 `json:"retweet_id"`
+type DeleteRetweetParams struct {
+	UserID  int64 `json:"user_id"`
+	TweetID int64 `json:"tweet_id"`
 }
 
-type DeleteRetweetByUserRow struct {
-	ID           int64       `json:"id"`
-	UserID       int64       `json:"user_id"`
-	Content      *string     `json:"content"`
-	MediaType    *string     `json:"media_type"`
-	MediaURL     *string     `json:"media_url"`
-	ParentID     *int64      `json:"parent_id"`
-	RetweetID    *int64      `json:"retweet_id"`
-	ReplyCount   int32       `json:"reply_count"`
-	RetweetCount int32       `json:"retweet_count"`
-	LikeCount    int32       `json:"like_count"`
-	CreatedAt    time.Time   `json:"created_at"`
-	UpdatedAt    time.Time   `json:"updated_at"`
-	SearchVector interface{} `json:"search_vector"`
-}
-
-func (q *Queries) DeleteRetweetByUser(ctx context.Context, arg DeleteRetweetByUserParams) (DeleteRetweetByUserRow, error) {
-	row := q.db.QueryRow(ctx, deleteRetweetByUser, arg.UserID, arg.RetweetID)
-	var i DeleteRetweetByUserRow
-	err := row.Scan(
-		&i.ID,
-		&i.UserID,
-		&i.Content,
-		&i.MediaType,
-		&i.MediaURL,
-		&i.ParentID,
-		&i.RetweetID,
-		&i.ReplyCount,
-		&i.RetweetCount,
-		&i.LikeCount,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.SearchVector,
-	)
-	return i, err
+func (q *Queries) DeleteRetweet(ctx context.Context, arg DeleteRetweetParams) (bool, error) {
+	row := q.db.QueryRow(ctx, deleteRetweet, arg.UserID, arg.TweetID)
+	var deleted bool
+	err := row.Scan(&deleted)
+	return deleted, err
 }
 
 const deleteTweetByOwner = `-- name: DeleteTweetByOwner :one
 DELETE FROM tweets
 WHERE id = $1 AND user_id = $2
-RETURNING id, user_id, content, media_type, media_url, parent_id, retweet_id, reply_count, retweet_count, like_count, created_at, updated_at, search_vector
+RETURNING id, user_id, content, media_type, media_url, parent_id, reply_count, retweet_count, like_count, created_at, updated_at, search_vector
 `
 
 type DeleteTweetByOwnerParams struct {
@@ -201,7 +133,6 @@ func (q *Queries) DeleteTweetByOwner(ctx context.Context, arg DeleteTweetByOwner
 		&i.MediaType,
 		&i.MediaURL,
 		&i.ParentID,
-		&i.RetweetID,
 		&i.ReplyCount,
 		&i.RetweetCount,
 		&i.LikeCount,
@@ -213,28 +144,32 @@ func (q *Queries) DeleteTweetByOwner(ctx context.Context, arg DeleteTweetByOwner
 }
 
 const getTweet = `-- name: GetTweet :one
-SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.retweet_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.updated_at, t.search_vector,
-  EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = $2) AS is_liked,
-  EXISTS(SELECT 1 FROM tweets tr WHERE tr.retweet_id = t.id AND tr.user_id = $2) AS is_retweeted,
-  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = $2) AS is_following
+SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.updated_at, t.search_vector,
+  EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = $1) AS is_liked,
+  EXISTS(SELECT 1 FROM retweets r WHERE r.tweet_id = t.id AND r.user_id = $1) AS is_retweeted,
+  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = $1) AS is_following,
+  NULL::bigint AS retweet_id, NULL::bigint AS retweeted_by_id, NULL::timestamptz AS retweeted_at
 FROM tweets t
-WHERE t.id = $1 LIMIT 1
+WHERE t.id = $2
 `
 
 type GetTweetParams struct {
-	ID       int64  `json:"id"`
 	ViewerID *int64 `json:"viewer_id"`
+	ID       int64  `json:"id"`
 }
 
 type GetTweetRow struct {
-	Tweet       Tweet `json:"tweet"`
-	IsLiked     bool  `json:"is_liked"`
-	IsRetweeted bool  `json:"is_retweeted"`
-	IsFollowing bool  `json:"is_following"`
+	Tweet         Tweet      `json:"tweet"`
+	IsLiked       bool       `json:"is_liked"`
+	IsRetweeted   bool       `json:"is_retweeted"`
+	IsFollowing   bool       `json:"is_following"`
+	RetweetID     *int64     `json:"retweet_id"`
+	RetweetedByID *int64     `json:"retweeted_by_id"`
+	RetweetedAt   *time.Time `json:"retweeted_at"`
 }
 
 func (q *Queries) GetTweet(ctx context.Context, arg GetTweetParams) (GetTweetRow, error) {
-	row := q.db.QueryRow(ctx, getTweet, arg.ID, arg.ViewerID)
+	row := q.db.QueryRow(ctx, getTweet, arg.ViewerID, arg.ID)
 	var i GetTweetRow
 	err := row.Scan(
 		&i.Tweet.ID,
@@ -243,7 +178,6 @@ func (q *Queries) GetTweet(ctx context.Context, arg GetTweetParams) (GetTweetRow
 		&i.Tweet.MediaType,
 		&i.Tweet.MediaURL,
 		&i.Tweet.ParentID,
-		&i.Tweet.RetweetID,
 		&i.Tweet.ReplyCount,
 		&i.Tweet.RetweetCount,
 		&i.Tweet.LikeCount,
@@ -253,15 +187,19 @@ func (q *Queries) GetTweet(ctx context.Context, arg GetTweetParams) (GetTweetRow
 		&i.IsLiked,
 		&i.IsRetweeted,
 		&i.IsFollowing,
+		&i.RetweetID,
+		&i.RetweetedByID,
+		&i.RetweetedAt,
 	)
 	return i, err
 }
 
 const getTweetsByIDs = `-- name: GetTweetsByIDs :many
-SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.retweet_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.updated_at, t.search_vector,
+SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.updated_at, t.search_vector,
   EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = $1) AS is_liked,
-  EXISTS(SELECT 1 FROM tweets tr WHERE tr.retweet_id = t.id AND tr.user_id = $1) AS is_retweeted,
-  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = $1) AS is_following
+  EXISTS(SELECT 1 FROM retweets r WHERE r.tweet_id = t.id AND r.user_id = $1) AS is_retweeted,
+  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = $1) AS is_following,
+  NULL::bigint AS retweet_id, NULL::bigint AS retweeted_by_id, NULL::timestamptz AS retweeted_at
 FROM tweets t
 WHERE t.id = ANY($2::bigint[])
 `
@@ -272,10 +210,13 @@ type GetTweetsByIDsParams struct {
 }
 
 type GetTweetsByIDsRow struct {
-	Tweet       Tweet `json:"tweet"`
-	IsLiked     bool  `json:"is_liked"`
-	IsRetweeted bool  `json:"is_retweeted"`
-	IsFollowing bool  `json:"is_following"`
+	Tweet         Tweet      `json:"tweet"`
+	IsLiked       bool       `json:"is_liked"`
+	IsRetweeted   bool       `json:"is_retweeted"`
+	IsFollowing   bool       `json:"is_following"`
+	RetweetID     *int64     `json:"retweet_id"`
+	RetweetedByID *int64     `json:"retweeted_by_id"`
+	RetweetedAt   *time.Time `json:"retweeted_at"`
 }
 
 func (q *Queries) GetTweetsByIDs(ctx context.Context, arg GetTweetsByIDsParams) ([]GetTweetsByIDsRow, error) {
@@ -294,7 +235,6 @@ func (q *Queries) GetTweetsByIDs(ctx context.Context, arg GetTweetsByIDsParams) 
 			&i.Tweet.MediaType,
 			&i.Tweet.MediaURL,
 			&i.Tweet.ParentID,
-			&i.Tweet.RetweetID,
 			&i.Tweet.ReplyCount,
 			&i.Tweet.RetweetCount,
 			&i.Tweet.LikeCount,
@@ -304,6 +244,9 @@ func (q *Queries) GetTweetsByIDs(ctx context.Context, arg GetTweetsByIDsParams) 
 			&i.IsLiked,
 			&i.IsRetweeted,
 			&i.IsFollowing,
+			&i.RetweetID,
+			&i.RetweetedByID,
+			&i.RetweetedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -315,91 +258,79 @@ func (q *Queries) GetTweetsByIDs(ctx context.Context, arg GetTweetsByIDsParams) 
 	return items, nil
 }
 
-const getUserRetweet = `-- name: GetUserRetweet :one
-SELECT id, user_id, content, media_type, media_url, parent_id, retweet_id, reply_count, retweet_count, like_count, created_at, updated_at, search_vector FROM tweets
-WHERE user_id = $1 AND retweet_id = $2
-LIMIT 1
+const incrementReplyCount = `-- name: IncrementReplyCount :exec
+UPDATE tweets SET reply_count = reply_count + 1 WHERE id = $1
 `
 
-type GetUserRetweetParams struct {
-	UserID    int64  `json:"user_id"`
-	RetweetID *int64 `json:"retweet_id"`
-}
-
-func (q *Queries) GetUserRetweet(ctx context.Context, arg GetUserRetweetParams) (Tweet, error) {
-	row := q.db.QueryRow(ctx, getUserRetweet, arg.UserID, arg.RetweetID)
-	var i Tweet
-	err := row.Scan(
-		&i.ID,
-		&i.UserID,
-		&i.Content,
-		&i.MediaType,
-		&i.MediaURL,
-		&i.ParentID,
-		&i.RetweetID,
-		&i.ReplyCount,
-		&i.RetweetCount,
-		&i.LikeCount,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.SearchVector,
-	)
-	return i, err
-}
-
-const incrementParentReplyCount = `-- name: IncrementParentReplyCount :exec
-UPDATE tweets
-SET reply_count = reply_count + 1
-WHERE id = $1
-`
-
-func (q *Queries) IncrementParentReplyCount(ctx context.Context, id int64) error {
-	_, err := q.db.Exec(ctx, incrementParentReplyCount, id)
+func (q *Queries) IncrementReplyCount(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, incrementReplyCount, id)
 	return err
 }
 
-const listFollowingFeed = `-- name: ListFollowingFeed :many
-SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.retweet_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.updated_at, t.search_vector,
-  EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = $4) AS is_liked,
-  EXISTS(SELECT 1 FROM tweets tr WHERE tr.retweet_id = t.id AND tr.user_id = $4) AS is_retweeted,
-  true AS is_following
-FROM tweets t
-JOIN follows f ON t.user_id = f.following_id
-WHERE f.follower_id = $1
-  AND t.parent_id IS NULL
-ORDER BY t.created_at DESC
-  , t.id DESC
-LIMIT $2 OFFSET $3
+const listFollowingTimeline = `-- name: ListFollowingTimeline :many
+WITH items AS (
+  SELECT t.id AS tweet_id, NULL::bigint AS retweet_id, NULL::bigint AS retweeted_by_id, NULL::timestamptz AS retweeted_at,
+         t.created_at AS sort_at, 0 AS kind, t.id AS sort_id
+  FROM tweets t
+  JOIN follows f ON f.following_id = t.user_id
+  WHERE f.follower_id = $1
+    AND t.parent_id IS NULL
+    AND ($2::timestamptz IS NULL OR t.created_at <= $2)
+  UNION ALL
+  SELECT r.tweet_id, r.id, r.user_id, r.created_at, r.created_at, 1, r.id
+  FROM retweets r
+  JOIN follows f ON f.following_id = r.user_id
+  WHERE f.follower_id = $1
+    AND ($2::timestamptz IS NULL OR r.created_at <= $2)
+)
+SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.updated_at, t.search_vector,
+  EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = $1) AS is_liked,
+  EXISTS(SELECT 1 FROM retweets r WHERE r.tweet_id = t.id AND r.user_id = $1) AS is_retweeted,
+  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = $1) AS is_following,
+  i.retweet_id, i.retweeted_by_id, i.retweeted_at
+FROM items i
+JOIN tweets t ON t.id = i.tweet_id
+WHERE $2::timestamptz IS NULL
+   OR (i.sort_at, i.kind, i.sort_id) < ($2::timestamptz, $3::int, $4::bigint)
+ORDER BY i.sort_at DESC, i.kind DESC, i.sort_id DESC
+LIMIT $5
 `
 
-type ListFollowingFeedParams struct {
-	FollowerID int64  `json:"follower_id"`
-	Limit      int32  `json:"limit"`
-	Offset     int32  `json:"offset"`
-	ViewerID   *int64 `json:"viewer_id"`
+type ListFollowingTimelineParams struct {
+	ViewerID   int64      `json:"viewer_id"`
+	CursorTime *time.Time `json:"cursor_time"`
+	CursorKind *int32     `json:"cursor_kind"`
+	CursorID   *int64     `json:"cursor_id"`
+	PageLimit  int32      `json:"page_limit"`
 }
 
-type ListFollowingFeedRow struct {
-	Tweet       Tweet `json:"tweet"`
-	IsLiked     bool  `json:"is_liked"`
-	IsRetweeted bool  `json:"is_retweeted"`
-	IsFollowing bool  `json:"is_following"`
+type ListFollowingTimelineRow struct {
+	Tweet         Tweet      `json:"tweet"`
+	IsLiked       bool       `json:"is_liked"`
+	IsRetweeted   bool       `json:"is_retweeted"`
+	IsFollowing   bool       `json:"is_following"`
+	RetweetID     *int64     `json:"retweet_id"`
+	RetweetedByID *int64     `json:"retweeted_by_id"`
+	RetweetedAt   *time.Time `json:"retweeted_at"`
 }
 
-func (q *Queries) ListFollowingFeed(ctx context.Context, arg ListFollowingFeedParams) ([]ListFollowingFeedRow, error) {
-	rows, err := q.db.Query(ctx, listFollowingFeed,
-		arg.FollowerID,
-		arg.Limit,
-		arg.Offset,
+// Top-level tweets and retweets by accounts the viewer follows, newest first.
+// Items are ordered by (sort_at, kind, sort_id): kind 0 = tweet, 1 = retweet.
+func (q *Queries) ListFollowingTimeline(ctx context.Context, arg ListFollowingTimelineParams) ([]ListFollowingTimelineRow, error) {
+	rows, err := q.db.Query(ctx, listFollowingTimeline,
 		arg.ViewerID,
+		arg.CursorTime,
+		arg.CursorKind,
+		arg.CursorID,
+		arg.PageLimit,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ListFollowingFeedRow{}
+	items := []ListFollowingTimelineRow{}
 	for rows.Next() {
-		var i ListFollowingFeedRow
+		var i ListFollowingTimelineRow
 		if err := rows.Scan(
 			&i.Tweet.ID,
 			&i.Tweet.UserID,
@@ -407,7 +338,6 @@ func (q *Queries) ListFollowingFeed(ctx context.Context, arg ListFollowingFeedPa
 			&i.Tweet.MediaType,
 			&i.Tweet.MediaURL,
 			&i.Tweet.ParentID,
-			&i.Tweet.RetweetID,
 			&i.Tweet.ReplyCount,
 			&i.Tweet.RetweetCount,
 			&i.Tweet.LikeCount,
@@ -417,6 +347,9 @@ func (q *Queries) ListFollowingFeed(ctx context.Context, arg ListFollowingFeedPa
 			&i.IsLiked,
 			&i.IsRetweeted,
 			&i.IsFollowing,
+			&i.RetweetID,
+			&i.RetweetedByID,
+			&i.RetweetedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -429,35 +362,52 @@ func (q *Queries) ListFollowingFeed(ctx context.Context, arg ListFollowingFeedPa
 }
 
 const listForYouFeed = `-- name: ListForYouFeed :many
-SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.retweet_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.updated_at, t.search_vector,
-  EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = $3) AS is_liked,
-  EXISTS(SELECT 1 FROM tweets tr WHERE tr.retweet_id = t.id AND tr.user_id = $3) AS is_retweeted,
-  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = $3) AS is_following
+SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.updated_at, t.search_vector,
+  EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = $1) AS is_liked,
+  EXISTS(SELECT 1 FROM retweets r WHERE r.tweet_id = t.id AND r.user_id = $1) AS is_retweeted,
+  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = $1) AS is_following,
+  NULL::bigint AS retweet_id, NULL::bigint AS retweeted_by_id, NULL::timestamptz AS retweeted_at,
+  tweet_score(t.like_count, t.retweet_count, t.reply_count, t.created_at, $2) AS score
 FROM tweets t
 WHERE t.parent_id IS NULL
-ORDER BY
-  (t.like_count * 2 + t.retweet_count * 3 + t.reply_count + 1) /
-  POWER((EXTRACT(EPOCH FROM NOW() - t.created_at) / 3600) + 2, 1.8) DESC,
-  t.created_at DESC,
-  t.id DESC
-LIMIT $1 OFFSET $2
+  AND t.created_at <= $2
+  AND ($3::float8 IS NULL
+       OR (tweet_score(t.like_count, t.retweet_count, t.reply_count, t.created_at, $2), t.id)
+          < ($3::float8, $4::bigint))
+ORDER BY score DESC, t.id DESC
+LIMIT $5
 `
 
 type ListForYouFeedParams struct {
-	Limit    int32  `json:"limit"`
-	Offset   int32  `json:"offset"`
-	ViewerID *int64 `json:"viewer_id"`
+	ViewerID    *int64    `json:"viewer_id"`
+	Anchor      time.Time `json:"anchor"`
+	CursorScore *float64  `json:"cursor_score"`
+	CursorID    *int64    `json:"cursor_id"`
+	PageLimit   int32     `json:"page_limit"`
 }
 
 type ListForYouFeedRow struct {
-	Tweet       Tweet `json:"tweet"`
-	IsLiked     bool  `json:"is_liked"`
-	IsRetweeted bool  `json:"is_retweeted"`
-	IsFollowing bool  `json:"is_following"`
+	Tweet         Tweet      `json:"tweet"`
+	IsLiked       bool       `json:"is_liked"`
+	IsRetweeted   bool       `json:"is_retweeted"`
+	IsFollowing   bool       `json:"is_following"`
+	RetweetID     *int64     `json:"retweet_id"`
+	RetweetedByID *int64     `json:"retweeted_by_id"`
+	RetweetedAt   *time.Time `json:"retweeted_at"`
+	Score         float64    `json:"score"`
 }
 
+// Top-level tweets ranked by tweet_score as of @anchor. Tweets posted after the
+// anchor wait for a refresh; counts can still change between pages, so an item
+// may occasionally shift across a page boundary.
 func (q *Queries) ListForYouFeed(ctx context.Context, arg ListForYouFeedParams) ([]ListForYouFeedRow, error) {
-	rows, err := q.db.Query(ctx, listForYouFeed, arg.Limit, arg.Offset, arg.ViewerID)
+	rows, err := q.db.Query(ctx, listForYouFeed,
+		arg.ViewerID,
+		arg.Anchor,
+		arg.CursorScore,
+		arg.CursorID,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -472,7 +422,6 @@ func (q *Queries) ListForYouFeed(ctx context.Context, arg ListForYouFeedParams) 
 			&i.Tweet.MediaType,
 			&i.Tweet.MediaURL,
 			&i.Tweet.ParentID,
-			&i.Tweet.RetweetID,
 			&i.Tweet.ReplyCount,
 			&i.Tweet.RetweetCount,
 			&i.Tweet.LikeCount,
@@ -482,6 +431,10 @@ func (q *Queries) ListForYouFeed(ctx context.Context, arg ListForYouFeedParams) 
 			&i.IsLiked,
 			&i.IsRetweeted,
 			&i.IsFollowing,
+			&i.RetweetID,
+			&i.RetweetedByID,
+			&i.RetweetedAt,
+			&i.Score,
 		); err != nil {
 			return nil, err
 		}
@@ -494,20 +447,15 @@ func (q *Queries) ListForYouFeed(ctx context.Context, arg ListForYouFeedParams) 
 }
 
 const listMediaURLsInThread = `-- name: ListMediaURLsInThread :many
-WITH RECURSIVE tweet_tree AS (
-  SELECT t.id, t.media_url
-  FROM tweets t
-  WHERE t.id = $1
+WITH RECURSIVE thread AS (
+  SELECT t.id, t.media_url FROM tweets t WHERE t.id = $1
   UNION ALL
-  SELECT t.id, t.media_url
-  FROM tweets t
-  INNER JOIN tweet_tree tt ON t.parent_id = tt.id
+  SELECT t.id, t.media_url FROM tweets t JOIN thread ON t.parent_id = thread.id
 )
-SELECT media_url
-FROM tweet_tree
-WHERE media_url IS NOT NULL AND media_url <> ''
+SELECT media_url FROM thread WHERE media_url IS NOT NULL
 `
 
+// Media of a tweet and every reply under it (all removed by ON DELETE CASCADE).
 func (q *Queries) ListMediaURLsInThread(ctx context.Context, id int64) ([]*string, error) {
 	rows, err := q.db.Query(ctx, listMediaURLsInThread, id)
 	if err != nil {
@@ -528,38 +476,139 @@ func (q *Queries) ListMediaURLsInThread(ctx context.Context, id int64) ([]*strin
 	return items, nil
 }
 
+const listProfileTimeline = `-- name: ListProfileTimeline :many
+WITH items AS (
+  SELECT t.id AS tweet_id, NULL::bigint AS retweet_id, NULL::bigint AS retweeted_by_id, NULL::timestamptz AS retweeted_at,
+         t.created_at AS sort_at, 0 AS kind, t.id AS sort_id
+  FROM tweets t
+  WHERE t.user_id = $6
+    AND t.parent_id IS NULL
+    AND ($2::timestamptz IS NULL OR t.created_at <= $2)
+  UNION ALL
+  SELECT r.tweet_id, r.id, r.user_id, r.created_at, r.created_at, 1, r.id
+  FROM retweets r
+  WHERE r.user_id = $6
+    AND ($2::timestamptz IS NULL OR r.created_at <= $2)
+)
+SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.updated_at, t.search_vector,
+  EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = $1) AS is_liked,
+  EXISTS(SELECT 1 FROM retweets r WHERE r.tweet_id = t.id AND r.user_id = $1) AS is_retweeted,
+  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = $1) AS is_following,
+  i.retweet_id, i.retweeted_by_id, i.retweeted_at
+FROM items i
+JOIN tweets t ON t.id = i.tweet_id
+WHERE $2::timestamptz IS NULL
+   OR (i.sort_at, i.kind, i.sort_id) < ($2::timestamptz, $3::int, $4::bigint)
+ORDER BY i.sort_at DESC, i.kind DESC, i.sort_id DESC
+LIMIT $5
+`
+
+type ListProfileTimelineParams struct {
+	ViewerID   *int64     `json:"viewer_id"`
+	CursorTime *time.Time `json:"cursor_time"`
+	CursorKind *int32     `json:"cursor_kind"`
+	CursorID   *int64     `json:"cursor_id"`
+	PageLimit  int32      `json:"page_limit"`
+	UserID     int64      `json:"user_id"`
+}
+
+type ListProfileTimelineRow struct {
+	Tweet         Tweet      `json:"tweet"`
+	IsLiked       bool       `json:"is_liked"`
+	IsRetweeted   bool       `json:"is_retweeted"`
+	IsFollowing   bool       `json:"is_following"`
+	RetweetID     *int64     `json:"retweet_id"`
+	RetweetedByID *int64     `json:"retweeted_by_id"`
+	RetweetedAt   *time.Time `json:"retweeted_at"`
+}
+
+// A user's top-level tweets and retweets, newest first. Same ordering as ListFollowingTimeline.
+func (q *Queries) ListProfileTimeline(ctx context.Context, arg ListProfileTimelineParams) ([]ListProfileTimelineRow, error) {
+	rows, err := q.db.Query(ctx, listProfileTimeline,
+		arg.ViewerID,
+		arg.CursorTime,
+		arg.CursorKind,
+		arg.CursorID,
+		arg.PageLimit,
+		arg.UserID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProfileTimelineRow{}
+	for rows.Next() {
+		var i ListProfileTimelineRow
+		if err := rows.Scan(
+			&i.Tweet.ID,
+			&i.Tweet.UserID,
+			&i.Tweet.Content,
+			&i.Tweet.MediaType,
+			&i.Tweet.MediaURL,
+			&i.Tweet.ParentID,
+			&i.Tweet.ReplyCount,
+			&i.Tweet.RetweetCount,
+			&i.Tweet.LikeCount,
+			&i.Tweet.CreatedAt,
+			&i.Tweet.UpdatedAt,
+			&i.Tweet.SearchVector,
+			&i.IsLiked,
+			&i.IsRetweeted,
+			&i.IsFollowing,
+			&i.RetweetID,
+			&i.RetweetedByID,
+			&i.RetweetedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTweetReplies = `-- name: ListTweetReplies :many
-SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.retweet_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.updated_at, t.search_vector,
-  EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = $4) AS is_liked,
-  EXISTS(SELECT 1 FROM tweets tr WHERE tr.retweet_id = t.id AND tr.user_id = $4) AS is_retweeted,
-  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = $4) AS is_following
+SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.updated_at, t.search_vector,
+  EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = $1) AS is_liked,
+  EXISTS(SELECT 1 FROM retweets r WHERE r.tweet_id = t.id AND r.user_id = $1) AS is_retweeted,
+  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = $1) AS is_following,
+  NULL::bigint AS retweet_id, NULL::bigint AS retweeted_by_id, NULL::timestamptz AS retweeted_at
 FROM tweets t
-WHERE t.parent_id = $1
-ORDER BY t.created_at ASC
-  , t.id ASC
-LIMIT $2 OFFSET $3
+WHERE t.parent_id = $2
+  AND ($3::timestamptz IS NULL
+       OR (t.created_at, t.id) > ($3::timestamptz, $4::bigint))
+ORDER BY t.created_at ASC, t.id ASC
+LIMIT $5
 `
 
 type ListTweetRepliesParams struct {
-	ParentID *int64 `json:"parent_id"`
-	Limit    int32  `json:"limit"`
-	Offset   int32  `json:"offset"`
-	ViewerID *int64 `json:"viewer_id"`
+	ViewerID   *int64     `json:"viewer_id"`
+	ParentID   *int64     `json:"parent_id"`
+	CursorTime *time.Time `json:"cursor_time"`
+	CursorID   *int64     `json:"cursor_id"`
+	PageLimit  int32      `json:"page_limit"`
 }
 
 type ListTweetRepliesRow struct {
-	Tweet       Tweet `json:"tweet"`
-	IsLiked     bool  `json:"is_liked"`
-	IsRetweeted bool  `json:"is_retweeted"`
-	IsFollowing bool  `json:"is_following"`
+	Tweet         Tweet      `json:"tweet"`
+	IsLiked       bool       `json:"is_liked"`
+	IsRetweeted   bool       `json:"is_retweeted"`
+	IsFollowing   bool       `json:"is_following"`
+	RetweetID     *int64     `json:"retweet_id"`
+	RetweetedByID *int64     `json:"retweeted_by_id"`
+	RetweetedAt   *time.Time `json:"retweeted_at"`
 }
 
+// Oldest first, so a thread reads top to bottom.
 func (q *Queries) ListTweetReplies(ctx context.Context, arg ListTweetRepliesParams) ([]ListTweetRepliesRow, error) {
 	rows, err := q.db.Query(ctx, listTweetReplies,
-		arg.ParentID,
-		arg.Limit,
-		arg.Offset,
 		arg.ViewerID,
+		arg.ParentID,
+		arg.CursorTime,
+		arg.CursorID,
+		arg.PageLimit,
 	)
 	if err != nil {
 		return nil, err
@@ -575,7 +624,6 @@ func (q *Queries) ListTweetReplies(ctx context.Context, arg ListTweetRepliesPara
 			&i.Tweet.MediaType,
 			&i.Tweet.MediaURL,
 			&i.Tweet.ParentID,
-			&i.Tweet.RetweetID,
 			&i.Tweet.ReplyCount,
 			&i.Tweet.RetweetCount,
 			&i.Tweet.LikeCount,
@@ -585,6 +633,9 @@ func (q *Queries) ListTweetReplies(ctx context.Context, arg ListTweetRepliesPara
 			&i.IsLiked,
 			&i.IsRetweeted,
 			&i.IsFollowing,
+			&i.RetweetID,
+			&i.RetweetedByID,
+			&i.RetweetedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -596,47 +647,57 @@ func (q *Queries) ListTweetReplies(ctx context.Context, arg ListTweetRepliesPara
 	return items, nil
 }
 
-const listUserTweets = `-- name: ListUserTweets :many
-SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.retweet_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.updated_at, t.search_vector,
-  EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = $4) AS is_liked,
-  EXISTS(SELECT 1 FROM tweets tr WHERE tr.retweet_id = t.id AND tr.user_id = $4) AS is_retweeted,
-  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = $4) AS is_following
-FROM tweets t
-WHERE t.user_id = $1
-  AND t.parent_id IS NULL
-ORDER BY t.created_at DESC
-  , t.id DESC
-LIMIT $2 OFFSET $3
+const listUserLikes = `-- name: ListUserLikes :many
+SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.updated_at, t.search_vector,
+  EXISTS(SELECT 1 FROM tweet_likes tl2 WHERE tl2.tweet_id = t.id AND tl2.user_id = $1) AS is_liked,
+  EXISTS(SELECT 1 FROM retweets r WHERE r.tweet_id = t.id AND r.user_id = $1) AS is_retweeted,
+  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = $1) AS is_following,
+  NULL::bigint AS retweet_id, NULL::bigint AS retweeted_by_id, NULL::timestamptz AS retweeted_at,
+  tl.created_at AS liked_at
+FROM tweet_likes tl
+JOIN tweets t ON t.id = tl.tweet_id
+WHERE tl.user_id = $2
+  AND ($3::timestamptz IS NULL
+       OR (tl.created_at, tl.tweet_id) < ($3::timestamptz, $4::bigint))
+ORDER BY tl.created_at DESC, tl.tweet_id DESC
+LIMIT $5
 `
 
-type ListUserTweetsParams struct {
-	UserID   int64  `json:"user_id"`
-	Limit    int32  `json:"limit"`
-	Offset   int32  `json:"offset"`
-	ViewerID *int64 `json:"viewer_id"`
+type ListUserLikesParams struct {
+	ViewerID   *int64     `json:"viewer_id"`
+	UserID     int64      `json:"user_id"`
+	CursorTime *time.Time `json:"cursor_time"`
+	CursorID   *int64     `json:"cursor_id"`
+	PageLimit  int32      `json:"page_limit"`
 }
 
-type ListUserTweetsRow struct {
-	Tweet       Tweet `json:"tweet"`
-	IsLiked     bool  `json:"is_liked"`
-	IsRetweeted bool  `json:"is_retweeted"`
-	IsFollowing bool  `json:"is_following"`
+type ListUserLikesRow struct {
+	Tweet         Tweet      `json:"tweet"`
+	IsLiked       bool       `json:"is_liked"`
+	IsRetweeted   bool       `json:"is_retweeted"`
+	IsFollowing   bool       `json:"is_following"`
+	RetweetID     *int64     `json:"retweet_id"`
+	RetweetedByID *int64     `json:"retweeted_by_id"`
+	RetweetedAt   *time.Time `json:"retweeted_at"`
+	LikedAt       time.Time  `json:"liked_at"`
 }
 
-func (q *Queries) ListUserTweets(ctx context.Context, arg ListUserTweetsParams) ([]ListUserTweetsRow, error) {
-	rows, err := q.db.Query(ctx, listUserTweets,
-		arg.UserID,
-		arg.Limit,
-		arg.Offset,
+// Tweets a user liked, most recently liked first; the cursor is the like's time.
+func (q *Queries) ListUserLikes(ctx context.Context, arg ListUserLikesParams) ([]ListUserLikesRow, error) {
+	rows, err := q.db.Query(ctx, listUserLikes,
 		arg.ViewerID,
+		arg.UserID,
+		arg.CursorTime,
+		arg.CursorID,
+		arg.PageLimit,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ListUserTweetsRow{}
+	items := []ListUserLikesRow{}
 	for rows.Next() {
-		var i ListUserTweetsRow
+		var i ListUserLikesRow
 		if err := rows.Scan(
 			&i.Tweet.ID,
 			&i.Tweet.UserID,
@@ -644,7 +705,6 @@ func (q *Queries) ListUserTweets(ctx context.Context, arg ListUserTweetsParams) 
 			&i.Tweet.MediaType,
 			&i.Tweet.MediaURL,
 			&i.Tweet.ParentID,
-			&i.Tweet.RetweetID,
 			&i.Tweet.ReplyCount,
 			&i.Tweet.RetweetCount,
 			&i.Tweet.LikeCount,
@@ -654,6 +714,166 @@ func (q *Queries) ListUserTweets(ctx context.Context, arg ListUserTweetsParams) 
 			&i.IsLiked,
 			&i.IsRetweeted,
 			&i.IsFollowing,
+			&i.RetweetID,
+			&i.RetweetedByID,
+			&i.RetweetedAt,
+			&i.LikedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUserMedia = `-- name: ListUserMedia :many
+SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.updated_at, t.search_vector,
+  EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = $1) AS is_liked,
+  EXISTS(SELECT 1 FROM retweets r WHERE r.tweet_id = t.id AND r.user_id = $1) AS is_retweeted,
+  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = $1) AS is_following,
+  NULL::bigint AS retweet_id, NULL::bigint AS retweeted_by_id, NULL::timestamptz AS retweeted_at
+FROM tweets t
+WHERE t.user_id = $2
+  AND t.media_url IS NOT NULL
+  AND ($3::timestamptz IS NULL
+       OR (t.created_at, t.id) < ($3::timestamptz, $4::bigint))
+ORDER BY t.created_at DESC, t.id DESC
+LIMIT $5
+`
+
+type ListUserMediaParams struct {
+	ViewerID   *int64     `json:"viewer_id"`
+	UserID     int64      `json:"user_id"`
+	CursorTime *time.Time `json:"cursor_time"`
+	CursorID   *int64     `json:"cursor_id"`
+	PageLimit  int32      `json:"page_limit"`
+}
+
+type ListUserMediaRow struct {
+	Tweet         Tweet      `json:"tweet"`
+	IsLiked       bool       `json:"is_liked"`
+	IsRetweeted   bool       `json:"is_retweeted"`
+	IsFollowing   bool       `json:"is_following"`
+	RetweetID     *int64     `json:"retweet_id"`
+	RetweetedByID *int64     `json:"retweeted_by_id"`
+	RetweetedAt   *time.Time `json:"retweeted_at"`
+}
+
+func (q *Queries) ListUserMedia(ctx context.Context, arg ListUserMediaParams) ([]ListUserMediaRow, error) {
+	rows, err := q.db.Query(ctx, listUserMedia,
+		arg.ViewerID,
+		arg.UserID,
+		arg.CursorTime,
+		arg.CursorID,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListUserMediaRow{}
+	for rows.Next() {
+		var i ListUserMediaRow
+		if err := rows.Scan(
+			&i.Tweet.ID,
+			&i.Tweet.UserID,
+			&i.Tweet.Content,
+			&i.Tweet.MediaType,
+			&i.Tweet.MediaURL,
+			&i.Tweet.ParentID,
+			&i.Tweet.ReplyCount,
+			&i.Tweet.RetweetCount,
+			&i.Tweet.LikeCount,
+			&i.Tweet.CreatedAt,
+			&i.Tweet.UpdatedAt,
+			&i.Tweet.SearchVector,
+			&i.IsLiked,
+			&i.IsRetweeted,
+			&i.IsFollowing,
+			&i.RetweetID,
+			&i.RetweetedByID,
+			&i.RetweetedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUserReplies = `-- name: ListUserReplies :many
+SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.updated_at, t.search_vector,
+  EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = $1) AS is_liked,
+  EXISTS(SELECT 1 FROM retweets r WHERE r.tweet_id = t.id AND r.user_id = $1) AS is_retweeted,
+  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = $1) AS is_following,
+  NULL::bigint AS retweet_id, NULL::bigint AS retweeted_by_id, NULL::timestamptz AS retweeted_at
+FROM tweets t
+WHERE t.user_id = $2
+  AND t.parent_id IS NOT NULL
+  AND ($3::timestamptz IS NULL
+       OR (t.created_at, t.id) < ($3::timestamptz, $4::bigint))
+ORDER BY t.created_at DESC, t.id DESC
+LIMIT $5
+`
+
+type ListUserRepliesParams struct {
+	ViewerID   *int64     `json:"viewer_id"`
+	UserID     int64      `json:"user_id"`
+	CursorTime *time.Time `json:"cursor_time"`
+	CursorID   *int64     `json:"cursor_id"`
+	PageLimit  int32      `json:"page_limit"`
+}
+
+type ListUserRepliesRow struct {
+	Tweet         Tweet      `json:"tweet"`
+	IsLiked       bool       `json:"is_liked"`
+	IsRetweeted   bool       `json:"is_retweeted"`
+	IsFollowing   bool       `json:"is_following"`
+	RetweetID     *int64     `json:"retweet_id"`
+	RetweetedByID *int64     `json:"retweeted_by_id"`
+	RetweetedAt   *time.Time `json:"retweeted_at"`
+}
+
+func (q *Queries) ListUserReplies(ctx context.Context, arg ListUserRepliesParams) ([]ListUserRepliesRow, error) {
+	rows, err := q.db.Query(ctx, listUserReplies,
+		arg.ViewerID,
+		arg.UserID,
+		arg.CursorTime,
+		arg.CursorID,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListUserRepliesRow{}
+	for rows.Next() {
+		var i ListUserRepliesRow
+		if err := rows.Scan(
+			&i.Tweet.ID,
+			&i.Tweet.UserID,
+			&i.Tweet.Content,
+			&i.Tweet.MediaType,
+			&i.Tweet.MediaURL,
+			&i.Tweet.ParentID,
+			&i.Tweet.ReplyCount,
+			&i.Tweet.RetweetCount,
+			&i.Tweet.LikeCount,
+			&i.Tweet.CreatedAt,
+			&i.Tweet.UpdatedAt,
+			&i.Tweet.SearchVector,
+			&i.IsLiked,
+			&i.IsRetweeted,
+			&i.IsFollowing,
+			&i.RetweetID,
+			&i.RetweetedByID,
+			&i.RetweetedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -666,39 +886,46 @@ func (q *Queries) ListUserTweets(ctx context.Context, arg ListUserTweetsParams) 
 }
 
 const searchTweetsByHashtag = `-- name: SearchTweetsByHashtag :many
-SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.retweet_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.updated_at, t.search_vector,
-  EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = $4) AS is_liked,
-  EXISTS(SELECT 1 FROM tweets tr WHERE tr.retweet_id = t.id AND tr.user_id = $4) AS is_retweeted,
-  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = $4) AS is_following
+SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.updated_at, t.search_vector,
+  EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = $1) AS is_liked,
+  EXISTS(SELECT 1 FROM retweets r WHERE r.tweet_id = t.id AND r.user_id = $1) AS is_retweeted,
+  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = $1) AS is_following,
+  NULL::bigint AS retweet_id, NULL::bigint AS retweeted_by_id, NULL::timestamptz AS retweeted_at
 FROM tweets t
 JOIN tweet_hashtags th ON th.tweet_id = t.id
 JOIN hashtags h ON h.id = th.hashtag_id
-WHERE LOWER(h.text) = LOWER($1)
-ORDER BY t.created_at DESC
-  , t.id DESC
-LIMIT $2 OFFSET $3
+WHERE h.text = lower($2)
+  AND ($3::timestamptz IS NULL
+       OR (t.created_at, t.id) < ($3::timestamptz, $4::bigint))
+ORDER BY t.created_at DESC, t.id DESC
+LIMIT $5
 `
 
 type SearchTweetsByHashtagParams struct {
-	Lower    string `json:"lower"`
-	Limit    int32  `json:"limit"`
-	Offset   int32  `json:"offset"`
-	ViewerID *int64 `json:"viewer_id"`
+	ViewerID   *int64     `json:"viewer_id"`
+	Tag        string     `json:"tag"`
+	CursorTime *time.Time `json:"cursor_time"`
+	CursorID   *int64     `json:"cursor_id"`
+	PageLimit  int32      `json:"page_limit"`
 }
 
 type SearchTweetsByHashtagRow struct {
-	Tweet       Tweet `json:"tweet"`
-	IsLiked     bool  `json:"is_liked"`
-	IsRetweeted bool  `json:"is_retweeted"`
-	IsFollowing bool  `json:"is_following"`
+	Tweet         Tweet      `json:"tweet"`
+	IsLiked       bool       `json:"is_liked"`
+	IsRetweeted   bool       `json:"is_retweeted"`
+	IsFollowing   bool       `json:"is_following"`
+	RetweetID     *int64     `json:"retweet_id"`
+	RetweetedByID *int64     `json:"retweeted_by_id"`
+	RetweetedAt   *time.Time `json:"retweeted_at"`
 }
 
 func (q *Queries) SearchTweetsByHashtag(ctx context.Context, arg SearchTweetsByHashtagParams) ([]SearchTweetsByHashtagRow, error) {
 	rows, err := q.db.Query(ctx, searchTweetsByHashtag,
-		arg.Lower,
-		arg.Limit,
-		arg.Offset,
 		arg.ViewerID,
+		arg.Tag,
+		arg.CursorTime,
+		arg.CursorID,
+		arg.PageLimit,
 	)
 	if err != nil {
 		return nil, err
@@ -714,7 +941,6 @@ func (q *Queries) SearchTweetsByHashtag(ctx context.Context, arg SearchTweetsByH
 			&i.Tweet.MediaType,
 			&i.Tweet.MediaURL,
 			&i.Tweet.ParentID,
-			&i.Tweet.RetweetID,
 			&i.Tweet.ReplyCount,
 			&i.Tweet.RetweetCount,
 			&i.Tweet.LikeCount,
@@ -724,6 +950,9 @@ func (q *Queries) SearchTweetsByHashtag(ctx context.Context, arg SearchTweetsByH
 			&i.IsLiked,
 			&i.IsRetweeted,
 			&i.IsFollowing,
+			&i.RetweetID,
+			&i.RetweetedByID,
+			&i.RetweetedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -736,36 +965,41 @@ func (q *Queries) SearchTweetsByHashtag(ctx context.Context, arg SearchTweetsByH
 }
 
 const searchTweetsFullText = `-- name: SearchTweetsFullText :many
-SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.retweet_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.updated_at, t.search_vector,
-  EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = $4) AS is_liked,
-  EXISTS(SELECT 1 FROM tweets tr WHERE tr.retweet_id = t.id AND tr.user_id = $4) AS is_retweeted,
-  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = $4) AS is_following
+SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.updated_at, t.search_vector,
+  EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = $1) AS is_liked,
+  EXISTS(SELECT 1 FROM retweets r WHERE r.tweet_id = t.id AND r.user_id = $1) AS is_retweeted,
+  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = $1) AS is_following,
+  NULL::bigint AS retweet_id, NULL::bigint AS retweeted_by_id, NULL::timestamptz AS retweeted_at
 FROM tweets t
-WHERE t.search_vector @@ to_tsquery('english', $1)
-ORDER BY ts_rank(t.search_vector, to_tsquery('english', $1)) DESC, t.created_at DESC, t.id DESC
-LIMIT $2 OFFSET $3
+WHERE t.search_vector @@ to_tsquery('english', $2)
+ORDER BY ts_rank(t.search_vector, to_tsquery('english', $2)) DESC, t.created_at DESC, t.id DESC
+LIMIT $4 OFFSET $3
 `
 
 type SearchTweetsFullTextParams struct {
-	ToTsquery string `json:"to_tsquery"`
-	Limit     int32  `json:"limit"`
-	Offset    int32  `json:"offset"`
-	ViewerID  *int64 `json:"viewer_id"`
+	ViewerID   *int64 `json:"viewer_id"`
+	Query      string `json:"query"`
+	PageOffset int32  `json:"page_offset"`
+	PageLimit  int32  `json:"page_limit"`
 }
 
 type SearchTweetsFullTextRow struct {
-	Tweet       Tweet `json:"tweet"`
-	IsLiked     bool  `json:"is_liked"`
-	IsRetweeted bool  `json:"is_retweeted"`
-	IsFollowing bool  `json:"is_following"`
+	Tweet         Tweet      `json:"tweet"`
+	IsLiked       bool       `json:"is_liked"`
+	IsRetweeted   bool       `json:"is_retweeted"`
+	IsFollowing   bool       `json:"is_following"`
+	RetweetID     *int64     `json:"retweet_id"`
+	RetweetedByID *int64     `json:"retweeted_by_id"`
+	RetweetedAt   *time.Time `json:"retweeted_at"`
 }
 
+// Relevance-ranked, so it pages by offset: a keyset cursor over ts_rank buys nothing here.
 func (q *Queries) SearchTweetsFullText(ctx context.Context, arg SearchTweetsFullTextParams) ([]SearchTweetsFullTextRow, error) {
 	rows, err := q.db.Query(ctx, searchTweetsFullText,
-		arg.ToTsquery,
-		arg.Limit,
-		arg.Offset,
 		arg.ViewerID,
+		arg.Query,
+		arg.PageOffset,
+		arg.PageLimit,
 	)
 	if err != nil {
 		return nil, err
@@ -781,7 +1015,6 @@ func (q *Queries) SearchTweetsFullText(ctx context.Context, arg SearchTweetsFull
 			&i.Tweet.MediaType,
 			&i.Tweet.MediaURL,
 			&i.Tweet.ParentID,
-			&i.Tweet.RetweetID,
 			&i.Tweet.ReplyCount,
 			&i.Tweet.RetweetCount,
 			&i.Tweet.LikeCount,
@@ -791,6 +1024,9 @@ func (q *Queries) SearchTweetsFullText(ctx context.Context, arg SearchTweetsFull
 			&i.IsLiked,
 			&i.IsRetweeted,
 			&i.IsFollowing,
+			&i.RetweetID,
+			&i.RetweetedByID,
+			&i.RetweetedAt,
 		); err != nil {
 			return nil, err
 		}

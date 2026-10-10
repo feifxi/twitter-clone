@@ -14,6 +14,7 @@ import (
 
 	"github.com/chanombude/twitter-go-api/internal/apperr"
 	"github.com/chanombude/twitter-go-api/internal/domain"
+	"github.com/chanombude/twitter-go-api/internal/pagination"
 	"github.com/chanombude/twitter-go-api/internal/tweet"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
@@ -21,35 +22,7 @@ import (
 
 // --- Additional mocks for error-path testing ---
 
-type fakeSearch struct {
-	searchUsersFn    func(ctx context.Context, q string, page, size int32, viewerID *int64) ([]domain.User, error)
-	searchTweetsFn   func(ctx context.Context, q string, page, size int32, viewerID *int64) ([]domain.Tweet, error)
-	searchHashtagsFn func(ctx context.Context, q string, limit int32) ([]domain.Hashtag, error)
-}
-
-func (m *fakeSearch) Users(ctx context.Context, q string, page, size int32, viewerID *int64) ([]domain.User, error) {
-	if m.searchUsersFn != nil {
-		return m.searchUsersFn(ctx, q, page, size, viewerID)
-	}
-	return nil, nil
-}
-func (m *fakeSearch) Tweets(ctx context.Context, q string, page, size int32, viewerID *int64) ([]domain.Tweet, error) {
-	if m.searchTweetsFn != nil {
-		return m.searchTweetsFn(ctx, q, page, size, viewerID)
-	}
-	return nil, nil
-}
-func (m *fakeSearch) Hashtags(ctx context.Context, q string, limit int32) ([]domain.Hashtag, error) {
-	if m.searchHashtagsFn != nil {
-		return m.searchHashtagsFn(ctx, q, limit)
-	}
-	return nil, nil
-}
-
-// --- getTweet error paths ---
-
-// fakeTweetsNotFound returns pgx.ErrNoRows for GetTweet.
-type fakeTweetsNotFound struct{ fakeTweets }
+type fakeTweetsNotFound struct{ TweetService }
 
 func (m *fakeTweetsNotFound) Get(_ context.Context, _ int64, _ *int64) (domain.Tweet, error) {
 	return domain.Tweet{}, pgx.ErrNoRows
@@ -82,7 +55,7 @@ func TestCreateTweet_UsecaseErrorReturnsInternalError(t *testing.T) {
 	t.Parallel()
 
 	mock := &fakeTweets{
-		createTweetFn: func(_ context.Context, _ tweet.CreateInput) (domain.Tweet, error) {
+		createFn: func(_ context.Context, _ tweet.CreateInput) (domain.Tweet, error) {
 			return domain.Tweet{}, apperr.Internal("db failure", errors.New("connection reset"))
 		},
 	}
@@ -110,7 +83,7 @@ func TestCreateTweetWithoutMedia_SuccessPath(t *testing.T) {
 	t.Parallel()
 
 	mock := &fakeTweets{
-		createTweetFn: func(_ context.Context, input tweet.CreateInput) (domain.Tweet, error) {
+		createFn: func(_ context.Context, input tweet.CreateInput) (domain.Tweet, error) {
 			content := "hello"
 			return domain.Tweet{
 				ID:        77,
@@ -150,7 +123,7 @@ func TestFollowUser_CannotFollowSelf(t *testing.T) {
 	setAuthorizedUser(ctx, 5)
 
 	mock := &fakeUsers{
-		followUserFn: func(ctx context.Context, followerID, targetUserID int64) (bool, error) {
+		followFn: func(ctx context.Context, followerID, targetUserID int64) (bool, error) {
 			if followerID == targetUserID {
 				return false, apperr.BadRequest("cannot follow yourself")
 			}
@@ -216,8 +189,8 @@ func TestGetGlobalFeed_UsecaseErrorPropagates(t *testing.T) {
 	t.Parallel()
 
 	mock := &fakeFeeds{
-		getGlobalFeedFn: func(_ context.Context, _, _ int32, _ *int64) ([]domain.Tweet, error) {
-			return nil, apperr.Internal("feed failure", errors.New("db error"))
+		globalFn: func(context.Context, pagination.Request, *int64) (pagination.Page[domain.Tweet], error) {
+			return pagination.Page[domain.Tweet]{}, apperr.Internal("feed failure", errors.New("db error"))
 		},
 	}
 
@@ -236,7 +209,7 @@ func TestSearchHashtags_ReturnsResults(t *testing.T) {
 	t.Parallel()
 
 	mock := &fakeSearch{
-		searchHashtagsFn: func(_ context.Context, _ string, _ int32) ([]domain.Hashtag, error) {
+		hashtagsFn: func(_ context.Context, _ string, _ int32) ([]domain.Hashtag, error) {
 			return []domain.Hashtag{{Text: "golang"}}, nil
 		},
 	}

@@ -16,8 +16,10 @@ export interface TweetResponse {
     retweetCount: number;
     isLiked: boolean;
     isRetweeted: boolean;
-    retweetedTweet?: TweetResponse | null;
     replyToTweetId?: number | null;
     replyToUsername?: string | null;
     createdAt: string;
+    /** Set when the tweet is in a timeline because this user retweeted it. */
+    retweetedBy: UserResponse | null;
+    retweetedAt: string | null;
 }

@@ -108,18 +108,27 @@ const listConversationMessages = `-- name: ListConversationMessages :many
 SELECT id, conversation_id, sender_id, content, created_at
 FROM direct_messages
 WHERE conversation_id = $1
+  AND ($2::timestamptz IS NULL
+       OR (created_at, id) < ($2::timestamptz, $3::bigint))
 ORDER BY created_at DESC, id DESC
-LIMIT $2 OFFSET $3
+LIMIT $4
 `
 
 type ListConversationMessagesParams struct {
-	ConversationID int64 `json:"conversation_id"`
-	Limit          int32 `json:"limit"`
-	Offset         int32 `json:"offset"`
+	ConversationID int64      `json:"conversation_id"`
+	CursorTime     *time.Time `json:"cursor_time"`
+	CursorID       *int64     `json:"cursor_id"`
+	PageLimit      int32      `json:"page_limit"`
 }
 
+// Newest first; each page goes further back in time.
 func (q *Queries) ListConversationMessages(ctx context.Context, arg ListConversationMessagesParams) ([]DirectMessage, error) {
-	rows, err := q.db.Query(ctx, listConversationMessages, arg.ConversationID, arg.Limit, arg.Offset)
+	rows, err := q.db.Query(ctx, listConversationMessages,
+		arg.ConversationID,
+		arg.CursorTime,
+		arg.CursorID,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +184,7 @@ const listUserConversations = `-- name: ListUserConversations :many
 SELECT
   c.id AS conversation_id,
   c.updated_at AS conversation_updated_at,
-  u.id, u.username, u.email, u.display_name, u.bio, u.avatar_url, u.banner_url, u.role, u.provider, u.followers_count, u.following_count, u.created_at, u.updated_at,
+  u.id, u.username, u.email, u.display_name, u.bio, u.location, u.website, u.avatar_url, u.banner_url, u.role, u.provider, u.followers_count, u.following_count, u.onboarded_at, u.created_at, u.updated_at,
   lm.id AS last_message_id,
   lm.sender_id AS last_sender_id,
   lm.content AS last_message_content,
@@ -192,14 +201,17 @@ JOIN LATERAL (
   LIMIT 1
 ) lm ON true
 WHERE self.user_id = $1
+  AND ($2::timestamptz IS NULL
+       OR (lm.created_at, c.id) < ($2::timestamptz, $3::bigint))
 ORDER BY lm.created_at DESC, c.id DESC
-LIMIT $2 OFFSET $3
+LIMIT $4
 `
 
 type ListUserConversationsParams struct {
-	UserID int64 `json:"user_id"`
-	Limit  int32 `json:"limit"`
-	Offset int32 `json:"offset"`
+	UserID     int64      `json:"user_id"`
+	CursorTime *time.Time `json:"cursor_time"`
+	CursorID   *int64     `json:"cursor_id"`
+	PageLimit  int32      `json:"page_limit"`
 }
 
 type ListUserConversationsRow struct {
@@ -213,7 +225,12 @@ type ListUserConversationsRow struct {
 }
 
 func (q *Queries) ListUserConversations(ctx context.Context, arg ListUserConversationsParams) ([]ListUserConversationsRow, error) {
-	rows, err := q.db.Query(ctx, listUserConversations, arg.UserID, arg.Limit, arg.Offset)
+	rows, err := q.db.Query(ctx, listUserConversations,
+		arg.UserID,
+		arg.CursorTime,
+		arg.CursorID,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -229,12 +246,15 @@ func (q *Queries) ListUserConversations(ctx context.Context, arg ListUserConvers
 			&i.User.Email,
 			&i.User.DisplayName,
 			&i.User.Bio,
+			&i.User.Location,
+			&i.User.Website,
 			&i.User.AvatarURL,
 			&i.User.BannerURL,
 			&i.User.Role,
 			&i.User.Provider,
 			&i.User.FollowersCount,
 			&i.User.FollowingCount,
+			&i.User.OnboardedAt,
 			&i.User.CreatedAt,
 			&i.User.UpdatedAt,
 			&i.LastMessageID,

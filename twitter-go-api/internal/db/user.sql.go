@@ -7,15 +7,13 @@ package db
 
 import (
 	"context"
+	"time"
 )
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (
-  username, email, display_name, bio, avatar_url, banner_url, role, provider
-) VALUES (
-  $1, $2, $3, $4, $5, $6, $7, $8
-)
-RETURNING id, username, email, display_name, bio, avatar_url, banner_url, role, provider, followers_count, following_count, created_at, updated_at
+INSERT INTO users (username, email, display_name, bio, avatar_url, banner_url, role, provider)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, username, email, display_name, bio, location, website, avatar_url, banner_url, role, provider, followers_count, following_count, onboarded_at, created_at, updated_at
 `
 
 type CreateUserParams struct {
@@ -47,12 +45,15 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.Email,
 		&i.DisplayName,
 		&i.Bio,
+		&i.Location,
+		&i.Website,
 		&i.AvatarURL,
 		&i.BannerURL,
 		&i.Role,
 		&i.Provider,
 		&i.FollowersCount,
 		&i.FollowingCount,
+		&i.OnboardedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -60,15 +61,15 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 }
 
 const getUser = `-- name: GetUser :one
-SELECT u.id, u.username, u.email, u.display_name, u.bio, u.avatar_url, u.banner_url, u.role, u.provider, u.followers_count, u.following_count, u.created_at, u.updated_at,
-  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = u.id AND f.follower_id = $2) AS is_following
+SELECT u.id, u.username, u.email, u.display_name, u.bio, u.location, u.website, u.avatar_url, u.banner_url, u.role, u.provider, u.followers_count, u.following_count, u.onboarded_at, u.created_at, u.updated_at,
+  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = u.id AND f.follower_id = $1) AS is_following
 FROM users u
-WHERE u.id = $1 LIMIT 1
+WHERE u.id = $2
 `
 
 type GetUserParams struct {
-	ID       int64  `json:"id"`
 	ViewerID *int64 `json:"viewer_id"`
+	ID       int64  `json:"id"`
 }
 
 type GetUserRow struct {
@@ -77,7 +78,7 @@ type GetUserRow struct {
 }
 
 func (q *Queries) GetUser(ctx context.Context, arg GetUserParams) (GetUserRow, error) {
-	row := q.db.QueryRow(ctx, getUser, arg.ID, arg.ViewerID)
+	row := q.db.QueryRow(ctx, getUser, arg.ViewerID, arg.ID)
 	var i GetUserRow
 	err := row.Scan(
 		&i.User.ID,
@@ -85,12 +86,15 @@ func (q *Queries) GetUser(ctx context.Context, arg GetUserParams) (GetUserRow, e
 		&i.User.Email,
 		&i.User.DisplayName,
 		&i.User.Bio,
+		&i.User.Location,
+		&i.User.Website,
 		&i.User.AvatarURL,
 		&i.User.BannerURL,
 		&i.User.Role,
 		&i.User.Provider,
 		&i.User.FollowersCount,
 		&i.User.FollowingCount,
+		&i.User.OnboardedAt,
 		&i.User.CreatedAt,
 		&i.User.UpdatedAt,
 		&i.IsFollowing,
@@ -99,8 +103,8 @@ func (q *Queries) GetUser(ctx context.Context, arg GetUserParams) (GetUserRow, e
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, username, email, display_name, bio, avatar_url, banner_url, role, provider, followers_count, following_count, created_at, updated_at FROM users
-WHERE email = $1 LIMIT 1
+SELECT id, username, email, display_name, bio, location, website, avatar_url, banner_url, role, provider, followers_count, following_count, onboarded_at, created_at, updated_at FROM users
+WHERE email = $1
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -112,12 +116,15 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.Email,
 		&i.DisplayName,
 		&i.Bio,
+		&i.Location,
+		&i.Website,
 		&i.AvatarURL,
 		&i.BannerURL,
 		&i.Role,
 		&i.Provider,
 		&i.FollowersCount,
 		&i.FollowingCount,
+		&i.OnboardedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -125,33 +132,49 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, email, display_name, bio, avatar_url, banner_url, role, provider, followers_count, following_count, created_at, updated_at FROM users
-WHERE username = $1 LIMIT 1
+SELECT u.id, u.username, u.email, u.display_name, u.bio, u.location, u.website, u.avatar_url, u.banner_url, u.role, u.provider, u.followers_count, u.following_count, u.onboarded_at, u.created_at, u.updated_at,
+  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = u.id AND f.follower_id = $1) AS is_following
+FROM users u
+WHERE lower(u.username) = lower($2)
 `
 
-func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User, error) {
-	row := q.db.QueryRow(ctx, getUserByUsername, username)
-	var i User
+type GetUserByUsernameParams struct {
+	ViewerID *int64 `json:"viewer_id"`
+	Username string `json:"username"`
+}
+
+type GetUserByUsernameRow struct {
+	User        User `json:"user"`
+	IsFollowing bool `json:"is_following"`
+}
+
+func (q *Queries) GetUserByUsername(ctx context.Context, arg GetUserByUsernameParams) (GetUserByUsernameRow, error) {
+	row := q.db.QueryRow(ctx, getUserByUsername, arg.ViewerID, arg.Username)
+	var i GetUserByUsernameRow
 	err := row.Scan(
-		&i.ID,
-		&i.Username,
-		&i.Email,
-		&i.DisplayName,
-		&i.Bio,
-		&i.AvatarURL,
-		&i.BannerURL,
-		&i.Role,
-		&i.Provider,
-		&i.FollowersCount,
-		&i.FollowingCount,
-		&i.CreatedAt,
-		&i.UpdatedAt,
+		&i.User.ID,
+		&i.User.Username,
+		&i.User.Email,
+		&i.User.DisplayName,
+		&i.User.Bio,
+		&i.User.Location,
+		&i.User.Website,
+		&i.User.AvatarURL,
+		&i.User.BannerURL,
+		&i.User.Role,
+		&i.User.Provider,
+		&i.User.FollowersCount,
+		&i.User.FollowingCount,
+		&i.User.OnboardedAt,
+		&i.User.CreatedAt,
+		&i.User.UpdatedAt,
+		&i.IsFollowing,
 	)
 	return i, err
 }
 
 const getUsersByIDs = `-- name: GetUsersByIDs :many
-SELECT u.id, u.username, u.email, u.display_name, u.bio, u.avatar_url, u.banner_url, u.role, u.provider, u.followers_count, u.following_count, u.created_at, u.updated_at,
+SELECT u.id, u.username, u.email, u.display_name, u.bio, u.location, u.website, u.avatar_url, u.banner_url, u.role, u.provider, u.followers_count, u.following_count, u.onboarded_at, u.created_at, u.updated_at,
   EXISTS(SELECT 1 FROM follows f WHERE f.following_id = u.id AND f.follower_id = $1) AS is_following
 FROM users u
 WHERE u.id = ANY($2::bigint[])
@@ -182,12 +205,15 @@ func (q *Queries) GetUsersByIDs(ctx context.Context, arg GetUsersByIDsParams) ([
 			&i.User.Email,
 			&i.User.DisplayName,
 			&i.User.Bio,
+			&i.User.Location,
+			&i.User.Website,
 			&i.User.AvatarURL,
 			&i.User.BannerURL,
 			&i.User.Role,
 			&i.User.Provider,
 			&i.User.FollowersCount,
 			&i.User.FollowingCount,
+			&i.User.OnboardedAt,
 			&i.User.CreatedAt,
 			&i.User.UpdatedAt,
 			&i.IsFollowing,
@@ -202,76 +228,68 @@ func (q *Queries) GetUsersByIDs(ctx context.Context, arg GetUsersByIDsParams) ([
 	return items, nil
 }
 
-const isFollowing = `-- name: IsFollowing :one
-SELECT EXISTS(
-  SELECT 1 FROM follows WHERE follower_id = $1 AND following_id = $2
-)
+const listFollowers = `-- name: ListFollowers :many
+SELECT u.id, u.username, u.email, u.display_name, u.bio, u.location, u.website, u.avatar_url, u.banner_url, u.role, u.provider, u.followers_count, u.following_count, u.onboarded_at, u.created_at, u.updated_at,
+  EXISTS(SELECT 1 FROM follows f2 WHERE f2.following_id = u.id AND f2.follower_id = $1) AS is_following,
+  f.created_at AS followed_at
+FROM follows f
+JOIN users u ON u.id = f.follower_id
+WHERE f.following_id = $2
+  AND ($3::timestamptz IS NULL
+       OR (f.created_at, f.follower_id) < ($3::timestamptz, $4::bigint))
+ORDER BY f.created_at DESC, f.follower_id DESC
+LIMIT $5
 `
 
-type IsFollowingParams struct {
-	FollowerID  int64 `json:"follower_id"`
-	FollowingID int64 `json:"following_id"`
+type ListFollowersParams struct {
+	ViewerID   *int64     `json:"viewer_id"`
+	UserID     int64      `json:"user_id"`
+	CursorTime *time.Time `json:"cursor_time"`
+	CursorID   *int64     `json:"cursor_id"`
+	PageLimit  int32      `json:"page_limit"`
 }
 
-func (q *Queries) IsFollowing(ctx context.Context, arg IsFollowingParams) (bool, error) {
-	row := q.db.QueryRow(ctx, isFollowing, arg.FollowerID, arg.FollowingID)
-	var exists bool
-	err := row.Scan(&exists)
-	return exists, err
+type ListFollowersRow struct {
+	User        User      `json:"user"`
+	IsFollowing bool      `json:"is_following"`
+	FollowedAt  time.Time `json:"followed_at"`
 }
 
-const listFollowersUsers = `-- name: ListFollowersUsers :many
-SELECT u.id, u.username, u.email, u.display_name, u.bio, u.avatar_url, u.banner_url, u.role, u.provider, u.followers_count, u.following_count, u.created_at, u.updated_at,
-  EXISTS(SELECT 1 FROM follows f2 WHERE f2.following_id = u.id AND f2.follower_id = $4) AS is_following
-FROM users u
-JOIN follows f ON u.id = f.follower_id
-WHERE f.following_id = $1
-ORDER BY f.created_at DESC
-  , u.id DESC
-LIMIT $2 OFFSET $3
-`
-
-type ListFollowersUsersParams struct {
-	FollowingID int64  `json:"following_id"`
-	Limit       int32  `json:"limit"`
-	Offset      int32  `json:"offset"`
-	ViewerID    *int64 `json:"viewer_id"`
-}
-
-type ListFollowersUsersRow struct {
-	User        User `json:"user"`
-	IsFollowing bool `json:"is_following"`
-}
-
-func (q *Queries) ListFollowersUsers(ctx context.Context, arg ListFollowersUsersParams) ([]ListFollowersUsersRow, error) {
-	rows, err := q.db.Query(ctx, listFollowersUsers,
-		arg.FollowingID,
-		arg.Limit,
-		arg.Offset,
+// Accounts following @user_id, most recent follow first; the cursor is the follow's time.
+func (q *Queries) ListFollowers(ctx context.Context, arg ListFollowersParams) ([]ListFollowersRow, error) {
+	rows, err := q.db.Query(ctx, listFollowers,
 		arg.ViewerID,
+		arg.UserID,
+		arg.CursorTime,
+		arg.CursorID,
+		arg.PageLimit,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ListFollowersUsersRow{}
+	items := []ListFollowersRow{}
 	for rows.Next() {
-		var i ListFollowersUsersRow
+		var i ListFollowersRow
 		if err := rows.Scan(
 			&i.User.ID,
 			&i.User.Username,
 			&i.User.Email,
 			&i.User.DisplayName,
 			&i.User.Bio,
+			&i.User.Location,
+			&i.User.Website,
 			&i.User.AvatarURL,
 			&i.User.BannerURL,
 			&i.User.Role,
 			&i.User.Provider,
 			&i.User.FollowersCount,
 			&i.User.FollowingCount,
+			&i.User.OnboardedAt,
 			&i.User.CreatedAt,
 			&i.User.UpdatedAt,
 			&i.IsFollowing,
+			&i.FollowedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -283,58 +301,68 @@ func (q *Queries) ListFollowersUsers(ctx context.Context, arg ListFollowersUsers
 	return items, nil
 }
 
-const listFollowingUsers = `-- name: ListFollowingUsers :many
-SELECT u.id, u.username, u.email, u.display_name, u.bio, u.avatar_url, u.banner_url, u.role, u.provider, u.followers_count, u.following_count, u.created_at, u.updated_at,
-  EXISTS(SELECT 1 FROM follows f2 WHERE f2.following_id = u.id AND f2.follower_id = $4) AS is_following
-FROM users u
-JOIN follows f ON u.id = f.following_id
-WHERE f.follower_id = $1
-ORDER BY f.created_at DESC
-  , u.id DESC
-LIMIT $2 OFFSET $3
+const listFollowing = `-- name: ListFollowing :many
+SELECT u.id, u.username, u.email, u.display_name, u.bio, u.location, u.website, u.avatar_url, u.banner_url, u.role, u.provider, u.followers_count, u.following_count, u.onboarded_at, u.created_at, u.updated_at,
+  EXISTS(SELECT 1 FROM follows f2 WHERE f2.following_id = u.id AND f2.follower_id = $1) AS is_following,
+  f.created_at AS followed_at
+FROM follows f
+JOIN users u ON u.id = f.following_id
+WHERE f.follower_id = $2
+  AND ($3::timestamptz IS NULL
+       OR (f.created_at, f.following_id) < ($3::timestamptz, $4::bigint))
+ORDER BY f.created_at DESC, f.following_id DESC
+LIMIT $5
 `
 
-type ListFollowingUsersParams struct {
-	FollowerID int64  `json:"follower_id"`
-	Limit      int32  `json:"limit"`
-	Offset     int32  `json:"offset"`
-	ViewerID   *int64 `json:"viewer_id"`
+type ListFollowingParams struct {
+	ViewerID   *int64     `json:"viewer_id"`
+	UserID     int64      `json:"user_id"`
+	CursorTime *time.Time `json:"cursor_time"`
+	CursorID   *int64     `json:"cursor_id"`
+	PageLimit  int32      `json:"page_limit"`
 }
 
-type ListFollowingUsersRow struct {
-	User        User `json:"user"`
-	IsFollowing bool `json:"is_following"`
+type ListFollowingRow struct {
+	User        User      `json:"user"`
+	IsFollowing bool      `json:"is_following"`
+	FollowedAt  time.Time `json:"followed_at"`
 }
 
-func (q *Queries) ListFollowingUsers(ctx context.Context, arg ListFollowingUsersParams) ([]ListFollowingUsersRow, error) {
-	rows, err := q.db.Query(ctx, listFollowingUsers,
-		arg.FollowerID,
-		arg.Limit,
-		arg.Offset,
+// Accounts @user_id follows, most recent follow first.
+func (q *Queries) ListFollowing(ctx context.Context, arg ListFollowingParams) ([]ListFollowingRow, error) {
+	rows, err := q.db.Query(ctx, listFollowing,
 		arg.ViewerID,
+		arg.UserID,
+		arg.CursorTime,
+		arg.CursorID,
+		arg.PageLimit,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ListFollowingUsersRow{}
+	items := []ListFollowingRow{}
 	for rows.Next() {
-		var i ListFollowingUsersRow
+		var i ListFollowingRow
 		if err := rows.Scan(
 			&i.User.ID,
 			&i.User.Username,
 			&i.User.Email,
 			&i.User.DisplayName,
 			&i.User.Bio,
+			&i.User.Location,
+			&i.User.Website,
 			&i.User.AvatarURL,
 			&i.User.BannerURL,
 			&i.User.Role,
 			&i.User.Provider,
 			&i.User.FollowersCount,
 			&i.User.FollowingCount,
+			&i.User.OnboardedAt,
 			&i.User.CreatedAt,
 			&i.User.UpdatedAt,
 			&i.IsFollowing,
+			&i.FollowedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -347,21 +375,18 @@ func (q *Queries) ListFollowingUsers(ctx context.Context, arg ListFollowingUsers
 }
 
 const listSuggestedUsers = `-- name: ListSuggestedUsers :many
-SELECT u.id, u.username, u.email, u.display_name, u.bio, u.avatar_url, u.banner_url, u.role, u.provider, u.followers_count, u.following_count, u.created_at, u.updated_at,
-  EXISTS(SELECT 1 FROM follows f2 WHERE f2.following_id = u.id AND f2.follower_id = $4) AS is_following
+SELECT u.id, u.username, u.email, u.display_name, u.bio, u.location, u.website, u.avatar_url, u.banner_url, u.role, u.provider, u.followers_count, u.following_count, u.onboarded_at, u.created_at, u.updated_at, false AS is_following
 FROM users u
-LEFT JOIN follows f ON f.following_id = u.id AND f.follower_id = $1
-WHERE u.id != $1
-ORDER BY (CASE WHEN f.follower_id IS NULL THEN 0 ELSE 1 END) ASC, u.followers_count DESC
-  , u.id DESC
-LIMIT $2 OFFSET $3
+WHERE ($1::bigint IS NULL OR u.id <> $1)
+  AND NOT EXISTS (SELECT 1 FROM follows f WHERE f.following_id = u.id AND f.follower_id = $1)
+ORDER BY u.followers_count DESC, u.id DESC
+LIMIT $3 OFFSET $2
 `
 
 type ListSuggestedUsersParams struct {
-	FollowerID int64  `json:"follower_id"`
-	Limit      int32  `json:"limit"`
-	Offset     int32  `json:"offset"`
 	ViewerID   *int64 `json:"viewer_id"`
+	PageOffset int32  `json:"page_offset"`
+	PageLimit  int32  `json:"page_limit"`
 }
 
 type ListSuggestedUsersRow struct {
@@ -369,13 +394,9 @@ type ListSuggestedUsersRow struct {
 	IsFollowing bool `json:"is_following"`
 }
 
+// Most-followed accounts the viewer doesn't follow yet (anyone, for anonymous viewers).
 func (q *Queries) ListSuggestedUsers(ctx context.Context, arg ListSuggestedUsersParams) ([]ListSuggestedUsersRow, error) {
-	rows, err := q.db.Query(ctx, listSuggestedUsers,
-		arg.FollowerID,
-		arg.Limit,
-		arg.Offset,
-		arg.ViewerID,
-	)
+	rows, err := q.db.Query(ctx, listSuggestedUsers, arg.ViewerID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -389,12 +410,15 @@ func (q *Queries) ListSuggestedUsers(ctx context.Context, arg ListSuggestedUsers
 			&i.User.Email,
 			&i.User.DisplayName,
 			&i.User.Bio,
+			&i.User.Location,
+			&i.User.Website,
 			&i.User.AvatarURL,
 			&i.User.BannerURL,
 			&i.User.Role,
 			&i.User.Provider,
 			&i.User.FollowersCount,
 			&i.User.FollowingCount,
+			&i.User.OnboardedAt,
 			&i.User.CreatedAt,
 			&i.User.UpdatedAt,
 			&i.IsFollowing,
@@ -409,68 +433,21 @@ func (q *Queries) ListSuggestedUsers(ctx context.Context, arg ListSuggestedUsers
 	return items, nil
 }
 
-const listTopUsers = `-- name: ListTopUsers :many
-SELECT id, username, email, display_name, bio, avatar_url, banner_url, role, provider, followers_count, following_count, created_at, updated_at FROM users
-ORDER BY followers_count DESC
-  , id DESC
-LIMIT $1 OFFSET $2
-`
-
-type ListTopUsersParams struct {
-	Limit  int32 `json:"limit"`
-	Offset int32 `json:"offset"`
-}
-
-func (q *Queries) ListTopUsers(ctx context.Context, arg ListTopUsersParams) ([]User, error) {
-	rows, err := q.db.Query(ctx, listTopUsers, arg.Limit, arg.Offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []User{}
-	for rows.Next() {
-		var i User
-		if err := rows.Scan(
-			&i.ID,
-			&i.Username,
-			&i.Email,
-			&i.DisplayName,
-			&i.Bio,
-			&i.AvatarURL,
-			&i.BannerURL,
-			&i.Role,
-			&i.Provider,
-			&i.FollowersCount,
-			&i.FollowingCount,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const searchUsers = `-- name: SearchUsers :many
-SELECT u.id, u.username, u.email, u.display_name, u.bio, u.avatar_url, u.banner_url, u.role, u.provider, u.followers_count, u.following_count, u.created_at, u.updated_at,
-  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = u.id AND f.follower_id = $4) AS is_following
+SELECT u.id, u.username, u.email, u.display_name, u.bio, u.location, u.website, u.avatar_url, u.banner_url, u.role, u.provider, u.followers_count, u.following_count, u.onboarded_at, u.created_at, u.updated_at,
+  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = u.id AND f.follower_id = $1) AS is_following
 FROM users u
-WHERE u.username ILIKE '%' || $1 || '%'
-   OR u.display_name ILIKE '%' || $1 || '%'
-ORDER BY u.followers_count DESC
-  , u.id DESC
-LIMIT $2 OFFSET $3
+WHERE u.username ILIKE '%' || $2 || '%'
+   OR u.display_name ILIKE '%' || $2 || '%'
+ORDER BY u.followers_count DESC, u.id DESC
+LIMIT $4 OFFSET $3
 `
 
 type SearchUsersParams struct {
-	Column1  *string `json:"column_1"`
-	Limit    int32   `json:"limit"`
-	Offset   int32   `json:"offset"`
-	ViewerID *int64  `json:"viewer_id"`
+	ViewerID   *int64  `json:"viewer_id"`
+	Query      *string `json:"query"`
+	PageOffset int32   `json:"page_offset"`
+	PageLimit  int32   `json:"page_limit"`
 }
 
 type SearchUsersRow struct {
@@ -478,12 +455,13 @@ type SearchUsersRow struct {
 	IsFollowing bool `json:"is_following"`
 }
 
+// Ranked by popularity, so it pages by offset.
 func (q *Queries) SearchUsers(ctx context.Context, arg SearchUsersParams) ([]SearchUsersRow, error) {
 	rows, err := q.db.Query(ctx, searchUsers,
-		arg.Column1,
-		arg.Limit,
-		arg.Offset,
 		arg.ViewerID,
+		arg.Query,
+		arg.PageOffset,
+		arg.PageLimit,
 	)
 	if err != nil {
 		return nil, err
@@ -498,12 +476,15 @@ func (q *Queries) SearchUsers(ctx context.Context, arg SearchUsersParams) ([]Sea
 			&i.User.Email,
 			&i.User.DisplayName,
 			&i.User.Bio,
+			&i.User.Location,
+			&i.User.Website,
 			&i.User.AvatarURL,
 			&i.User.BannerURL,
 			&i.User.Role,
 			&i.User.Provider,
 			&i.User.FollowersCount,
 			&i.User.FollowingCount,
+			&i.User.OnboardedAt,
 			&i.User.CreatedAt,
 			&i.User.UpdatedAt,
 			&i.IsFollowing,
@@ -518,16 +499,58 @@ func (q *Queries) SearchUsers(ctx context.Context, arg SearchUsersParams) ([]Sea
 	return items, nil
 }
 
+const setUsername = `-- name: SetUsername :one
+UPDATE users
+SET username = $2,
+    display_name = $3,
+    onboarded_at = COALESCE(onboarded_at, now()),
+    updated_at = now()
+WHERE id = $1
+RETURNING id, username, email, display_name, bio, location, website, avatar_url, banner_url, role, provider, followers_count, following_count, onboarded_at, created_at, updated_at
+`
+
+type SetUsernameParams struct {
+	ID          int64   `json:"id"`
+	Username    string  `json:"username"`
+	DisplayName *string `json:"display_name"`
+}
+
+// Marks onboarding complete. A taken username fails on idx_users_username_lower.
+func (q *Queries) SetUsername(ctx context.Context, arg SetUsernameParams) (User, error) {
+	row := q.db.QueryRow(ctx, setUsername, arg.ID, arg.Username, arg.DisplayName)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.Email,
+		&i.DisplayName,
+		&i.Bio,
+		&i.Location,
+		&i.Website,
+		&i.AvatarURL,
+		&i.BannerURL,
+		&i.Role,
+		&i.Provider,
+		&i.FollowersCount,
+		&i.FollowingCount,
+		&i.OnboardedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const updateUserProfile = `-- name: UpdateUserProfile :one
 UPDATE users
-SET
-  bio = $2,
-  display_name = $3,
-  avatar_url = $4,
-  banner_url = $5,
-  updated_at = CURRENT_TIMESTAMP
+SET bio = $2,
+    display_name = $3,
+    avatar_url = $4,
+    banner_url = $5,
+    location = $6,
+    website = $7,
+    updated_at = now()
 WHERE id = $1
-RETURNING id, username, email, display_name, bio, avatar_url, banner_url, role, provider, followers_count, following_count, created_at, updated_at
+RETURNING id, username, email, display_name, bio, location, website, avatar_url, banner_url, role, provider, followers_count, following_count, onboarded_at, created_at, updated_at
 `
 
 type UpdateUserProfileParams struct {
@@ -536,6 +559,8 @@ type UpdateUserProfileParams struct {
 	DisplayName *string `json:"display_name"`
 	AvatarURL   *string `json:"avatar_url"`
 	BannerURL   *string `json:"banner_url"`
+	Location    *string `json:"location"`
+	Website     *string `json:"website"`
 }
 
 func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error) {
@@ -545,6 +570,8 @@ func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfilePa
 		arg.DisplayName,
 		arg.AvatarURL,
 		arg.BannerURL,
+		arg.Location,
+		arg.Website,
 	)
 	var i User
 	err := row.Scan(
@@ -553,12 +580,15 @@ func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfilePa
 		&i.Email,
 		&i.DisplayName,
 		&i.Bio,
+		&i.Location,
+		&i.Website,
 		&i.AvatarURL,
 		&i.BannerURL,
 		&i.Role,
 		&i.Provider,
 		&i.FollowersCount,
 		&i.FollowingCount,
+		&i.OnboardedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

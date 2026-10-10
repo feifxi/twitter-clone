@@ -63,6 +63,13 @@ type RefreshToken struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
+type Retweet struct {
+	ID        int64     `json:"id"`
+	UserID    int64     `json:"user_id"`
+	TweetID   int64     `json:"tweet_id"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type Tweet struct {
 	ID           int64       `json:"id"`
 	UserID       int64       `json:"user_id"`
@@ -70,7 +77,6 @@ type Tweet struct {
 	MediaType    *string     `json:"media_type"`
 	MediaURL     *string     `json:"media_url"`
 	ParentID     *int64      `json:"parent_id"`
-	RetweetID    *int64      `json:"retweet_id"`
 	ReplyCount   int32       `json:"reply_count"`
 	RetweetCount int32       `json:"retweet_count"`
 	LikeCount    int32       `json:"like_count"`
@@ -80,11 +86,11 @@ type Tweet struct {
 }
 
 type TweetEmbedding struct {
-	ID        pgtype.UUID        `json:"id"`
-	TweetID   int64              `json:"tweet_id"`
-	Content   string             `json:"content"`
-	Embedding *pgvector.Vector   `json:"embedding"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	ID        pgtype.UUID      `json:"id"`
+	TweetID   int64            `json:"tweet_id"`
+	Content   string           `json:"content"`
+	Embedding *pgvector.Vector `json:"embedding"`
+	CreatedAt time.Time        `json:"created_at"`
 }
 
 type TweetHashtag struct {
@@ -99,17 +105,20 @@ type TweetLike struct {
 }
 
 type User struct {
-	ID             int64     `json:"id"`
-	Username       string    `json:"username"`
-	Email          string    `json:"email"`
-	DisplayName    *string   `json:"display_name"`
-	Bio            *string   `json:"bio"`
-	AvatarURL      *string   `json:"avatar_url"`
-	BannerURL      *string   `json:"banner_url"`
-	Role           string    `json:"role"`
-	Provider       string    `json:"provider"`
-	FollowersCount int32     `json:"followers_count"`
-	FollowingCount int32     `json:"following_count"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	ID             int64      `json:"id"`
+	Username       string     `json:"username"`
+	Email          string     `json:"email"`
+	DisplayName    *string    `json:"display_name"`
+	Bio            *string    `json:"bio"`
+	Location       *string    `json:"location"`
+	Website        *string    `json:"website"`
+	AvatarURL      *string    `json:"avatar_url"`
+	BannerURL      *string    `json:"banner_url"`
+	Role           string     `json:"role"`
+	Provider       string     `json:"provider"`
+	FollowersCount int32      `json:"followers_count"`
+	FollowingCount int32      `json:"following_count"`
+	OnboardedAt    *time.Time `json:"onboarded_at"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
 }

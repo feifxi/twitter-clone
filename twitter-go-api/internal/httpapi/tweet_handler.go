@@ -63,8 +63,8 @@ func (s *Server) createTweet(c *gin.Context) {
 // @Security		BearerAuth
 // @Router			/tweets/{id} [delete]
 func (s *Server) deleteTweet(c *gin.Context) {
-	var req idURIRequest
-	if err := c.ShouldBindUri(&req); err != nil {
+	var path idURIRequest
+	if err := c.ShouldBindUri(&path); err != nil {
 		writeError(c, err)
 		return
 	}
@@ -72,7 +72,7 @@ func (s *Server) deleteTweet(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := s.svc.Tweets.Delete(c.Request.Context(), userID, req.ID); err != nil {
+	if err := s.svc.Tweets.Delete(c.Request.Context(), userID, path.ID); err != nil {
 		writeError(c, err)
 		return
 	}
@@ -89,13 +89,13 @@ func (s *Server) deleteTweet(c *gin.Context) {
 // @Failure		404	{object}	ErrorResponse
 // @Router			/tweets/{id} [get]
 func (s *Server) getTweet(c *gin.Context) {
-	var req idURIRequest
-	if err := c.ShouldBindUri(&req); err != nil {
+	var path idURIRequest
+	if err := c.ShouldBindUri(&path); err != nil {
 		writeError(c, err)
 		return
 	}
 	viewerID := optionalViewerID(c)
-	t, err := s.svc.Tweets.Get(c.Request.Context(), req.ID, viewerID)
+	t, err := s.svc.Tweets.Get(c.Request.Context(), path.ID, viewerID)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -114,24 +114,22 @@ func (s *Server) getTweet(c *gin.Context) {
 // @Success		200		{object}	PageResponse[TweetResponse]
 // @Router			/tweets/{id}/replies [get]
 func (s *Server) getReplies(c *gin.Context) {
-	var req idURIRequest
-	if err := c.ShouldBindUri(&req); err != nil {
+	var path idURIRequest
+	if err := c.ShouldBindUri(&path); err != nil {
 		writeError(c, err)
 		return
 	}
-	offset, size, ok := parseOffsetAndSize(c)
+	req, ok := parsePageRequest(c)
 	if !ok {
 		return
 	}
-	page := offset / size
 	viewerID := optionalViewerID(c)
-	replies, err := s.svc.Tweets.ListReplies(c.Request.Context(), req.ID, page, size+1, viewerID)
+	replies, err := s.svc.Tweets.ListReplies(c.Request.Context(), path.ID, req, viewerID)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	response := newTweetResponseList(replies)
-	c.JSON(http.StatusOK, BuildPageResponse(response, size, offset))
+	c.JSON(http.StatusOK, newPageResponse(replies, newTweetResponse))
 }
 
 // likeTweet godoc
@@ -144,8 +142,8 @@ func (s *Server) getReplies(c *gin.Context) {
 // @Security		BearerAuth
 // @Router			/tweets/{id}/like [post]
 func (s *Server) likeTweet(c *gin.Context) {
-	var req idURIRequest
-	if err := c.ShouldBindUri(&req); err != nil {
+	var path idURIRequest
+	if err := c.ShouldBindUri(&path); err != nil {
 		writeError(c, err)
 		return
 	}
@@ -153,7 +151,7 @@ func (s *Server) likeTweet(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := s.svc.Tweets.Like(c.Request.Context(), userID, req.ID); err != nil {
+	if err := s.svc.Tweets.Like(c.Request.Context(), userID, path.ID); err != nil {
 		writeError(c, err)
 		return
 	}
@@ -170,8 +168,8 @@ func (s *Server) likeTweet(c *gin.Context) {
 // @Security		BearerAuth
 // @Router			/tweets/{id}/like [delete]
 func (s *Server) unlikeTweet(c *gin.Context) {
-	var req idURIRequest
-	if err := c.ShouldBindUri(&req); err != nil {
+	var path idURIRequest
+	if err := c.ShouldBindUri(&path); err != nil {
 		writeError(c, err)
 		return
 	}
@@ -179,7 +177,7 @@ func (s *Server) unlikeTweet(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := s.svc.Tweets.Unlike(c.Request.Context(), userID, req.ID); err != nil {
+	if err := s.svc.Tweets.Unlike(c.Request.Context(), userID, path.ID); err != nil {
 		writeError(c, err)
 		return
 	}
@@ -197,8 +195,8 @@ func (s *Server) unlikeTweet(c *gin.Context) {
 // @Security		BearerAuth
 // @Router			/tweets/{id}/retweet [post]
 func (s *Server) retweet(c *gin.Context) {
-	var req idURIRequest
-	if err := c.ShouldBindUri(&req); err != nil {
+	var path idURIRequest
+	if err := c.ShouldBindUri(&path); err != nil {
 		writeError(c, err)
 		return
 	}
@@ -206,7 +204,7 @@ func (s *Server) retweet(c *gin.Context) {
 	if !ok {
 		return
 	}
-	t, err := s.svc.Tweets.Retweet(c.Request.Context(), userID, req.ID)
+	t, err := s.svc.Tweets.Retweet(c.Request.Context(), userID, path.ID)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -224,8 +222,8 @@ func (s *Server) retweet(c *gin.Context) {
 // @Security		BearerAuth
 // @Router			/tweets/{id}/retweet [delete]
 func (s *Server) undoRetweet(c *gin.Context) {
-	var req idURIRequest
-	if err := c.ShouldBindUri(&req); err != nil {
+	var path idURIRequest
+	if err := c.ShouldBindUri(&path); err != nil {
 		writeError(c, err)
 		return
 	}
@@ -233,7 +231,7 @@ func (s *Server) undoRetweet(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := s.svc.Tweets.UndoRetweet(c.Request.Context(), userID, req.ID); err != nil {
+	if err := s.svc.Tweets.UndoRetweet(c.Request.Context(), userID, path.ID); err != nil {
 		writeError(c, err)
 		return
 	}

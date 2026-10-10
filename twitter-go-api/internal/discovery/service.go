@@ -6,6 +6,7 @@ import (
 
 	"github.com/chanombude/twitter-go-api/internal/db"
 	"github.com/chanombude/twitter-go-api/internal/domain"
+	"github.com/chanombude/twitter-go-api/internal/pagination"
 )
 
 type Service struct {
@@ -30,27 +31,26 @@ func (s *Service) TrendingHashtags(ctx context.Context, limit int32) ([]domain.H
 	return domain.NewHashtags(rows), nil
 }
 
-// SuggestedUsers favours accounts the viewer doesn't follow yet; anonymous viewers get the most-followed users.
-func (s *Service) SuggestedUsers(ctx context.Context, page, size int32, viewerID *int64) ([]domain.User, error) {
-	if viewerID == nil {
-		rows, err := s.store.ListTopUsers(ctx, db.ListTopUsersParams{Limit: size, Offset: page * size})
-		if err != nil {
-			return nil, err
-		}
-		users := make([]domain.User, 0, len(rows))
-		for _, u := range rows {
-			users = append(users, domain.NewUser(u, false))
-		}
-		return users, nil
+// SuggestedUsers lists the most-followed accounts the viewer doesn't follow yet; it pages by offset.
+func (s *Service) SuggestedUsers(ctx context.Context, req pagination.Request, viewerID *int64) (pagination.Page[domain.User], error) {
+	rows, err := s.store.ListSuggestedUsers(ctx, db.ListSuggestedUsersParams{
+		ViewerID:   viewerID,
+		PageLimit:  req.FetchLimit(),
+		PageOffset: req.Offset(),
+	})
+	if err != nil {
+		return pagination.Page[domain.User]{}, err
 	}
 
-	rows, err := s.store.ListSuggestedUsers(ctx, db.ListSuggestedUsersParams{FollowerID: *viewerID, Limit: size, Offset: page * size, ViewerID: viewerID})
-	if err != nil {
-		return nil, err
-	}
+	rows, more := pagination.Trim(rows, req.Limit)
 	users := make([]domain.User, 0, len(rows))
 	for _, r := range rows {
 		users = append(users, domain.NewUser(r.User, r.IsFollowing))
 	}
-	return users, nil
+	page := pagination.Page[domain.User]{Items: users}
+	if more {
+		next := req.NextOffset()
+		page.Next = &next
+	}
+	return page, nil
 }

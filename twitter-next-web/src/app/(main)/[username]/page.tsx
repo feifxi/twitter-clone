@@ -30,7 +30,7 @@ function ProfileContent({ params }: { params: Promise<{ username: string }> }) {
   const tweets = feed.data?.pages.flatMap((p) => p.items) ?? [];
   const tweetsFiltered =
     currentTab === 'media'
-      ? tweets.filter((t) => (t.retweetedTweet ?? t).mediaUrl)
+      ? tweets.filter((t) => t.mediaUrl)
       : tweets;
 
   const handleTabChange = (newTab: 'tweets' | 'media') => {

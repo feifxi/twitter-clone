@@ -110,12 +110,7 @@ const docTemplate = `{
         },
         "/auth/logout": {
             "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Revoke the user session and clear access/refresh tokens.",
+                "description": "End the session the refresh token belongs to. Other devices stay signed in.",
                 "consumes": [
                     "application/json"
                 ],
@@ -128,9 +123,10 @@ const docTemplate = `{
                 "summary": "Logout",
                 "parameters": [
                     {
-                        "description": "Optional Refresh Token to revoke explicitly",
+                        "description": "Refresh token of the session to end",
                         "name": "request",
                         "in": "body",
+                        "required": true,
                         "schema": {
                             "$ref": "#/definitions/httpapi.refreshTokenRequest"
                         }
@@ -141,12 +137,6 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/httpapi.SuccessResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.ErrorResponse"
                         }
                     }
                 }
@@ -375,47 +365,6 @@ const docTemplate = `{
                 ],
                 "summary": "Global Feed",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Pagination cursor",
-                        "name": "cursor",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Number of items per page",
-                        "name": "size",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.PageResponse-httpapi_TweetResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/feeds/user/{id}": {
-            "get": {
-                "description": "Get a paginated list of tweets for a specific user profile.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Feeds"
-                ],
-                "summary": "User Profile Feed",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "User ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
                     {
                         "type": "string",
                         "description": "Pagination cursor",
@@ -1282,6 +1231,92 @@ const docTemplate = `{
                 }
             }
         },
+        "/users/by-username/{username}": {
+            "get": {
+                "description": "Look a profile up by handle (case-insensitive).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Get User by Username",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Username",
+                        "name": "username",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/httpapi.UserResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/httpapi.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/users/me/onboarding": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Choose a username (3-20 letters, numbers or underscores) and display name. Sign-up assigns a generated username until then.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Complete Onboarding",
+                "parameters": [
+                    {
+                        "description": "Chosen username and display name",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/httpapi.onboardingRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/httpapi.CurrentUserResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/httpapi.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "username taken",
+                        "schema": {
+                            "$ref": "#/definitions/httpapi.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/users/profile": {
             "put": {
                 "security": [
@@ -1530,6 +1565,181 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/users/{id}/likes": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Tweets the user liked, most recently liked first. Only the user themselves may list their likes.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Profile: Likes",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "User ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Pagination cursor",
+                        "name": "cursor",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of items per page",
+                        "name": "size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/httpapi.PageResponse-httpapi_TweetResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/httpapi.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/users/{id}/media": {
+            "get": {
+                "description": "A user's tweets that carry an image or video, newest first.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Profile: Media",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "User ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Pagination cursor",
+                        "name": "cursor",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of items per page",
+                        "name": "size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/httpapi.PageResponse-httpapi_TweetResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/users/{id}/posts": {
+            "get": {
+                "description": "A user's top-level tweets and retweets, newest first.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Profile: Posts",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "User ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Pagination cursor",
+                        "name": "cursor",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of items per page",
+                        "name": "size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/httpapi.PageResponse-httpapi_TweetResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/users/{id}/replies": {
+            "get": {
+                "description": "Replies written by a user, newest first.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Profile: Replies",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "User ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Pagination cursor",
+                        "name": "cursor",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of items per page",
+                        "name": "size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/httpapi.PageResponse-httpapi_TweetResponse"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -1587,6 +1797,9 @@ const docTemplate = `{
                 "bio": {
                     "type": "string"
                 },
+                "createdAt": {
+                    "type": "string"
+                },
                 "displayName": {
                     "type": "string"
                 },
@@ -1605,7 +1818,17 @@ const docTemplate = `{
                 "isFollowing": {
                     "type": "boolean"
                 },
+                "location": {
+                    "type": "string"
+                },
+                "onboarded": {
+                    "description": "Onboarded is false until the user has chosen their own username.",
+                    "type": "boolean"
+                },
                 "username": {
+                    "type": "string"
+                },
+                "website": {
                     "type": "string"
                 }
             }
@@ -1866,8 +2089,16 @@ const docTemplate = `{
                 "retweetCount": {
                     "type": "integer"
                 },
-                "retweetedTweet": {
-                    "$ref": "#/definitions/httpapi.TweetResponse"
+                "retweetedAt": {
+                    "type": "string"
+                },
+                "retweetedBy": {
+                    "description": "RetweetedBy is set when the tweet is in a timeline because this user retweeted it.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/httpapi.UserResponse"
+                        }
+                    ]
                 },
                 "user": {
                     "$ref": "#/definitions/httpapi.UserResponse"
@@ -1894,6 +2125,9 @@ const docTemplate = `{
                 "bio": {
                     "type": "string"
                 },
+                "createdAt": {
+                    "type": "string"
+                },
                 "displayName": {
                     "type": "string"
                 },
@@ -1909,7 +2143,13 @@ const docTemplate = `{
                 "isFollowing": {
                     "type": "boolean"
                 },
+                "location": {
+                    "type": "string"
+                },
                 "username": {
+                    "type": "string"
+                },
+                "website": {
                     "type": "string"
                 }
             }
@@ -1980,6 +2220,24 @@ const docTemplate = `{
                 }
             }
         },
+        "httpapi.onboardingRequest": {
+            "type": "object",
+            "required": [
+                "displayName",
+                "username"
+            ],
+            "properties": {
+                "displayName": {
+                    "type": "string",
+                    "maxLength": 50
+                },
+                "username": {
+                    "type": "string",
+                    "maxLength": 20,
+                    "minLength": 3
+                }
+            }
+        },
         "httpapi.presignRequest": {
             "type": "object",
             "required": [
@@ -2029,10 +2287,12 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "avatarKey": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 200
                 },
                 "bannerKey": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 200
                 },
                 "bio": {
                     "type": "string",
@@ -2040,7 +2300,15 @@ const docTemplate = `{
                 },
                 "displayName": {
                     "type": "string",
+                    "maxLength": 50
+                },
+                "location": {
+                    "type": "string",
                     "maxLength": 30
+                },
+                "website": {
+                    "type": "string",
+                    "maxLength": 100
                 }
             }
         }

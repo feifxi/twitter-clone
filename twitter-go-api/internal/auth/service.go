@@ -3,17 +3,16 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
 	"github.com/chanombude/twitter-go-api/internal/apperr"
 	"github.com/chanombude/twitter-go-api/internal/db"
 	"github.com/chanombude/twitter-go-api/internal/domain"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/api/idtoken"
 )
@@ -73,6 +72,7 @@ func (s *Service) LoginWithGoogle(ctx context.Context, idToken string) (Session,
 	}
 
 	name, _ := payload.Claims["name"].(string)
+	name = truncateRunes(strings.TrimSpace(name), maxDisplayNameLength)
 	picture, _ := payload.Claims["picture"].(string)
 
 	user, err := s.store.GetUserByEmail(ctx, email)
@@ -81,7 +81,7 @@ func (s *Service) LoginWithGoogle(ctx context.Context, idToken string) (Session,
 			return Session{}, err
 		}
 
-		username := buildUniqueUsername(email)
+		username := generatedUsername(email)
 		user, err = s.store.CreateUser(ctx, db.CreateUserParams{
 			Username:    username,
 			Email:       email,
@@ -104,43 +104,39 @@ func (s *Service) LoginWithGoogle(ctx context.Context, idToken string) (Session,
 	return Session{User: domain.NewUser(user, false), AccessToken: accessToken, RefreshToken: refreshToken}, nil
 }
 
+// Refresh rotates the session: the presented refresh token is consumed and a new
+// pair is issued. A token works at most once; replaying it fails.
 func (s *Service) Refresh(ctx context.Context, refreshToken string) (Session, error) {
-	tokenHash := hashRefreshToken(refreshToken)
-	session, err := s.store.GetRefreshToken(ctx, tokenHash)
-	if err != nil {
+	// One DELETE ... RETURNING: two concurrent refreshes with the same token can't both succeed.
+	session, err := s.store.ConsumeRefreshToken(ctx, hashRefreshToken(refreshToken))
+	if errors.Is(err, pgx.ErrNoRows) {
 		return Session{}, apperr.Unauthorized("refresh token not found or revoked")
 	}
-
+	if err != nil {
+		return Session{}, err
+	}
 	if time.Now().After(session.ExpiryDate) {
-		_ = s.store.DeleteRefreshToken(ctx, tokenHash)
 		return Session{}, apperr.Unauthorized("refresh token expired")
+	}
+
+	row, err := s.store.GetUser(ctx, db.GetUserParams{ID: session.UserID})
+	if err != nil {
+		return Session{}, db.NotFound(err, "user")
 	}
 
 	accessToken, newRefreshToken, err := s.issueSession(ctx, session.UserID)
 	if err != nil {
 		return Session{}, err
 	}
-
-	user, err := s.store.GetUser(ctx, db.GetUserParams{ID: session.UserID, ViewerID: nil})
-	if err != nil {
-		return Session{}, err
-	}
-
-	return Session{
-		User:         domain.NewUser(user.User, user.IsFollowing),
-		AccessToken:  accessToken,
-		RefreshToken: newRefreshToken,
-	}, nil
+	return Session{User: domain.NewUser(row.User, false), AccessToken: accessToken, RefreshToken: newRefreshToken}, nil
 }
 
-func (s *Service) Logout(ctx context.Context, userID *int64, refreshToken *string) {
-	if userID != nil {
-		_ = s.store.DeleteRefreshTokensByUser(ctx, *userID)
-		return
+// Logout ends the session the refresh token belongs to; other devices stay signed in.
+func (s *Service) Logout(ctx context.Context, refreshToken string) error {
+	if refreshToken == "" {
+		return nil
 	}
-	if refreshToken != nil && strings.TrimSpace(*refreshToken) != "" {
-		_ = s.store.DeleteRefreshToken(ctx, hashRefreshToken(*refreshToken))
-	}
+	return s.store.DeleteRefreshToken(ctx, hashRefreshToken(refreshToken))
 }
 
 func (s *Service) Me(ctx context.Context, userID int64) (domain.User, error) {
@@ -151,43 +147,53 @@ func (s *Service) Me(ctx context.Context, userID int64) (domain.User, error) {
 	return domain.NewUser(row.User, row.IsFollowing), nil
 }
 
+// issueSession starts a new session (one per device) and prunes the user's expired ones.
 func (s *Service) issueSession(ctx context.Context, userID int64) (string, string, error) {
 	accessToken, err := s.tokens.CreateToken(userID, s.cfg.AccessTokenTTL)
 	if err != nil {
 		return "", "", err
 	}
 
-	refreshToken := uuid.NewString()
-	expiresAt := time.Now().Add(s.cfg.RefreshTokenTTL)
-
-	if err := s.store.DeleteRefreshTokensByUser(ctx, userID); err != nil {
-		return "", "", err
-	}
-
-	_, err = s.store.CreateRefreshToken(ctx, db.CreateRefreshTokenParams{
+	refreshToken := rand.Text()
+	if _, err := s.store.CreateRefreshToken(ctx, db.CreateRefreshTokenParams{
 		UserID:     userID,
 		TokenHash:  hashRefreshToken(refreshToken),
-		ExpiryDate: expiresAt,
-	})
-	if err != nil {
+		ExpiryDate: time.Now().Add(s.cfg.RefreshTokenTTL),
+	}); err != nil {
 		return "", "", err
 	}
-
+	if err := s.store.DeleteExpiredRefreshTokens(ctx, userID); err != nil {
+		return "", "", err
+	}
 	return accessToken, refreshToken, nil
 }
 
-func buildUniqueUsername(email string) string {
-	base := strings.Split(strings.ToLower(strings.TrimSpace(email)), "@")[0]
-	clean := strings.Map(func(r rune) rune {
+const (
+	maxDisplayNameLength = 50
+	usernameBaseLength   = 11 // + "_" + 8 random chars = 20, the column limit
+)
+
+// generatedUsername derives a placeholder handle from the email; users pick
+// their own during onboarding.
+func generatedUsername(email string) string {
+	local, _, _ := strings.Cut(strings.ToLower(strings.TrimSpace(email)), "@")
+	base := strings.Map(func(r rune) rune {
 		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' {
 			return r
 		}
-		return '_'
-	}, base)
-	if clean == "" {
-		clean = "user"
+		return -1
+	}, local)
+	if base == "" {
+		base = "user"
 	}
-	return fmt.Sprintf("%s_%s", clean, strings.ReplaceAll(uuid.NewString()[:8], "-", ""))
+	return truncateRunes(base, usernameBaseLength) + "_" + strings.ToLower(rand.Text()[:8])
+}
+
+func truncateRunes(s string, n int) string {
+	if r := []rune(s); len(r) > n {
+		return string(r[:n])
+	}
+	return s
 }
 
 func hashRefreshToken(token string) string {

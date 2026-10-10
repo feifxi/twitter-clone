@@ -31,15 +31,19 @@ type User struct {
 	Email          string
 	DisplayName    *string
 	Bio            *string
+	Location       *string
+	Website        *string
 	AvatarURL      *string
 	BannerURL      *string
 	Role           string
 	Provider       string
 	FollowersCount int32
 	FollowingCount int32
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	IsFollowing    bool
+	// Onboarded is false until the user picks their own username (sign-up assigns a generated one).
+	Onboarded   bool
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	IsFollowing bool
 }
 
 type Tweet struct {
@@ -49,7 +53,6 @@ type Tweet struct {
 	MediaType      *string
 	MediaURL       *string
 	ParentID       *int64
-	RetweetID      *int64
 	ReplyCount     int32
 	RetweetCount   int32
 	LikeCount      int32
@@ -60,7 +63,9 @@ type Tweet struct {
 	IsRetweeted    bool
 	IsFollowing    bool
 	ParentUsername *string
-	OriginalTweet  *Tweet
+	// RetweetedBy is set when the tweet appears in a timeline because someone retweeted it.
+	RetweetedBy *User
+	RetweetedAt *time.Time
 }
 
 type Hashtag struct {
@@ -108,19 +113,22 @@ func NewUser(u db.User, isFollowing bool) User {
 		Email:          u.Email,
 		DisplayName:    u.DisplayName,
 		Bio:            u.Bio,
+		Location:       u.Location,
+		Website:        u.Website,
 		AvatarURL:      u.AvatarURL,
 		BannerURL:      u.BannerURL,
 		Role:           u.Role,
 		Provider:       u.Provider,
 		FollowersCount: u.FollowersCount,
 		FollowingCount: u.FollowingCount,
+		Onboarded:      u.OnboardedAt != nil,
 		CreatedAt:      u.CreatedAt,
 		UpdatedAt:      u.UpdatedAt,
 		IsFollowing:    isFollowing,
 	}
 }
 
-// NewTweet maps the row only; author, viewer flags and references are filled in by tweet hydration.
+// NewTweet maps the row only; author, viewer flags and timeline context are filled in by tweet hydration.
 func NewTweet(t db.Tweet) Tweet {
 	return Tweet{
 		ID:           t.ID,
@@ -129,7 +137,6 @@ func NewTweet(t db.Tweet) Tweet {
 		MediaType:    t.MediaType,
 		MediaURL:     t.MediaURL,
 		ParentID:     t.ParentID,
-		RetweetID:    t.RetweetID,
 		ReplyCount:   t.ReplyCount,
 		RetweetCount: t.RetweetCount,
 		LikeCount:    t.LikeCount,

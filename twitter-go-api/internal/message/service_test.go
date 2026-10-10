@@ -7,6 +7,7 @@ import (
 
 	"github.com/chanombude/twitter-go-api/internal/db"
 	"github.com/chanombude/twitter-go-api/internal/db/dbtest"
+	"github.com/chanombude/twitter-go-api/internal/domain"
 	"github.com/chanombude/twitter-go-api/internal/message"
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
@@ -106,4 +107,12 @@ func TestService_SendMessageToUser(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, int64(20), msg.ConversationID)
 	})
+}
+
+func contents(msgs []domain.Message) []string {
+	out := make([]string, len(msgs))
+	for i, m := range msgs {
+		out[i] = m.Content
+	}
+	return out
 }

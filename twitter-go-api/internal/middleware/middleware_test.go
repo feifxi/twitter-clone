@@ -166,3 +166,22 @@ func TestRateLimiter_ExpiresOldClients(t *testing.T) {
 	}
 	// No panic = pass.
 }
+
+func TestRateLimiterKeysByRoute(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	limiter := RateLimiter(rate.Every(time.Hour), 1) // one request per route, then blocked
+	r := gin.New()
+	r.POST("/a", limiter, func(c *gin.Context) { c.Status(http.StatusOK) })
+	r.POST("/b", limiter, func(c *gin.Context) { c.Status(http.StatusOK) })
+
+	for _, step := range []struct {
+		path string
+		want int
+	}{{"/a", http.StatusOK}, {"/a", http.StatusTooManyRequests}, {"/b", http.StatusOK}} {
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, step.path, nil))
+		if rec.Code != step.want {
+			t.Fatalf("%s: expected %d, got %d", step.path, step.want, rec.Code)
+		}
+	}
+}

@@ -44,7 +44,7 @@ SELECT
   lm.created_at AS last_message_created_at
 FROM conversation_participants self
 JOIN conversations c ON c.id = self.conversation_id
-JOIN conversation_participants otherp ON otherp.conversation_id = c.id AND otherp.user_id <> $1
+JOIN conversation_participants otherp ON otherp.conversation_id = c.id AND otherp.user_id <> sqlc.arg('user_id')
 JOIN users u ON u.id = otherp.user_id
 JOIN LATERAL (
   SELECT dm.id, dm.sender_id, dm.content, dm.created_at
@@ -53,9 +53,11 @@ JOIN LATERAL (
   ORDER BY dm.created_at DESC, dm.id DESC
   LIMIT 1
 ) lm ON true
-WHERE self.user_id = $1
+WHERE self.user_id = sqlc.arg('user_id')
+  AND (sqlc.narg('cursor_time')::timestamptz IS NULL
+       OR (lm.created_at, c.id) < (sqlc.narg('cursor_time')::timestamptz, sqlc.narg('cursor_id')::bigint))
 ORDER BY lm.created_at DESC, c.id DESC
-LIMIT $2 OFFSET $3;
+LIMIT sqlc.arg('page_limit');
 
 -- name: CreateDirectMessage :one
 INSERT INTO direct_messages (conversation_id, sender_id, content)
@@ -63,9 +65,12 @@ VALUES ($1, $2, $3)
 RETURNING *;
 
 -- name: ListConversationMessages :many
+-- Newest first; each page goes further back in time.
 SELECT *
 FROM direct_messages
-WHERE conversation_id = $1
+WHERE conversation_id = sqlc.arg('conversation_id')
+  AND (sqlc.narg('cursor_time')::timestamptz IS NULL
+       OR (created_at, id) < (sqlc.narg('cursor_time')::timestamptz, sqlc.narg('cursor_id')::bigint))
 ORDER BY created_at DESC, id DESC
-LIMIT $2 OFFSET $3;
+LIMIT sqlc.arg('page_limit');
 

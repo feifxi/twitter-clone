@@ -55,7 +55,8 @@ export function FeedList({
   return (
     <div className="flex flex-col">
       {tweets.map((tweet) => (
-        <Tweet key={tweet.id} tweet={tweet} />
+        // A tweet can appear twice: as posted and as someone's retweet.
+        <Tweet key={`${tweet.retweetedBy?.id ?? 0}-${tweet.id}`} tweet={tweet} />
       ))}
       <div ref={sentinelRef} />
       {isFetchingNextPage && (

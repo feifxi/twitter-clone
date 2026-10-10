@@ -3,6 +3,7 @@ package httpapi
 import (
 	"net/http"
 
+	"github.com/chanombude/twitter-go-api/internal/pagination"
 	"github.com/gin-gonic/gin"
 )
 
@@ -15,7 +16,7 @@ import (
 // @Success		200		{array}		HashtagResponse
 // @Router			/discovery/trending [get]
 func (s *Server) getTrendingHashtags(c *gin.Context) {
-	limit := parseLimit(c, 10, maxSize)
+	limit := parseLimit(c, 10, pagination.MaxLimit)
 	hashtags, err := s.svc.Discovery.TrendingHashtags(c.Request.Context(), limit)
 	if err != nil {
 		writeError(c, err)
@@ -35,17 +36,15 @@ func (s *Server) getTrendingHashtags(c *gin.Context) {
 // @Success		200		{object}	PageResponse[UserResponse]
 // @Router			/discovery/users [get]
 func (s *Server) getSuggestedUsers(c *gin.Context) {
-	offset, size, ok := parseOffsetAndSize(c)
+	req, ok := parsePageRequest(c)
 	if !ok {
 		return
 	}
-	page := offset / size
 	viewerID := optionalViewerID(c)
-	users, err := s.svc.Discovery.SuggestedUsers(c.Request.Context(), page, size+1, viewerID)
+	users, err := s.svc.Discovery.SuggestedUsers(c.Request.Context(), req, viewerID)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	response := newUserResponseList(users)
-	c.JSON(http.StatusOK, BuildPageResponse(response, size, offset))
+	c.JSON(http.StatusOK, newPageResponse(users, newUserResponse))
 }

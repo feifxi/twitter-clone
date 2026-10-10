@@ -4,7 +4,6 @@ package tweet
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"time"
 
@@ -13,7 +12,7 @@ import (
 	"github.com/chanombude/twitter-go-api/internal/domain"
 	"github.com/chanombude/twitter-go-api/internal/media"
 	"github.com/chanombude/twitter-go-api/internal/notification"
-	"github.com/jackc/pgx/v5"
+	"github.com/chanombude/twitter-go-api/internal/pagination"
 )
 
 type objectStore interface {
@@ -82,7 +81,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (domain.Tweet, err
 		}
 
 		if in.ParentID != nil {
-			if err := q.IncrementParentReplyCount(ctx, *in.ParentID); err != nil {
+			if err := q.IncrementReplyCount(ctx, *in.ParentID); err != nil {
 				return err
 			}
 			parent, err := q.GetTweet(ctx, db.GetTweetParams{ID: *in.ParentID})
@@ -144,33 +143,25 @@ func (s *Service) Delete(ctx context.Context, userID, tweetID int64) error {
 	}
 
 	return s.store.ExecTxAfterCommit(ctx, func(q db.Querier) error {
-		// Read hashtag usage for the whole cascade (root + replies + retweets) before
-		// deleting, because ON DELETE CASCADE removes the tweet_hashtags rows.
-		hashtagUsage, err := q.ListHashtagUsageToDecrementForDeleteRoot(ctx, tweetID)
+		// Read hashtag usage for the whole thread before deleting, because
+		// ON DELETE CASCADE removes the replies' tweet_hashtags rows too.
+		usage, err := q.ListHashtagUsageInThread(ctx, tweetID)
 		if err != nil {
 			return err
 		}
-
-		if t.Tweet.RetweetID != nil {
-			_, err = q.DeleteRetweetByUser(ctx, db.DeleteRetweetByUserParams{UserID: userID, RetweetID: t.Tweet.RetweetID})
-		} else {
-			_, err = q.DeleteTweetByOwner(ctx, db.DeleteTweetByOwnerParams{ID: tweetID, UserID: userID})
-		}
-		if err != nil {
+		if _, err := q.DeleteTweetByOwner(ctx, db.DeleteTweetByOwnerParams{ID: tweetID, UserID: userID}); err != nil {
 			return err
 		}
-
 		if t.Tweet.ParentID != nil {
-			if err := q.DecrementParentReplyCount(ctx, *t.Tweet.ParentID); err != nil {
+			if err := q.DecrementReplyCount(ctx, *t.Tweet.ParentID); err != nil {
 				return err
 			}
 		}
-
-		for _, usage := range hashtagUsage {
-			if err := q.DecrementHashtagUsageBy(ctx, db.DecrementHashtagUsageByParams{ID: usage.HashtagID, UsageCount: usage.DecrementBy}); err != nil {
+		for _, u := range usage {
+			if err := q.DecrementHashtagUsage(ctx, db.DecrementHashtagUsageParams{ID: u.HashtagID, Uses: u.Uses}); err != nil {
 				return err
 			}
-			if err := q.DeleteUnusedHashtag(ctx, usage.HashtagID); err != nil {
+			if err := q.DeleteUnusedHashtag(ctx, u.HashtagID); err != nil {
 				return err
 			}
 		}
@@ -205,28 +196,30 @@ func (s *Service) Get(ctx context.Context, tweetID int64, viewerID *int64) (doma
 	if err != nil {
 		return domain.Tweet{}, err
 	}
-	items, err := Hydrate(ctx, s.store, []db.GetTweetRow{row}, viewerID, func(r db.GetTweetRow) Row { return Row(r) })
+	items, err := Hydrate(ctx, s.store, []Row{Row(row)}, viewerID)
 	if err != nil {
 		return domain.Tweet{}, err
 	}
 	return items[0], nil
 }
 
-func (s *Service) ListReplies(ctx context.Context, tweetID int64, page, size int32, viewerID *int64) ([]domain.Tweet, error) {
+// ListReplies pages through a tweet's direct replies, oldest first.
+func (s *Service) ListReplies(ctx context.Context, tweetID int64, req pagination.Request, viewerID *int64) (pagination.Page[domain.Tweet], error) {
 	if _, err := s.getTweet(ctx, tweetID, viewerID); err != nil {
-		return nil, err
+		return pagination.Page[domain.Tweet]{}, err
 	}
 
 	rows, err := s.store.ListTweetReplies(ctx, db.ListTweetRepliesParams{
-		ParentID: &tweetID,
-		Limit:    size,
-		Offset:   page * size,
-		ViewerID: viewerID,
+		ParentID:   &tweetID,
+		ViewerID:   viewerID,
+		CursorTime: req.AfterTime(),
+		CursorID:   req.AfterID(),
+		PageLimit:  req.FetchLimit(),
 	})
 	if err != nil {
-		return nil, err
+		return pagination.Page[domain.Tweet]{}, err
 	}
-	return Hydrate(ctx, s.store, rows, viewerID, func(r db.ListTweetRepliesRow) Row { return Row(r) })
+	return Page(ctx, s.store, Rows(rows, func(r db.ListTweetRepliesRow) Row { return Row(r) }), req.Limit, viewerID, CreatedCursor)
 }
 
 func (s *Service) Like(ctx context.Context, userID, tweetID int64) error {
@@ -254,62 +247,35 @@ func (s *Service) Unlike(ctx context.Context, userID, tweetID int64) error {
 	return err
 }
 
-// Retweet is idempotent: retweeting again returns the existing retweet. Retweeting
-// a retweet targets its original.
+// Retweet is idempotent and returns the retweeted tweet as the retweeter now sees it.
 func (s *Service) Retweet(ctx context.Context, userID, tweetID int64) (domain.Tweet, error) {
-	original, err := s.originalOf(ctx, tweetID)
+	t, err := s.getTweet(ctx, tweetID, nil)
 	if err != nil {
 		return domain.Tweet{}, err
 	}
 
-	var created db.CreateRetweetRow
 	var pending db.Notification
 	err = s.store.ExecTxAfterCommit(ctx, func(q db.Querier) error {
-		var err error
-		created, err = q.CreateRetweet(ctx, db.CreateRetweetParams{UserID: userID, RetweetID: &original.ID})
-		if errors.Is(err, pgx.ErrNoRows) {
-			// ON CONFLICT DO NOTHING returned nothing: the retweet already exists.
-			existing, err := q.GetUserRetweet(ctx, db.GetUserRetweetParams{UserID: userID, RetweetID: &original.ID})
-			created = db.CreateRetweetRow(existing)
+		created, err := q.CreateRetweet(ctx, db.CreateRetweetParams{UserID: userID, TweetID: tweetID})
+		if err != nil || !created {
 			return err
 		}
-		if err != nil {
-			return err
-		}
-		pending, err = notification.Create(ctx, q, original.UserID, userID, &original.ID, domain.NotificationRetweet)
+		pending, err = notification.Create(ctx, q, t.Tweet.UserID, userID, &t.Tweet.ID, domain.NotificationRetweet)
 		return err
 	}, func() { s.notifier.Dispatch(pending) })
 	if err != nil {
 		return domain.Tweet{}, err
 	}
-
-	return s.Get(ctx, created.ID, &userID)
+	return s.Get(ctx, tweetID, &userID)
 }
 
+// UndoRetweet is idempotent: undoing a retweet that doesn't exist succeeds.
 func (s *Service) UndoRetweet(ctx context.Context, userID, tweetID int64) error {
-	original, err := s.originalOf(ctx, tweetID)
-	if err != nil {
+	if _, err := s.getTweet(ctx, tweetID, nil); err != nil {
 		return err
 	}
-
-	_, err = s.store.DeleteRetweetByUser(ctx, db.DeleteRetweetByUserParams{UserID: userID, RetweetID: &original.ID})
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil
-	}
+	_, err := s.store.DeleteRetweet(ctx, db.DeleteRetweetParams{UserID: userID, TweetID: tweetID})
 	return err
-}
-
-// originalOf resolves a retweet to the tweet it points at.
-func (s *Service) originalOf(ctx context.Context, tweetID int64) (db.Tweet, error) {
-	t, err := s.getTweet(ctx, tweetID, nil)
-	if err != nil {
-		return db.Tweet{}, err
-	}
-	if t.Tweet.RetweetID == nil {
-		return t.Tweet, nil
-	}
-	original, err := s.getTweet(ctx, *t.Tweet.RetweetID, nil)
-	return original.Tweet, err
 }
 
 func (s *Service) getTweet(ctx context.Context, tweetID int64, viewerID *int64) (db.GetTweetRow, error) {

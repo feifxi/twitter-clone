@@ -52,7 +52,7 @@ func TestCreateTweetRejectsInvalidMediaKey(t *testing.T) {
 	setAuthorizedUser(ctx, 1)
 
 	mock := &fakeTweets{
-		createTweetFn: func(_ context.Context, _ tweet.CreateInput) (domain.Tweet, error) {
+		createFn: func(_ context.Context, _ tweet.CreateInput) (domain.Tweet, error) {
 			return domain.Tweet{}, apperr.BadRequest("invalid media key")
 		},
 	}
@@ -110,8 +110,13 @@ func TestLogoutWithoutSessionStillSucceeds(t *testing.T) {
 
 	ctx, rec := newHandlerTestContext(http.MethodPost, "/api/v1/auth/logout", nil, "")
 
-	s := &Server{}
-	s.logout(ctx)
+	fake := &fakeAuth{logoutFn: func(_ context.Context, refreshToken string) error {
+		if refreshToken != "" {
+			t.Fatalf("expected empty refresh token, got %q", refreshToken)
+		}
+		return nil
+	}}
+	(&Server{svc: Services{Auth: fake}}).logout(ctx)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rec.Code)

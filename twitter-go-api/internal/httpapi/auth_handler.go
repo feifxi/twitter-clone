@@ -66,23 +66,18 @@ func (s *Server) refreshToken(c *gin.Context) {
 
 // logout godoc
 // @Summary		Logout
-// @Description	Revoke the user session and clear access/refresh tokens.
+// @Description	End the session the refresh token belongs to. Other devices stay signed in.
 // @Tags			Auth
 // @Accept			json
 // @Produce		json
-// @Param			request	body			refreshTokenRequest	false	"Optional Refresh Token to revoke explicitly"
+// @Param			request	body			refreshTokenRequest	true	"Refresh token of the session to end"
 // @Success		200		{object}	SuccessResponse
-// @Security		BearerAuth
-// @Failure		401		{object}	ErrorResponse
 // @Router			/auth/logout [post]
 func (s *Server) logout(c *gin.Context) {
-	userID, ok := currentUserID(c)
-	if ok {
-		s.svc.Auth.Logout(c.Request.Context(), &userID, nil)
-	} else if rt := resolveRefreshToken(c); rt != "" {
-		s.svc.Auth.Logout(c.Request.Context(), nil, &rt)
+	if err := s.svc.Auth.Logout(c.Request.Context(), resolveRefreshToken(c)); err != nil {
+		writeError(c, err)
+		return
 	}
-
 	c.JSON(http.StatusOK, successResponse())
 }
 

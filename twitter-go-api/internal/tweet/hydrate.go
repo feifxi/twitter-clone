@@ -4,87 +4,117 @@ import (
 	"context"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/chanombude/twitter-go-api/internal/db"
 	"github.com/chanombude/twitter-go-api/internal/domain"
+	"github.com/chanombude/twitter-go-api/internal/pagination"
 )
 
-// Row is the shape shared by every tweet-listing query (tweet + viewer flags).
-// Each sqlc row type converts to it directly: Row(r).
+// Row is the shape shared by every tweet-listing query: the tweet, the viewer's
+// flags and, for timelines, the retweet that put it there. Each sqlc row type
+// with these columns converts to it directly: Row(r).
 type Row struct {
-	Tweet       db.Tweet
-	IsLiked     bool
-	IsRetweeted bool
-	IsFollowing bool
+	Tweet         db.Tweet
+	IsLiked       bool
+	IsRetweeted   bool
+	IsFollowing   bool
+	RetweetID     *int64
+	RetweetedByID *int64
+	RetweetedAt   *time.Time
 }
 
-// Hydrate turns query rows into domain tweets with authors, reply targets and
-// retweeted originals filled in, using a fixed number of batch queries (no N+1).
-func Hydrate[T any](ctx context.Context, store db.Querier, rows []T, viewerID *int64, toRow func(T) Row) ([]domain.Tweet, error) {
+// TimelineCursor is the sort key of a timeline row: the retweet's time for
+// retweets, the tweet's own time otherwise (see ListFollowingTimeline).
+func TimelineCursor(r Row) pagination.Cursor {
+	if r.RetweetID != nil && r.RetweetedAt != nil {
+		return pagination.Cursor{Time: *r.RetweetedAt, Kind: 1, ID: *r.RetweetID}
+	}
+	return pagination.Cursor{Time: r.Tweet.CreatedAt, ID: r.Tweet.ID}
+}
+
+// CreatedCursor is the sort key for lists ordered by (created_at, id).
+func CreatedCursor(r Row) pagination.Cursor {
+	return pagination.Cursor{Time: r.Tweet.CreatedAt, ID: r.Tweet.ID}
+}
+
+// Hydrate turns rows into domain tweets with authors, retweeters and reply
+// targets filled in, using a fixed number of batch queries (no N+1).
+func Hydrate(ctx context.Context, store db.Querier, rows []Row, viewerID *int64) ([]domain.Tweet, error) {
 	if len(rows) == 0 {
 		return []domain.Tweet{}, nil
 	}
 
-	base := make([]Row, len(rows))
 	userIDs := make([]int64, 0, len(rows))
-	var refIDs []int64
-	for i, r := range rows {
-		base[i] = toRow(r)
-		t := base[i].Tweet
-		userIDs = append(userIDs, t.UserID)
-		if t.ParentID != nil {
-			refIDs = append(refIDs, *t.ParentID)
+	var parentIDs []int64
+	for _, r := range rows {
+		userIDs = append(userIDs, r.Tweet.UserID)
+		if r.RetweetedByID != nil {
+			userIDs = append(userIDs, *r.RetweetedByID)
 		}
-		if t.RetweetID != nil {
-			refIDs = append(refIDs, *t.RetweetID)
+		if r.Tweet.ParentID != nil {
+			parentIDs = append(parentIDs, *r.Tweet.ParentID)
 		}
 	}
 
-	// Referenced tweets (parents and retweeted originals) are loaded one level deep.
-	refs := make(map[int64]Row)
-	if len(refIDs) > 0 {
-		refRows, err := store.GetTweetsByIDs(ctx, db.GetTweetsByIDsParams{TweetIds: uniq(refIDs), ViewerID: viewerID})
+	// Only the parent's author is needed ("Replying to @username").
+	parentAuthors := make(map[int64]int64, len(parentIDs))
+	if len(parentIDs) > 0 {
+		parents, err := store.GetTweetsByIDs(ctx, db.GetTweetsByIDsParams{TweetIds: uniq(parentIDs)})
 		if err != nil {
 			return nil, err
 		}
-		for _, r := range refRows {
-			refs[r.Tweet.ID] = Row(r)
-			userIDs = append(userIDs, r.Tweet.UserID)
+		for _, p := range parents {
+			parentAuthors[p.Tweet.ID] = p.Tweet.UserID
+			userIDs = append(userIDs, p.Tweet.UserID)
 		}
 	}
 
-	authors, err := loadAuthors(ctx, store, uniq(userIDs), viewerID)
+	users, err := loadAuthors(ctx, store, uniq(userIDs), viewerID)
 	if err != nil {
 		return nil, err
 	}
 
-	result := make([]domain.Tweet, 0, len(base))
-	for _, r := range base {
-		item := toDomain(r, authors)
+	result := make([]domain.Tweet, 0, len(rows))
+	for _, r := range rows {
+		t := domain.NewTweet(r.Tweet)
+		t.Author = users[r.Tweet.UserID]
+		t.IsLiked = r.IsLiked
+		t.IsRetweeted = r.IsRetweeted
+		t.IsFollowing = r.IsFollowing
 		if r.Tweet.ParentID != nil {
-			if parent, ok := refs[*r.Tweet.ParentID]; ok {
-				username := authors[parent.Tweet.UserID].Username
-				item.ParentUsername = &username
+			if authorID, ok := parentAuthors[*r.Tweet.ParentID]; ok {
+				username := users[authorID].Username
+				t.ParentUsername = &username
 			}
 		}
-		if r.Tweet.RetweetID != nil {
-			if original, ok := refs[*r.Tweet.RetweetID]; ok {
-				o := toDomain(original, authors)
-				item.OriginalTweet = &o
-			}
+		if r.RetweetedByID != nil {
+			retweeter := users[*r.RetweetedByID]
+			t.RetweetedBy = &retweeter
+			t.RetweetedAt = r.RetweetedAt
 		}
-		result = append(result, item)
+		result = append(result, t)
 	}
 	return result, nil
 }
 
-func toDomain(r Row, authors map[int64]domain.User) domain.Tweet {
-	t := domain.NewTweet(r.Tweet)
-	t.Author = authors[r.Tweet.UserID]
-	t.IsLiked = r.IsLiked
-	t.IsRetweeted = r.IsRetweeted
-	t.IsFollowing = r.IsFollowing
-	return t
+// Page trims a FetchLimit-sized result, hydrates it and derives the next cursor.
+func Page(ctx context.Context, store db.Querier, rows []Row, limit int32, viewerID *int64, cursorOf func(Row) pagination.Cursor) (pagination.Page[domain.Tweet], error) {
+	rows, more := pagination.Trim(rows, limit)
+	items, err := Hydrate(ctx, store, rows, viewerID)
+	if err != nil {
+		return pagination.Page[domain.Tweet]{}, err
+	}
+	return pagination.Page[domain.Tweet]{Items: items, Next: pagination.NextFrom(rows, more, cursorOf)}, nil
+}
+
+// Rows converts any sqlc row type that shares Row's columns.
+func Rows[T any](rows []T, toRow func(T) Row) []Row {
+	out := make([]Row, len(rows))
+	for i, r := range rows {
+		out[i] = toRow(r)
+	}
+	return out
 }
 
 func loadAuthors(ctx context.Context, store db.Querier, ids []int64, viewerID *int64) (map[int64]domain.User, error) {

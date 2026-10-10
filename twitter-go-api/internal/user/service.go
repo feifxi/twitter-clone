@@ -3,12 +3,16 @@ package user
 
 import (
 	"context"
+	"regexp"
+	"strings"
+	"time"
 
 	"github.com/chanombude/twitter-go-api/internal/apperr"
 	"github.com/chanombude/twitter-go-api/internal/db"
 	"github.com/chanombude/twitter-go-api/internal/domain"
 	"github.com/chanombude/twitter-go-api/internal/media"
 	"github.com/chanombude/twitter-go-api/internal/notification"
+	"github.com/chanombude/twitter-go-api/internal/pagination"
 )
 
 type objectStore interface {
@@ -31,11 +35,15 @@ func New(store db.Store, storage objectStore, notifier notifier) *Service {
 	return &Service{store: store, storage: storage, notifier: notifier}
 }
 
+// UpdateProfileInput fields are optional: nil leaves the value unchanged and ""
+// clears it. Image keys must come from a presigned upload.
 type UpdateProfileInput struct {
 	Bio         *string
 	DisplayName *string
-	AvatarKey   *string // nil = unchanged, "" = remove, otherwise a key from a presigned upload
-	BannerKey   *string // same semantics as AvatarKey
+	Location    *string
+	Website     *string
+	AvatarKey   *string
+	BannerKey   *string
 }
 
 func (s *Service) Get(ctx context.Context, userID int64, viewerID *int64) (domain.User, error) {
@@ -44,6 +52,35 @@ func (s *Service) Get(ctx context.Context, userID int64, viewerID *int64) (domai
 		return domain.User{}, err
 	}
 	return domain.NewUser(row.User, row.IsFollowing), nil
+}
+
+// GetByUsername looks a user up by handle, ignoring case.
+func (s *Service) GetByUsername(ctx context.Context, username string, viewerID *int64) (domain.User, error) {
+	row, err := s.store.GetUserByUsername(ctx, db.GetUserByUsernameParams{Username: username, ViewerID: viewerID})
+	if err != nil {
+		return domain.User{}, db.NotFound(err, "user")
+	}
+	return domain.NewUser(row.User, row.IsFollowing), nil
+}
+
+// CompleteOnboarding sets the user's chosen username and display name.
+func (s *Service) CompleteOnboarding(ctx context.Context, userID int64, username, displayName string) (domain.User, error) {
+	if !ValidUsername(username) {
+		return domain.User{}, apperr.BadRequest("username must be 3-20 letters, numbers or underscores")
+	}
+	displayName = strings.TrimSpace(displayName)
+	if displayName == "" {
+		return domain.User{}, apperr.BadRequest("display name is required")
+	}
+
+	u, err := s.store.SetUsername(ctx, db.SetUsernameParams{ID: userID, Username: username, DisplayName: &displayName})
+	if db.IsUniqueViolation(err) {
+		return domain.User{}, apperr.Conflict("username is already taken")
+	}
+	if err != nil {
+		return domain.User{}, db.NotFound(err, "user")
+	}
+	return domain.NewUser(u, false), nil
 }
 
 func (s *Service) UpdateProfile(ctx context.Context, userID int64, in UpdateProfileInput) (domain.User, error) {
@@ -62,19 +99,12 @@ func (s *Service) UpdateProfile(ctx context.Context, userID int64, in UpdateProf
 		return domain.User{}, err
 	}
 
-	bio := current.Bio
-	if in.Bio != nil {
-		bio = in.Bio
-	}
-	displayName := current.DisplayName
-	if in.DisplayName != nil {
-		displayName = in.DisplayName
-	}
-
 	updated, err := s.store.UpdateUserProfile(ctx, db.UpdateUserProfileParams{
 		ID:          userID,
-		Bio:         bio,
-		DisplayName: displayName,
+		Bio:         merge(current.Bio, in.Bio),
+		DisplayName: merge(current.DisplayName, in.DisplayName),
+		Location:    merge(current.Location, in.Location),
+		Website:     merge(current.Website, in.Website),
 		AvatarURL:   avatar,
 		BannerURL:   banner,
 	})
@@ -156,49 +186,73 @@ func (s *Service) Unfollow(ctx context.Context, followerID, targetID int64) erro
 	return err
 }
 
-func (s *Service) Followers(ctx context.Context, userID int64, page, size int32, viewerID *int64) ([]domain.User, error) {
+func (s *Service) Followers(ctx context.Context, userID int64, req pagination.Request, viewerID *int64) (pagination.Page[domain.User], error) {
 	if _, err := s.getUser(ctx, userID, viewerID); err != nil {
-		return nil, err
+		return pagination.Page[domain.User]{}, err
 	}
-
-	rows, err := s.store.ListFollowersUsers(ctx, db.ListFollowersUsersParams{
-		FollowingID: userID,
-		Limit:       size,
-		Offset:      page * size,
-		ViewerID:    viewerID,
+	rows, err := s.store.ListFollowers(ctx, db.ListFollowersParams{
+		UserID:     userID,
+		ViewerID:   viewerID,
+		CursorTime: req.AfterTime(),
+		CursorID:   req.AfterID(),
+		PageLimit:  req.FetchLimit(),
 	})
 	if err != nil {
-		return nil, err
+		return pagination.Page[domain.User]{}, err
 	}
-	users := make([]domain.User, 0, len(rows))
-	for _, r := range rows {
-		users = append(users, domain.NewUser(r.User, r.IsFollowing))
-	}
-	return users, nil
+	return followPage(rows, req.Limit, func(r db.ListFollowersRow) (db.User, bool, time.Time) { return r.User, r.IsFollowing, r.FollowedAt }), nil
 }
 
-func (s *Service) Following(ctx context.Context, userID int64, page, size int32, viewerID *int64) ([]domain.User, error) {
+func (s *Service) Following(ctx context.Context, userID int64, req pagination.Request, viewerID *int64) (pagination.Page[domain.User], error) {
 	if _, err := s.getUser(ctx, userID, viewerID); err != nil {
-		return nil, err
+		return pagination.Page[domain.User]{}, err
 	}
-
-	rows, err := s.store.ListFollowingUsers(ctx, db.ListFollowingUsersParams{
-		FollowerID: userID,
-		Limit:      size,
-		Offset:     page * size,
+	rows, err := s.store.ListFollowing(ctx, db.ListFollowingParams{
+		UserID:     userID,
 		ViewerID:   viewerID,
+		CursorTime: req.AfterTime(),
+		CursorID:   req.AfterID(),
+		PageLimit:  req.FetchLimit(),
 	})
 	if err != nil {
-		return nil, err
+		return pagination.Page[domain.User]{}, err
 	}
+	return followPage(rows, req.Limit, func(r db.ListFollowingRow) (db.User, bool, time.Time) { return r.User, r.IsFollowing, r.FollowedAt }), nil
+}
+
+// followPage pages follower/following rows; the cursor is (follow time, user id).
+func followPage[T any](rows []T, limit int32, fields func(T) (db.User, bool, time.Time)) pagination.Page[domain.User] {
+	rows, more := pagination.Trim(rows, limit)
 	users := make([]domain.User, 0, len(rows))
 	for _, r := range rows {
-		users = append(users, domain.NewUser(r.User, r.IsFollowing))
+		u, isFollowing, _ := fields(r)
+		users = append(users, domain.NewUser(u, isFollowing))
 	}
-	return users, nil
+	next := pagination.NextFrom(rows, more, func(r T) pagination.Cursor {
+		u, _, followedAt := fields(r)
+		return pagination.Cursor{Time: followedAt, ID: u.ID}
+	})
+	return pagination.Page[domain.User]{Items: users, Next: next}
+}
+
+func merge(current, update *string) *string {
+	if update == nil {
+		return current
+	}
+	if *update == "" {
+		return nil
+	}
+	return update
 }
 
 func (s *Service) getUser(ctx context.Context, userID int64, viewerID *int64) (db.GetUserRow, error) {
 	row, err := s.store.GetUser(ctx, db.GetUserParams{ID: userID, ViewerID: viewerID})
 	return row, db.NotFound(err, "user")
+}
+
+var usernamePattern = regexp.MustCompile(`^[A-Za-z0-9_]{3,20}$`)
+
+// ValidUsername mirrors the users.username CHECK constraint.
+func ValidUsername(username string) bool {
+	return usernamePattern.MatchString(username)
 }

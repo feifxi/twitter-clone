@@ -4,16 +4,8 @@ import type { TweetResponse } from '@/types';
 import { tweetQueryKey } from './useTweet';
 import { useUpdateTweetCache } from './useOptimisticTweetUpdate';
 
-function toggleLikeInTweet(t: TweetResponse, tweetId: number, liked: boolean): TweetResponse {
-  const delta = liked ? 1 : -1;
-  const update = (x: TweetResponse) =>
-    x.id === tweetId
-      ? { ...x, isLiked: liked, likeCount: Math.max(0, x.likeCount + delta) }
-      : x;
-  if (t.id === tweetId) return update(t) as TweetResponse;
-  if (t.retweetedTweet?.id === tweetId)
-    return { ...t, retweetedTweet: update(t.retweetedTweet) as TweetResponse };
-  return t;
+function toggleLikeInTweet(t: TweetResponse, liked: boolean): TweetResponse {
+  return { ...t, isLiked: liked, likeCount: Math.max(0, t.likeCount + (liked ? 1 : -1)) };
 }
 
 export function useLikeTweet() {
@@ -30,7 +22,7 @@ export function useLikeTweet() {
       await queryClient.cancelQueries({ queryKey: ['tweets'] }); // Cancel replies too if needed
       await queryClient.cancelQueries({ queryKey: ['search'] });
 
-      updateTweetCache(tweetId, (t) => toggleLikeInTweet(t, tweetId, true));
+      updateTweetCache(tweetId, (t) => toggleLikeInTweet(t, true));
     },
     onError: () => {
       // Rollback is complex with global helper. 
@@ -61,7 +53,7 @@ export function useUnlikeTweet() {
       await queryClient.cancelQueries({ queryKey: ['tweets'] });
       await queryClient.cancelQueries({ queryKey: ['search'] });
 
-      updateTweetCache(tweetId, (t) => toggleLikeInTweet(t, tweetId, false));
+      updateTweetCache(tweetId, (t) => toggleLikeInTweet(t, false));
     },
     onError: () => {
       queryClient.invalidateQueries({ queryKey: ['feeds'] });

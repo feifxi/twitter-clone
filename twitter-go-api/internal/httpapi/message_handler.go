@@ -27,20 +27,18 @@ func (s *Server) listConversations(c *gin.Context) {
 		return
 	}
 
-	offset, size, ok := parseOffsetAndSize(c)
+	req, ok := parsePageRequest(c)
 	if !ok {
 		return
 	}
-	page := offset / size
 
-	items, err := s.svc.Messages.Conversations(c.Request.Context(), userID, page, size+1)
+	items, err := s.svc.Messages.Conversations(c.Request.Context(), userID, req)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 
-	response := newConversationResponseList(items)
-	c.JSON(http.StatusOK, BuildPageResponse(response, size, offset))
+	c.JSON(http.StatusOK, newPageResponse(items, newConversationResponse))
 }
 
 // listConversationMessages godoc
@@ -56,8 +54,8 @@ func (s *Server) listConversations(c *gin.Context) {
 // @Failure		401		{object}	ErrorResponse
 // @Router			/messages/conversations/{id}/messages [get]
 func (s *Server) listConversationMessages(c *gin.Context) {
-	var req idURIRequest
-	if err := c.ShouldBindUri(&req); err != nil {
+	var path idURIRequest
+	if err := c.ShouldBindUri(&path); err != nil {
 		writeError(c, err)
 		return
 	}
@@ -67,20 +65,18 @@ func (s *Server) listConversationMessages(c *gin.Context) {
 		return
 	}
 
-	offset, size, ok := parseOffsetAndSize(c)
+	req, ok := parsePageRequest(c)
 	if !ok {
 		return
 	}
-	page := offset / size
 
-	items, err := s.svc.Messages.Messages(c.Request.Context(), userID, req.ID, page, size+1)
+	items, err := s.svc.Messages.Messages(c.Request.Context(), userID, path.ID, req)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 
-	response := newMessageResponseList(items)
-	c.JSON(http.StatusOK, BuildPageResponse(response, size, offset))
+	c.JSON(http.StatusOK, newPageResponse(items, newMessageResponse))
 }
 
 // sendMessageToUser godoc
@@ -101,8 +97,8 @@ func (s *Server) sendMessageToUser(c *gin.Context) {
 		return
 	}
 
-	var reqID idURIRequest
-	if err := c.ShouldBindUri(&reqID); err != nil {
+	var path idURIRequest
+	if err := c.ShouldBindUri(&path); err != nil {
 		writeError(c, err)
 		return
 	}
@@ -113,7 +109,7 @@ func (s *Server) sendMessageToUser(c *gin.Context) {
 		return
 	}
 
-	item, err := s.svc.Messages.SendToUser(c.Request.Context(), senderID, reqID.ID, req.Content)
+	item, err := s.svc.Messages.SendToUser(c.Request.Context(), senderID, path.ID, req.Content)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -140,8 +136,8 @@ func (s *Server) sendMessageToConversation(c *gin.Context) {
 		return
 	}
 
-	var reqID idURIRequest
-	if err := c.ShouldBindUri(&reqID); err != nil {
+	var path idURIRequest
+	if err := c.ShouldBindUri(&path); err != nil {
 		writeError(c, err)
 		return
 	}
@@ -152,7 +148,7 @@ func (s *Server) sendMessageToConversation(c *gin.Context) {
 		return
 	}
 
-	item, err := s.svc.Messages.SendToConversation(c.Request.Context(), senderID, reqID.ID, req.Content)
+	item, err := s.svc.Messages.SendToConversation(c.Request.Context(), senderID, path.ID, req.Content)
 	if err != nil {
 		writeError(c, err)
 		return

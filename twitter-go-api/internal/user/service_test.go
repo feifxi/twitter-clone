@@ -3,12 +3,16 @@ package user_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/chanombude/twitter-go-api/internal/apperr"
 	"github.com/chanombude/twitter-go-api/internal/db"
 	"github.com/chanombude/twitter-go-api/internal/db/dbtest"
+	"github.com/chanombude/twitter-go-api/internal/pagination"
 	"github.com/chanombude/twitter-go-api/internal/storage/storagetest"
 	"github.com/chanombude/twitter-go-api/internal/user"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/stretchr/testify/require"
 )
 
 type noopNotifier struct{}
@@ -128,24 +132,62 @@ func TestUnfollowUser(t *testing.T) {
 	}
 }
 
-func TestListFollowersUsers(t *testing.T) {
-	ctx := context.Background()
+func TestFollowers_PagesByFollowTime(t *testing.T) {
+	followedAt := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
 	store := &dbtest.MockStore{
 		GetUserFn: func(ctx context.Context, arg db.GetUserParams) (db.GetUserRow, error) {
 			return db.GetUserRow{User: db.User{ID: 1}}, nil
 		},
-		ListFollowersUsersFn: func(ctx context.Context, arg db.ListFollowersUsersParams) ([]db.ListFollowersUsersRow, error) {
-			return []db.ListFollowersUsersRow{
-				{User: db.User{ID: 2, Username: "user2"}, IsFollowing: true},
+		ListFollowersFn: func(ctx context.Context, arg db.ListFollowersParams) ([]db.ListFollowersRow, error) {
+			return []db.ListFollowersRow{
+				{User: db.User{ID: 2, Username: "user2"}, IsFollowing: true, FollowedAt: followedAt},
+				{User: db.User{ID: 3}},
 			}, nil
 		},
 	}
-	uc := user.New(store, nil, noopNotifier{})
-	followers, err := uc.Followers(ctx, 1, 0, 10, dbtest.Ptr[int64](1))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(followers) != 1 || followers[0].ID != 2 {
-		t.Fatal("expected 1 follower with ID 2")
-	}
+
+	page, err := user.New(store, nil, noopNotifier{}).Followers(context.Background(), 1, pagination.Request{Limit: 1}, dbtest.Ptr[int64](1))
+
+	require.NoError(t, err)
+	require.Len(t, page.Items, 1)
+	require.Equal(t, "user2", page.Items[0].Username)
+	require.True(t, page.Items[0].IsFollowing)
+	require.Equal(t, &pagination.Cursor{Time: followedAt, ID: 2}, page.Next)
+}
+
+func TestCompleteOnboarding(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("rejects_invalid_username", func(t *testing.T) {
+		for _, name := range []string{"ab", "has space", "way_too_long_username_x", "émoji"} {
+			_, err := user.New(&dbtest.MockStore{}, nil, nil).CompleteOnboarding(ctx, 1, name, "Alice")
+			kind, _ := apperr.KindOf(err)
+			require.Equal(t, apperr.KindBadRequest, kind, name)
+		}
+	})
+
+	t.Run("taken_username_is_a_conflict", func(t *testing.T) {
+		store := &dbtest.MockStore{
+			SetUsernameFn: func(ctx context.Context, arg db.SetUsernameParams) (db.User, error) {
+				return db.User{}, &pgconn.PgError{Code: "23505"}
+			},
+		}
+		_, err := user.New(store, nil, nil).CompleteOnboarding(ctx, 1, "alice", "Alice")
+		kind, _ := apperr.KindOf(err)
+		require.Equal(t, apperr.KindConflict, kind)
+	})
+
+	t.Run("success_marks_onboarded", func(t *testing.T) {
+		now := time.Now()
+		store := &dbtest.MockStore{
+			SetUsernameFn: func(ctx context.Context, arg db.SetUsernameParams) (db.User, error) {
+				return db.User{ID: 1, Username: arg.Username, DisplayName: arg.DisplayName, OnboardedAt: &now}, nil
+			},
+		}
+		u, err := user.New(store, nil, nil).CompleteOnboarding(ctx, 1, "Alice_99", "  Alice  ")
+		require.NoError(t, err)
+		require.Equal(t, "Alice_99", u.Username)
+		require.Equal(t, "Alice", *u.DisplayName)
+		require.True(t, u.Onboarded)
+	})
 }

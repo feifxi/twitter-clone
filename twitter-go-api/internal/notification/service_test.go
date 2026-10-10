@@ -8,6 +8,7 @@ import (
 	"github.com/chanombude/twitter-go-api/internal/db/dbtest"
 	"github.com/chanombude/twitter-go-api/internal/domain"
 	"github.com/chanombude/twitter-go-api/internal/notification"
+	"github.com/chanombude/twitter-go-api/internal/pagination"
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 )
@@ -42,13 +43,14 @@ func TestService_List(t *testing.T) {
 		return []db.Notification{{ID: 100, RecipientID: 1, ActorID: 2, Type: "LIKE", TweetID: &tweetID}}, nil
 	}
 
-	res, err := notification.New(store, &recordingPublisher{}).List(context.Background(), 1, 0, 10)
+	res, err := notification.New(store, &recordingPublisher{}).List(context.Background(), 1, pagination.Request{Limit: 10})
 
 	require.NoError(t, err)
-	require.Len(t, res, 1)
-	require.Equal(t, "actor", res[0].Actor.Username)
-	require.Equal(t, domain.NotificationLike, res[0].Type)
-	require.Equal(t, "tweet content", *res[0].TweetContent)
+	require.Len(t, res.Items, 1)
+	require.Nil(t, res.Next)
+	require.Equal(t, "actor", res.Items[0].Actor.Username)
+	require.Equal(t, domain.NotificationLike, res.Items[0].Type)
+	require.Equal(t, "tweet content", *res.Items[0].TweetContent)
 }
 
 func TestService_Counters(t *testing.T) {
