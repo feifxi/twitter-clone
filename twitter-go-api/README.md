@@ -133,15 +133,9 @@ TEST_DATABASE_URL='postgres://test:test@localhost:55432/twitter_test?sslmode=dis
 
 After editing `internal/db/queries`, run `make sqlc` to regenerate both the query code and `dbtest.MockStore`.
 
-## Production Operations Baseline
+## Production Operations
 
-For AWS (API Gateway → EC2):
-- API Gateway injects `X-Gateway-Secret` header for request authentication
-- Liveness probe path: `/healthz`
-- Readiness probe path: `/readyz`
-- Health endpoints are intentionally outside API rate limiting
-
-Monitoring baseline:
-- Track HTTP 5xx rate, p95 latency, and restart count
-- Create alert rules for sustained 5xx spikes and failing readiness probes
-- Use `requestId` from API error response to correlate app logs for incident triage
+The API runs on EC2 behind Caddy, which terminates TLS; port 8080 is never published. See the root README for the AWS setup.
+- Liveness: `GET /healthz` (process up). Readiness: `GET /readyz` (database and Redis reachable).
+- Health endpoints have no rate limit; `/metrics` is only reachable on the Docker network (Caddy returns 404 for it).
+- Every response carries `X-Request-ID`; error bodies include `requestId` and every log line for that request carries `request_id`.

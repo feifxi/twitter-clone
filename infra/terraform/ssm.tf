@@ -1,41 +1,61 @@
-# ── AWS Systems Manager (SSM) Parameter Store ────────
+# Runtime configuration. Each parameter becomes one line of the container's env
+# file (see ../ec2/deploy.sh), so names match the API's environment variables.
 
 locals {
-  ssm_parameters = {
-    "/chmtwt/prod/HTTP_SERVER_ADDRESS"          = "0.0.0.0:8080"
-    "/chmtwt/prod/DATABASE_URL"                 = "postgresql://${var.db_username}:${var.db_password}@${aws_db_instance.this.endpoint}/${var.db_name}?sslmode=require"
-    "/chmtwt/prod/DB_MAX_CONNS"                 = var.db_max_conns
-    "/chmtwt/prod/DB_MIN_CONNS"                 = var.db_min_conns
-    "/chmtwt/prod/DB_MAX_CONN_LIFETIME_MINUTES" = var.db_max_conn_lifetime_minutes
-    "/chmtwt/prod/MAX_MEDIA_BYTES"              = var.max_media_bytes
-    "/chmtwt/prod/MAX_AVATAR_BYTES"             = var.max_avatar_bytes
-    "/chmtwt/prod/MAX_BANNER_BYTES"             = var.max_banner_bytes
-    "/chmtwt/prod/FRONTEND_URL"                 = join(",", local.frontend_origins)
-    "/chmtwt/prod/TOKEN_SYMMETRIC_KEY"          = var.token_symmetric_key
-    "/chmtwt/prod/TOKEN_DURATION_MINUTES"       = var.token_duration_minutes
-    "/chmtwt/prod/REFRESH_TOKEN_DURATION_DAYS"  = var.refresh_token_duration_days
-    "/chmtwt/prod/GOOGLE_CLIENT_ID"             = var.google_client_id
-    "/chmtwt/prod/S3_BUCKET_NAME"               = aws_s3_bucket.media.id
-    "/chmtwt/prod/S3_REGION"                    = var.aws_region
-    "/chmtwt/prod/CLOUDFRONT_DOMAIN"            = aws_cloudfront_distribution.media.domain_name
-    "/chmtwt/prod/GATEWAY_SECRET"               = var.gateway_secret
-    "/chmtwt/prod/REDIS_ADDRESS"                = var.redis_address
-    "/chmtwt/prod/REDIS_PASSWORD"               = var.redis_password
-    "/chmtwt/prod/NEXT_PUBLIC_API_URL"          = "${aws_apigatewayv2_stage.default.invoke_url}api/v1"
-    "/chmtwt/prod/GEMINI_API_KEY"               = var.gemini_api_key
-    "/chmtwt/prod/GEMINI_CHAT_MODEL"            = var.gemini_chat_model
-    "/chmtwt/prod/GEMINI_EMBEDDING_MODEL"       = var.gemini_embedding_model
-    "/chmtwt/prod/SQS_EMBEDDING_QUEUE_URL"      = aws_sqs_queue.tweet_embedding.id
-    "/chmtwt/prod/ENABLE_RAG"                   = var.enable_rag
+  # Values derived from other resources: never empty, often unknown until apply.
+  api_env_from_resources = {
+    DATABASE_URL      = "postgresql://${var.db_username}:${var.db_password}@${aws_db_instance.main.endpoint}/${var.db_name}?sslmode=require"
+    ALLOWED_ORIGINS   = join(",", [local.web_origin, local.amplify_url])
+    S3_BUCKET_NAME    = aws_s3_bucket.media.id
+    CLOUDFRONT_DOMAIN = aws_cloudfront_distribution.media.domain_name
+  }
+
+  # Values from variables: known at plan time, possibly empty.
+  api_env_from_variables = {
+    ENVIRONMENT            = "production"
+    LOG_LEVEL              = var.log_level
+    HTTP_SERVER_ADDRESS    = "0.0.0.0:8080"
+    DB_MAX_CONNS           = tostring(var.db_max_conns)
+    REDIS_URL              = "redis://redis:6379"
+    TOKEN_SYMMETRIC_KEY    = var.token_symmetric_key
+    ACCESS_TOKEN_TTL       = var.access_token_ttl
+    REFRESH_TOKEN_TTL      = var.refresh_token_ttl
+    GOOGLE_CLIENT_ID       = var.google_client_id
+    S3_REGION              = var.aws_region
+    MAX_MEDIA_BYTES        = tostring(var.max_media_bytes)
+    MAX_AVATAR_BYTES       = tostring(var.max_avatar_bytes)
+    MAX_BANNER_BYTES       = tostring(var.max_banner_bytes)
+    GEMINI_API_KEY         = var.gemini_api_key
+    GEMINI_CHAT_MODEL      = var.gemini_chat_model
+    GEMINI_EMBEDDING_MODEL = var.gemini_embedding_model
+    ENABLE_RAG             = tostring(var.enable_rag)
+  }
+
+  monitoring_env = {
+    GRAFANA_PROMETHEUS_URL  = var.grafana_cloud_prometheus_url
+    GRAFANA_PROMETHEUS_USER = var.grafana_cloud_prometheus_user
+    GRAFANA_LOKI_URL        = var.grafana_cloud_loki_url
+    GRAFANA_LOKI_USER       = var.grafana_cloud_loki_user
+    GRAFANA_API_TOKEN       = var.grafana_cloud_api_token
   }
 }
 
-resource "aws_ssm_parameter" "config" {
-  for_each = local.ssm_parameters
-
-  name  = each.key
+# SSM rejects empty values and the API treats a missing variable as empty, so empty
+# settings are skipped. The filter only looks at plan-time values: for_each keys
+# must be known before apply. nonsensitive() reveals only whether a secret is empty.
+resource "aws_ssm_parameter" "api" {
+  for_each = merge(
+    { for k, v in local.api_env_from_variables : k => v if nonsensitive(v != "") },
+    local.api_env_from_resources,
+  )
+  name  = "${local.api_ssm_path}${each.key}"
   type  = "SecureString"
-  value = each.value == "" ? "N/A" : each.value
+  value = each.value
+}
 
-  tags = { Name = "${var.project_name}-ssm-${replace(each.key, "/", "-")}" }
+resource "aws_ssm_parameter" "monitoring" {
+  for_each = { for k, v in local.monitoring_env : k => v if local.monitoring_enabled && nonsensitive(v != "") }
+  name     = "${local.monitoring_ssm_path}${each.key}"
+  type     = "SecureString"
+  value    = each.value
 }

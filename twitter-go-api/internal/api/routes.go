@@ -42,7 +42,7 @@ func (s *Server) routes() *gin.Engine {
 		r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 	}
 
-	v1 := r.Group("/api/v1", s.apiMiddleware()...)
+	v1 := r.Group("/api/v1", middleware.RateLimiterWithRedis(s.redis, 20, 60, "rl:api"))
 
 	// Auth
 	v1.POST("/auth/google", authLimit, s.loginGoogle)
@@ -138,15 +138,6 @@ func (s *Server) newRouter() *gin.Engine {
 		},
 	)
 	return r
-}
-
-// apiMiddleware applies to every /api/v1 route.
-func (s *Server) apiMiddleware() []gin.HandlerFunc {
-	var mw []gin.HandlerFunc
-	if s.cfg.GatewaySecret != "" {
-		mw = append(mw, middleware.GatewayGuard(s.cfg.GatewaySecret))
-	}
-	return append(mw, middleware.RateLimiterWithRedis(s.redis, 20, 60, "rl:api"))
 }
 
 func securityHeaders(c *gin.Context) {

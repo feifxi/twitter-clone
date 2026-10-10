@@ -1,58 +1,35 @@
-# ── Project Configuration ────────────────────────────
-project_name = "chmtwt"
-aws_region   = "ap-southeast-1"
+# Copy to terraform.tfvars (gitignored) and fill in.
 
-# ── Database (RDS) ──────────────────────────────────
-# The password for the PostgreSQL master user
-db_name     = "twitter_db"
-db_username = "postgres"
-db_password = "CHANGE_ME_TO_A_STRONG_PASSWORD"
+# ── Domains ─────────────────────────────────────────
+root_domain     = "chanombude.me"
+web_domain      = "twitter.chanombude.me"
+api_domain      = "api.chanombude.me"
+acme_email      = "you@example.com"
+route53_zone_id = "" # set if Route 53 hosts root_domain; otherwise add the dns_records output by hand
 
-# ── Secrets & Security ───────────────────────────────
-# API Gateway → EC2 secret header (prevents direct public access to EC2)
-gateway_secret = "CHANGE_ME_TO_A_RANDOM_SECRET"
+# Lets a local frontend upload media to this environment's bucket.
+dev_origins = ["http://localhost:3000"]
 
-# Secret key for JWT token signing (Must be 32+ characters)
-# Generate one: openssl rand -base64 32
-token_symmetric_key = "CHANGE_ME_TO_A_STRONG_32_PLUS_CHAR_SECRET"
+# ── Database ────────────────────────────────────────
+db_username = "twitter_admin"
+db_password = "CHANGE_ME_letters_digits_only_16plus" # openssl rand -hex 24
 
-# Google OAuth Web client ID for social login
-google_client_id = "YOUR_GOOGLE_OAUTH_CLIENT_ID.apps.googleusercontent.com"
+# ── Auth ────────────────────────────────────────────
+token_symmetric_key = "CHANGE_ME" # openssl rand -base64 48
+google_client_id    = "YOUR_CLIENT_ID.apps.googleusercontent.com"
 
-# Google Gemini API Key for RAG features
-gemini_api_key = "YOUR_GEMINI_API_KEY"
+# ── Assistant (optional) ────────────────────────────
+gemini_api_key = "" # https://aistudio.google.com/
 
-# AI Model Configuration
-gemini_chat_model      = "gemini-2.5-flash"
-gemini_embedding_model = "gemini-embedding-2-preview"
-
-# Enable/Disable RAG (Timeline Context)
-enable_rag = true
-
-# ── Frontend & CORS ──────────────────────────────────
-# For you custom domain and Local frontend URL for development (e.g. http://localhost:3000)
-# This allows your local browser to upload directly to S3.
-# Remove local frontend url to disable local access in production.
-frontend_url = "http://localhost:3000,https://twitter.chanombude.me"
-
-# ── CI/CD (GitHub & Amplify) ──────────────────────────
+# ── GitHub ──────────────────────────────────────────
 gh_repo_url = "https://github.com/feifxi/twitter-monolith"
 gh_branch   = "main"
+gh_token    = "github_pat_..." # fine-grained PAT, read access to the repo (used by Amplify)
+# create_github_oidc_provider = false  # if the account already has one
 
-# GitHub Personal Access Token (Classic). 
-# Req: 'repo' and 'admin:repo_hook' permissions.
-gh_token = "YOUR_GITHUB_PERSONAL_ACCESS_TOKEN"
-
-# ── Optional Overrides (Defaults are in variables.tf) ──
-# db_max_conns = "25"
-# max_media_bytes = "104857600"
-# max_banner_bytes = "104857600"
-# redis_address = ""
-
-# ── Grafana Cloud Monitoring (Optional) ───────────────
-# Get these values from your Grafana Cloud portal
-# grafana_cloud_prometheus_url  = "https://prometheus-prod-01-...-remote-write"
+# ── Grafana Cloud (optional) ────────────────────────
+# grafana_cloud_prometheus_url  = "https://prometheus-prod-....grafana.net/api/prom/push"
 # grafana_cloud_prometheus_user = "12345"
-# grafana_cloud_loki_url        = "https://logs-prod-01-...-loki.grafana.net/loki/api/v1/push"
+# grafana_cloud_loki_url        = "https://logs-prod-....grafana.net/loki/api/v1/push"
 # grafana_cloud_loki_user       = "67890"
 # grafana_cloud_api_token       = "glc_..."

@@ -31,8 +31,6 @@ type Config struct {
 	RedisURL string `env:"REDIS_URL"`
 
 	AllowedOrigins []string `env:"ALLOWED_ORIGINS" envSeparator:"," envDefault:"http://localhost:3000"`
-	// GatewaySecret, when set, must be sent by the reverse proxy in X-Gateway-Secret.
-	GatewaySecret string `env:"GATEWAY_SECRET"`
 
 	TokenSymmetricKey string        `env:"TOKEN_SYMMETRIC_KEY,required,notEmpty"`
 	AccessTokenTTL    time.Duration `env:"ACCESS_TOKEN_TTL" envDefault:"15m"`

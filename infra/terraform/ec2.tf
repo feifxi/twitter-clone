@@ -1,8 +1,8 @@
-# ── IAM Role for EC2 (SSM + S3) ─────────────────────
+# The API host: Caddy (TLS) → Go API, plus Redis and the monitoring agents,
+# run with Docker Compose (see ../ec2).
 
-resource "aws_iam_role" "ec2" {
-  name = "${var.project_name}-ec2-role"
-
+resource "aws_iam_role" "api" {
+  name = "${local.name}-api"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -11,145 +11,102 @@ resource "aws_iam_role" "ec2" {
       Action    = "sts:AssumeRole"
     }]
   })
-
-  tags = { Name = "${var.project_name}-ec2-role" }
 }
 
-resource "aws_iam_role_policy_attachment" "ec2_ssm" {
-  role       = aws_iam_role.ec2.name
+# SSM agent: Run Command (CI deploys) and Session Manager.
+resource "aws_iam_role_policy_attachment" "api_ssm_core" {
+  role       = aws_iam_role.api.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
-resource "aws_iam_role_policy" "ec2_s3" {
-  name = "${var.project_name}-ec2-s3-policy"
-  role = aws_iam_role.ec2.id
-
+resource "aws_iam_role_policy" "api" {
+  name = "${local.name}-api"
+  role = aws_iam_role.api.id
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = [
-        "s3:PutObject",
-        "s3:DeleteObject",
-        "s3:GetObject",
-        "s3:ListBucket"
-      ]
-
-      Resource = [
-        aws_s3_bucket.media.arn,
-        "${aws_s3_bucket.media.arn}/*"
-      ]
-      }, {
-      Effect = "Allow"
-      Action = [
-        "ssm:GetParameter",
-        "ssm:GetParameters",
-        "ssm:GetParametersByPath"
-      ]
-      Resource = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/chmtwt/prod/*"
-    }]
+    Statement = [
+      {
+        Sid      = "ReadRuntimeConfig"
+        Effect   = "Allow"
+        Action   = ["ssm:GetParametersByPath"]
+        Resource = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/${var.project_name}/${var.environment}/*"
+      },
+      {
+        Sid      = "MediaObjects"
+        Effect   = "Allow"
+        Action   = ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"]
+        Resource = "${aws_s3_bucket.media.arn}/*"
+      },
+      {
+        Sid      = "PullApiImage"
+        Effect   = "Allow"
+        Action   = ["ecr:BatchCheckLayerAvailability", "ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"]
+        Resource = aws_ecr_repository.api.arn
+      },
+      {
+        Sid      = "EcrLogin"
+        Effect   = "Allow"
+        Action   = ["ecr:GetAuthorizationToken"]
+        Resource = "*"
+      },
+    ]
   })
 }
 
-
-resource "aws_iam_instance_profile" "ec2" {
-  name = "${var.project_name}-ec2-profile"
-  role = aws_iam_role.ec2.name
+resource "aws_iam_instance_profile" "api" {
+  name = "${local.name}-api"
+  role = aws_iam_role.api.name
 }
-
-# ── IAM for Go API (Producer) ───────────────────────
-
-resource "aws_iam_role_policy" "ec2_sqs" {
-  name = "${var.project_name}-ec2-sqs-policy"
-  role = aws_iam_role.ec2.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = "sqs:SendMessage"
-      Resource = aws_sqs_queue.tweet_embedding.arn
-    }]
-  })
-}
-
-# ── EC2 Instance ────────────────────────────────────
-
 
 resource "aws_instance" "api" {
-  ami                    = data.aws_ami.amazon_linux.id
+  ami                    = data.aws_ssm_parameter.al2023_ami.value
   instance_type          = var.ec2_instance_type
-  subnet_id              = aws_subnet.public_1.id
-  vpc_security_group_ids = [aws_security_group.ec2.id]
-  iam_instance_profile   = aws_iam_instance_profile.ec2.name
-
+  subnet_id              = aws_subnet.public.id
+  vpc_security_group_ids = [aws_security_group.api.id]
+  iam_instance_profile   = aws_iam_instance_profile.api.name
 
   root_block_device {
     volume_size = 30
     volume_type = "gp3"
+    encrypted   = true
   }
 
   metadata_options {
-    http_endpoint               = "enabled"
-    http_tokens                 = "required" # Enforce IMDSv2
-    http_put_response_hop_limit = 2          # Allow Docker bridge network (2 hops)
+    http_tokens                 = "required" # IMDSv2 only
+    http_put_response_hop_limit = 2          # containers sit one hop behind the host
   }
 
-  tags = { Name = "${var.project_name}-ec2" }
-
+  # Changing the stack files rebuilds the instance. Caddy then requests a fresh
+  # certificate; Let's Encrypt allows 5 per domain per week, so batch such changes.
   user_data_replace_on_change = true
+  user_data = templatefile("${path.module}/../ec2/cloud-init.yaml.tftpl", {
+    compose             = filebase64("${path.module}/../ec2/compose.yml")
+    caddyfile           = filebase64("${path.module}/../ec2/Caddyfile")
+    alloy               = filebase64("${path.module}/../ec2/config.alloy")
+    deploy_script       = filebase64("${path.module}/../ec2/deploy.sh")
+    compose_version     = var.docker_compose_version
+    region              = var.aws_region
+    api_ssm_path        = local.api_ssm_path
+    monitoring_ssm_path = local.monitoring_ssm_path
+    monitoring          = local.monitoring_enabled
+    ecr_repository_url  = aws_ecr_repository.api.repository_url
+    api_domain          = var.api_domain
+    acme_email          = var.acme_email
+  })
 
-  user_data = <<-EOF
-    #!/bin/bash
-    # Create app directory
-    mkdir -p /home/ec2-user/app
-    
-    # Write docker-compose.yml
-    cat << 'DOCKER_COMPOSE_EOF' > /home/ec2-user/app/docker-compose.yml
-    ${templatefile("${path.module}/../ec2/docker-compose.yml.tftpl", {
-  AWS_REGION        = var.aws_region,
-  ENABLE_MONITORING = var.grafana_cloud_api_token != ""
-  })}
-    DOCKER_COMPOSE_EOF
+  # The first deploy reads these at boot.
+  depends_on = [aws_ssm_parameter.api, aws_ssm_parameter.monitoring]
 
-    # Write config.alloy
-    cat << 'ALLOY_EOF' > /home/ec2-user/app/config.alloy
-    ${templatefile("${path.module}/../ec2/config.alloy.tftpl", {
-  PROMETHEUS_URL  = var.grafana_cloud_prometheus_url != "" ? var.grafana_cloud_prometheus_url : "N/A",
-  PROMETHEUS_USER = var.grafana_cloud_prometheus_user != "" ? var.grafana_cloud_prometheus_user : "N/A",
-  LOKI_URL        = var.grafana_cloud_loki_url != "" ? var.grafana_cloud_loki_url : "N/A",
-  LOKI_USER       = var.grafana_cloud_loki_user != "" ? var.grafana_cloud_loki_user : "N/A",
-  API_TOKEN       = var.grafana_cloud_api_token != "" ? var.grafana_cloud_api_token : "N/A"
-})}
-    ALLOY_EOF
-    
-    # Execute setup script
-    ${file("${path.module}/../ec2/setup-ec2.sh")}
-    
-    # Final ownership fix
-    chown -R ec2-user:ec2-user /home/ec2-user/app
+  tags = { Name = "${local.name}-api" }
 
-    # Bootstrap Auto-Start
-    # 1. Wait for Docker service to be fully ready
-    for i in {1..10}; do docker info >/dev/null 2>&1 && break || sleep 2; done
-
-    # 2. Try to pull and start the application immediately
-    cd /home/ec2-user/app
-    docker compose up -d || echo "⚠️ First pull failed (likely private repo or build in progress). Waiting for first GitHub Action deployment..."
-  EOF
-
-depends_on = [
-  aws_db_instance.this,
-  aws_ssm_parameter.config
-]
+  lifecycle {
+    ignore_changes = [ami] # don't rebuild just because a newer AMI was published
+  }
 }
 
-# ── EC2 Instance Connect Endpoint ───────────────────
-
-resource "aws_ec2_instance_connect_endpoint" "this" {
-  subnet_id          = aws_subnet.public_1.id
-  security_group_ids = [aws_security_group.eice.id]
-  preserve_client_ip = false
-
-  tags = { Name = "${var.project_name}-eice" }
+# Stable public IP for the api.<domain> DNS record.
+resource "aws_eip" "api" {
+  instance = aws_instance.api.id
+  domain   = "vpc"
+  tags     = { Name = "${local.name}-api" }
 }

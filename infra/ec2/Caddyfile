@@ -1,0 +1,12 @@
+{
+	email {$ACME_EMAIL}
+}
+
+{$API_DOMAIN} {
+	# Prometheus scrapes /metrics over the Docker network; it is never public.
+	@metrics path /metrics
+	respond @metrics 404
+
+	# Caddy flushes text/event-stream responses immediately, so SSE works as-is.
+	reverse_proxy api:8080
+}

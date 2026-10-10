@@ -239,15 +239,19 @@ Good already: `default_tags`, the modern standalone `aws_vpc_security_group_*_ru
 - [ ] Profile route tabs (`/[username]/replies|media|likes`), followers/following pages, onboarding, explore `?q=` sync, notifications mark-read UX
 - [ ] Keep: mobile nav, public browsing + sign-in modal, `/{username}` URLs, DMs, ChanomBot, theme toggle
 
-### Phase 5: Infrastructure (Terraform)
-- [ ] Remove API Gateway, SQS/DLQ, Lambda, NAT instance, `infra/lambda`; EC2 SG → 80/443 only; Caddy + Redis in the EC2 compose; pinned versions in cloud-init
-- [ ] RDS encryption, `gp3`, 1-day backups; S3 remote state with `use_lockfile`; commit `.terraform.lock.hcl`; AWS provider v6
-- [ ] T1, T4–T8 cleanups (`cidrsubnet`, a single prefix local, number types, validations, CloudFront cache policy + price class)
-- [ ] Amplify custom domain `twitter.chanombude.me`; DNS records for `api.chanombude.me`
+### Phase 5: Infrastructure (Terraform) ✅
+- [x] Removed API Gateway, SQS/DLQ, Lambda, NAT instance, `infra/lambda`, `GatewayGuard`/`GATEWAY_SECRET`. EC2 SG allows 80/443 (+ SSH from the EICE only); Caddy + Redis in `infra/ec2/compose.yml`; pinned image versions; Elastic IP
+- [x] Secrets out of user data: cloud-init only writes files; `deploy.sh` renders `api.env` from SSM (`/<project>/<env>/api/*`, one parameter per env var, empty values skipped)
+- [x] RDS encrypted, `gp3`, 1-day backups, Postgres 16; RDS reachable only from the API host; private subnets have no internet route
+- [x] S3 remote state with `use_lockfile` (`infra/bootstrap` creates the versioned bucket); `.terraform.lock.hcl` committed; AWS provider `~> 6.0`, Terraform `>= 1.10`
+- [x] T1, T4–T8: `cidrsubnet`, one `local.name` prefix, `number`/`bool` types, input validations, managed CloudFront cache policy + `PriceClass_200`, multipart-abort lifecycle, PUT-only bucket CORS
+- [x] Amplify custom domain `twitter.<domain>`, env vars set directly (no SSM read at build); optional Route 53 record for `api.<domain>`, otherwise `dns_records` output
+- [x] `terraform test` plans the stack against a mocked AWS provider (no credentials)
 
 ### Phase 6: CI/CD & docs
-- [ ] GitHub OIDC role; SHA-tagged images; no secrets in SSM command text; `terraform fmt -check` / `validate` in CI + pre-commit hook
-- [ ] README (architecture diagram, cost), api-contract, `CLAUDE.md`
+- [x] GitHub OIDC deploy role (branch-scoped); ECR with immutable SHA tags + lifecycle; no secrets in SSM command text; rollback via `image_tag` input; post-deploy `/readyz` check
+- [x] `terraform fmt -check` / `validate` / `test` in CI; README AWS sections rewritten
+- [ ] Pre-commit hook; architecture diagram image; `CLAUDE.md`
 
 ### Phase 7: Java API parity
 - [ ] Clean `.idea` and `.github/modernize`; align `twitter-java-api` with the squashed schema and the Go API contract (DMs, assistant, presign, cursors, cookie auth)

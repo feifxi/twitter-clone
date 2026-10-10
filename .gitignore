@@ -7,13 +7,13 @@
 *.swp
 *.swo
 
-# Terraform
+# Terraform (.terraform.lock.hcl IS committed: it pins provider versions)
 **/.terraform/
 *.tfstate
 *.tfstate.backup
 **/*.tfvars
 **/*.tfvars.json
-.terraform.lock.hcl
+infra/terraform/backend.hcl
 
 # Go
 twitter-go-api/twitter-go-api

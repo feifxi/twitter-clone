@@ -1,0 +1,26 @@
+resource "aws_ecr_repository" "api" {
+  name = "${local.name}-api"
+  # Tags are commit SHAs: a deployed tag always means the same image (and rollback = redeploy an old SHA).
+  image_tag_mutability = "IMMUTABLE"
+  force_delete         = true
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
+
+resource "aws_ecr_lifecycle_policy" "api" {
+  repository = aws_ecr_repository.api.name
+  policy = jsonencode({
+    rules = [{
+      rulePriority = 1
+      description  = "Keep the last ${var.ecr_images_to_keep} images"
+      selection = {
+        tagStatus   = "any"
+        countType   = "imageCountMoreThan"
+        countNumber = var.ecr_images_to_keep
+      }
+      action = { type = "expire" }
+    }]
+  })
+}

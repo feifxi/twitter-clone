@@ -1,225 +1,239 @@
+# ── Project ─────────────────────────────────────────
 variable "project_name" {
-  description = "Prefix for all resource names"
+  description = "Prefix for resource names"
   type        = string
   default     = "chmtwt"
 }
 
-variable "aws_region" {
-  description = "AWS region"
+variable "environment" {
+  description = "Environment name (prod, staging, …)"
   type        = string
-  default     = "ap-southeast-1"
+  default     = "prod"
+}
+
+variable "aws_region" {
+  type    = string
+  default = "ap-southeast-1"
 }
 
 variable "vpc_cidr" {
-  description = "CIDR block for the VPC"
-  type        = string
-  default     = "10.0.0.0/16"
+  type    = string
+  default = "10.0.0.0/16"
 }
 
-# ── EC2 ──────────────────────────────────────────────
+# ── Domains ─────────────────────────────────────────
+variable "root_domain" {
+  description = "Registrable domain shared by the web app and API, e.g. chanombude.me"
+  type        = string
+}
 
+variable "web_domain" {
+  description = "Web app hostname (Amplify), e.g. twitter.chanombude.me"
+  type        = string
+  validation {
+    condition     = endswith(var.web_domain, ".${var.root_domain}")
+    error_message = "web_domain must be a subdomain of root_domain."
+  }
+}
+
+variable "api_domain" {
+  description = "API hostname served by Caddy on EC2, e.g. api.chanombude.me"
+  type        = string
+  validation {
+    condition     = endswith(var.api_domain, ".${var.root_domain}")
+    error_message = "api_domain must be a subdomain of root_domain (the session cookie is scoped to it)."
+  }
+}
+
+variable "acme_email" {
+  description = "Email Let's Encrypt uses for certificate expiry notices"
+  type        = string
+}
+
+variable "route53_zone_id" {
+  description = "Route 53 hosted zone of root_domain. Empty = manage DNS yourself (see the dns_records output)."
+  type        = string
+  default     = ""
+}
+
+variable "dev_origins" {
+  description = "Extra browser origins allowed to upload to the media bucket (e.g. http://localhost:3000)"
+  type        = list(string)
+  default     = []
+}
+
+# ── Compute ─────────────────────────────────────────
 variable "ec2_instance_type" {
-  description = "EC2 instance type"
-  type        = string
-  default     = "t3.micro"
+  type    = string
+  default = "t3.micro"
 }
 
+variable "docker_compose_version" {
+  description = "Docker Compose plugin release installed on the host"
+  type        = string
+  default     = "v2.39.1"
+}
 
+variable "ecr_images_to_keep" {
+  type    = number
+  default = 10
+}
 
-# ── RDS ──────────────────────────────────────────────
+# ── Database ────────────────────────────────────────
+variable "rds_instance_class" {
+  type    = string
+  default = "db.t4g.micro"
+}
 
 variable "db_name" {
-  description = "Initial database name"
-  type        = string
-  default     = "twitter_db"
+  type    = string
+  default = "twitter_db"
 }
 
 variable "db_username" {
-  description = "Master username for RDS"
-  type        = string
-  sensitive   = true
+  type      = string
+  sensitive = true
 }
 
 variable "db_password" {
-  description = "Master password for RDS"
+  description = "RDS master password"
   type        = string
   sensitive   = true
+  validation {
+    # It is embedded in a URL and in a single-quoted env file line.
+    condition     = length(var.db_password) >= 16 && can(regex("^[A-Za-z0-9_-]+$", var.db_password))
+    error_message = "db_password must be at least 16 characters of letters, digits, '_' or '-'."
+  }
 }
-
-variable "rds_instance_class" {
-  description = "RDS instance class"
-  type        = string
-  default     = "db.t4g.micro"
-}
-
-# ── API Gateway ──────────────────────────────────────
-
-variable "gateway_secret" {
-  description = "Secret header value that API Gateway injects into X-Gateway-Secret"
-  type        = string
-  sensitive   = true
-}
-
-# ── Go API General Configuration ────────────────────────
 
 variable "db_max_conns" {
-  description = "Max open connections to the database"
-  type        = string
-  default     = "25"
+  type    = number
+  default = 25
 }
 
-variable "db_min_conns" {
-  description = "Min open connections to the database"
-  type        = string
-  default     = "0"
+# ── API settings ────────────────────────────────────
+variable "log_level" {
+  type    = string
+  default = "info"
 }
-
-variable "db_max_conn_lifetime_minutes" {
-  description = "Max lifetime of a database connection in minutes"
-  type        = string
-  default     = "5"
-}
-
-variable "max_media_bytes" {
-  description = "Maximum size in bytes for media uploads"
-  type        = string
-  default     = "104857600" # 100 MB
-}
-
-variable "max_avatar_bytes" {
-  description = "Maximum size in bytes for avatar uploads"
-  type        = string
-  default     = "5242880" # 5 MB
-}
-
-variable "max_banner_bytes" {
-  description = "Maximum size in bytes for banner uploads"
-  type        = string
-  default     = "104857600" # 100 MB
-}
-
-variable "token_duration_minutes" {
-  description = "Duration in minutes before the JWT token expires"
-  type        = string
-  default     = "15"
-}
-
-variable "refresh_token_duration_days" {
-  description = "Duration in days before the refresh token expires"
-  type        = string
-  default     = "30"
-}
-
-variable "redis_address" {
-  description = "Redis address (leave empty to disable Redis)"
-  type        = string
-  default     = ""
-}
-
-variable "redis_password" {
-  description = "Redis password (leave empty if none)"
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-# ── Go API Secrets ───────────────────────────────────
 
 variable "token_symmetric_key" {
-  description = "32+ char secret key for JWT token signing"
+  description = "JWT signing key (32+ characters). Generate with: openssl rand -base64 48"
   type        = string
   sensitive   = true
+  validation {
+    condition     = length(var.token_symmetric_key) >= 32 && !strcontains(var.token_symmetric_key, "'")
+    error_message = "token_symmetric_key must be at least 32 characters and must not contain a single quote."
+  }
+}
+
+variable "access_token_ttl" {
+  type    = string
+  default = "15m"
+}
+
+variable "refresh_token_ttl" {
+  type    = string
+  default = "720h"
 }
 
 variable "google_client_id" {
-  description = "Google OAuth Web client ID"
+  description = "Google OAuth web client ID"
   type        = string
 }
 
-# ── Frontend / CORS ──────────────────────────────────
-
-variable "frontend_url" {
-  description = "Frontend URL for CORS (comma-separated if multiple)"
-  type        = string
-  default     = "http://localhost:3000"
+variable "max_media_bytes" {
+  type    = number
+  default = 104857600 # 100 MiB
 }
 
-# ── GitHub / Amplify ──────────────────────────────────
+variable "max_avatar_bytes" {
+  type    = number
+  default = 5242880 # 5 MiB
+}
 
+variable "max_banner_bytes" {
+  type    = number
+  default = 10485760 # 10 MiB
+}
+
+variable "cloudfront_price_class" {
+  description = "PriceClass_200 covers Asia, Europe and North America"
+  type        = string
+  default     = "PriceClass_200"
+}
+
+# ── Assistant / RAG ─────────────────────────────────
+variable "gemini_api_key" {
+  description = "Empty disables the assistant and RAG"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "gemini_chat_model" {
+  type    = string
+  default = "gemini-2.5-flash"
+}
+
+variable "gemini_embedding_model" {
+  type    = string
+  default = "gemini-embedding-2-preview"
+}
+
+variable "enable_rag" {
+  type    = bool
+  default = true
+}
+
+# ── GitHub ──────────────────────────────────────────
 variable "gh_repo_url" {
-  description = "GitHub repository URL for Amplify"
-  type        = string
-  default     = "https://github.com/feifxi/twitter-monolith"
+  type    = string
+  default = "https://github.com/feifxi/twitter-monolith"
 }
 
 variable "gh_branch" {
-  description = "GitHub branch to deploy"
+  description = "Branch Amplify builds and GitHub Actions may deploy from"
   type        = string
   default     = "main"
 }
 
 variable "gh_token" {
-  description = "GitHub Personal Access Token (PAT)"
+  description = "GitHub token Amplify uses to read the repository"
   type        = string
   sensitive   = true
 }
 
-# ── Grafana Cloud (Optional) ──────────────────────────
-
-variable "grafana_cloud_prometheus_url" {
-  description = "Grafana Cloud Prometheus remote write URL"
-  type        = string
-  default     = ""
-}
-
-variable "grafana_cloud_prometheus_user" {
-  description = "Grafana Cloud Prometheus user ID"
-  type        = string
-  default     = ""
-}
-
-variable "grafana_cloud_loki_url" {
-  description = "Grafana Cloud Loki URL"
-  type        = string
-  default     = ""
-}
-
-variable "grafana_cloud_loki_user" {
-  description = "Grafana Cloud Loki user ID"
-  type        = string
-  default     = ""
-}
-
-variable "grafana_cloud_api_token" {
-  description = "Grafana Cloud API Token"
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-# ── Assistant / Gemini ──────────────────────────────
-
-variable "gemini_api_key" {
-  description = "Google Gemini API Key"
-  type        = string
-  sensitive   = true
-}
-
-variable "enable_rag" {
-  description = "Enable RAG (Timeline Context) for the Assistant"
+variable "create_github_oidc_provider" {
+  description = "false if the account already has the GitHub OIDC provider (only one is allowed per account)"
   type        = bool
   default     = true
 }
 
-variable "gemini_chat_model" {
-  description = "Gemini model for chat/assistant"
-  type        = string
-  default     = "gemini-2.5-flash"
+# ── Grafana Cloud (optional) ────────────────────────
+variable "grafana_cloud_prometheus_url" {
+  type    = string
+  default = ""
 }
 
-variable "gemini_embedding_model" {
-  description = "Gemini model for text embeddings"
-  type        = string
-  default     = "gemini-embedding-2-preview"
+variable "grafana_cloud_prometheus_user" {
+  type    = string
+  default = ""
 }
 
+variable "grafana_cloud_loki_url" {
+  type    = string
+  default = ""
+}
+
+variable "grafana_cloud_loki_user" {
+  type    = string
+  default = ""
+}
+
+variable "grafana_cloud_api_token" {
+  description = "Empty disables monitoring"
+  type        = string
+  sensitive   = true
+  default     = ""
+}

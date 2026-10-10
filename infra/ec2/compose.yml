@@ -1,0 +1,58 @@
+# Production stack on the EC2 instance. Rendered values come from deploy.sh:
+#   API_IMAGE, API_DOMAIN, ACME_EMAIL (environment) and api.env / monitoring.env (from SSM).
+name: twitter
+
+services:
+  # TLS termination (Let's Encrypt) and the only container with published ports.
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      API_DOMAIN: ${API_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data # certificates: keep across restarts to avoid Let's Encrypt rate limits
+      - caddy_config:/config
+    depends_on: [api]
+
+  api:
+    image: ${API_IMAGE}
+    restart: unless-stopped
+    env_file: api.env
+    depends_on: [redis]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  # Rate limits and realtime fan-out; nothing durable, so no persistence.
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru"]
+
+  node-exporter:
+    profiles: [monitoring]
+    image: prom/node-exporter:v1.10.2
+    restart: unless-stopped
+    command: ["--path.procfs=/host/proc", "--path.sysfs=/host/sys", "--path.rootfs=/rootfs"]
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+
+  alloy:
+    profiles: [monitoring]
+    image: grafana/alloy:v1.14.0
+    restart: unless-stopped
+    env_file: monitoring.env
+    command: ["run", "--storage.path=/var/lib/alloy/data", "/etc/alloy/config.alloy"]
+    volumes:
+      - ./config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on: [api]
+
+volumes:
+  caddy_data:
+  caddy_config:

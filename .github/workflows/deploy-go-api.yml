@@ -1,73 +1,97 @@
-name: Deploy Go API to EC2
+name: Deploy Go API
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [main]
     paths:
-      - 'twitter-go-api/**'
-      - '.github/workflows/deploy-go-api.yml'
+      - "twitter-go-api/**"
+      - ".github/workflows/deploy-go-api.yml"
   workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Redeploy an existing image (commit SHA), e.g. to roll back. Empty = build this commit."
+        required: false
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}-go-api
+concurrency:
+  group: deploy-go-api
+  cancel-in-progress: false # never interrupt a deploy halfway
 
+permissions:
+  contents: read
+  id-token: write # GitHub OIDC → short-lived AWS credentials (no stored keys)
+
+# Repository variables (Settings → Secrets and variables → Actions → Variables),
+# all printed by `terraform output`: AWS_REGION, AWS_DEPLOY_ROLE_ARN,
+# ECR_REPOSITORY, EC2_INSTANCE_ID, API_DOMAIN.
 jobs:
-  build-test-deploy:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-
+  deploy:
+    runs-on: ubuntu-24.04
+    environment: production
+    env:
+      IMAGE_TAG: ${{ inputs.image_tag || github.sha }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # 1. Run Test
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5
+        if: ${{ !inputs.image_tag }}
         with:
           go-version-file: twitter-go-api/go.mod
+          cache-dependency-path: twitter-go-api/go.sum
 
-      - name: Run Go tests
+      - name: Unit tests
+        if: ${{ !inputs.image_tag }}
         working-directory: twitter-go-api
         run: go test ./...
 
-      # 2. Build & Push Image
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
+      - uses: aws-actions/amazon-ecr-login@v2
+
+      - uses: docker/setup-buildx-action@v3
+        if: ${{ !inputs.image_tag }}
+
+      - name: Build and push image
+        if: ${{ !inputs.image_tag }}
+        uses: docker/build-push-action@v6
         with:
-          context: ./twitter-go-api
-          file: ./twitter-go-api/Dockerfile
+          context: twitter-go-api
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          tags: ${{ vars.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      # 3. Deploy to EC2 via AWS SSM (no SSH key needed)
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Deploy to EC2 via SSM
+      - name: Deploy on EC2 (SSM Run Command)
         run: |
-          aws ssm send-command \
-            --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
-            --document-name "AWS-RunShellScript" \
-            --parameters 'commands=[
-              "echo \"${{ secrets.GHCR_PAT }}\" | docker login ghcr.io -u ${{ github.actor }} --password-stdin",
-              "cd /home/ec2-user/app",
-              "docker compose pull",
-              "docker compose up -d --remove-orphans",
-              "docker image prune -f"
-            ]' \
-            --comment "Deploy Go API via GitHub Actions" \
-            --output text
+          command_id=$(aws ssm send-command \
+            --instance-ids "${{ vars.EC2_INSTANCE_ID }}" \
+            --document-name AWS-RunShellScript \
+            --comment "Deploy ${IMAGE_TAG}" \
+            --parameters "commands=[\"/opt/twitter/deploy.sh ${IMAGE_TAG}\"]" \
+            --query Command.CommandId --output text)
+          echo "SSM command: $command_id"
+
+          for _ in $(seq 1 60); do
+            status=$(aws ssm get-command-invocation --command-id "$command_id" \
+              --instance-id "${{ vars.EC2_INSTANCE_ID }}" --query Status --output text 2>/dev/null || echo Pending)
+            case "$status" in
+              Success) break ;;
+              Failed|Cancelled|TimedOut) break ;;
+            esac
+            sleep 10
+          done
+
+          aws ssm get-command-invocation --command-id "$command_id" --instance-id "${{ vars.EC2_INSTANCE_ID }}" \
+            --query '{status: Status, stdout: StandardOutputContent, stderr: StandardErrorContent}' --output yaml
+          test "$status" = Success
+
+      - name: Check the API is ready
+        run: |
+          for _ in $(seq 1 30); do
+            curl -fsS "https://${{ vars.API_DOMAIN }}/readyz" && exit 0
+            sleep 5
+          done
+          echo "API did not become ready" >&2
+          exit 1

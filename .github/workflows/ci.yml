@@ -70,3 +70,23 @@ jobs:
           NEXT_TELEMETRY_DISABLED: "1"
           NEXT_PUBLIC_API_URL: http://localhost:8080/api/v1
           NEXT_PUBLIC_GOOGLE_CLIENT_ID: ci-placeholder
+
+  terraform:
+    name: Terraform
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.14.6"
+      - run: terraform fmt -check -recursive
+      - name: Validate and plan against a mocked AWS provider
+        run: |
+          for dir in bootstrap terraform; do
+            terraform -chdir="$dir" init -backend=false -input=false
+            terraform -chdir="$dir" validate
+          done
+          terraform -chdir=terraform test

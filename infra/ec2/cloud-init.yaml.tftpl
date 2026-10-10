@@ -1,0 +1,38 @@
+#cloud-config
+# First-boot setup: Docker + Compose, the stack files, then a first deploy.
+# Secrets are NOT here (user data is readable through the EC2 API); deploy.sh
+# pulls them from SSM Parameter Store at deploy time.
+package_update: true
+packages:
+  - docker
+
+write_files:
+  - path: /opt/twitter/compose.yml
+    encoding: b64
+    content: ${compose}
+  - path: /opt/twitter/Caddyfile
+    encoding: b64
+    content: ${caddyfile}
+  - path: /opt/twitter/config.alloy
+    encoding: b64
+    content: ${alloy}
+  - path: /opt/twitter/deploy.sh
+    encoding: b64
+    permissions: "0755"
+    content: ${deploy_script}
+  - path: /opt/twitter/deploy.env
+    content: |
+      REGION=${region}
+      API_SSM_PATH=${api_ssm_path}
+      MONITORING_SSM_PATH=${monitoring_ssm_path}
+      MONITORING=${monitoring}
+      ECR_REPOSITORY_URL=${ecr_repository_url}
+      API_DOMAIN=${api_domain}
+      ACME_EMAIL=${acme_email}
+
+runcmd:
+  - systemctl enable --now docker
+  - mkdir -p /usr/local/lib/docker/cli-plugins
+  - curl -fsSL -o /usr/local/lib/docker/cli-plugins/docker-compose "https://github.com/docker/compose/releases/download/${compose_version}/docker-compose-linux-$(uname -m)"
+  - chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+  - /opt/twitter/deploy.sh || echo "Stack not started yet; the first CI deploy will start it."

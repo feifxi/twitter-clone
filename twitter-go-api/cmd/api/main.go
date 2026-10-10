@@ -175,7 +175,6 @@ func newServer(ctx context.Context, cfg config.Config, store db.Store, rdb *redi
 	return api.New(api.Config{
 		Production:     cfg.Production(),
 		AllowedOrigins: cfg.AllowedOrigins,
-		GatewaySecret:  cfg.GatewaySecret,
 	}, services, tokens, hub, store, rdb), nil
 }
 

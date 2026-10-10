@@ -17,8 +17,6 @@ import (
 type Config struct {
 	Production     bool
 	AllowedOrigins []string
-	// GatewaySecret, when set, must arrive in X-Gateway-Secret on every /api request.
-	GatewaySecret string
 }
 
 // pinger is a dependency checked by the readiness probe.
