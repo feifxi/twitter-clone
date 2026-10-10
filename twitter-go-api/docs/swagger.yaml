@@ -1,14 +1,5 @@
 basePath: /api/v1
 definitions:
-  api.AuthResponse:
-    properties:
-      accessToken:
-        type: string
-      refreshToken:
-        type: string
-      user:
-        $ref: '#/definitions/api.CurrentUserResponse'
-    type: object
   api.ConversationResponse:
     properties:
       id:
@@ -338,11 +329,6 @@ definitions:
     - contentType
     - folder
     type: object
-  api.refreshTokenRequest:
-    properties:
-      refreshToken:
-        type: string
-    type: object
   api.sendMessageRequest:
     properties:
       content:
@@ -426,7 +412,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Exchange a Google ID token for a JWT access and refresh token.
+      description: Exchange a Google ID token for a session. The access and refresh
+        tokens are set as httpOnly cookies.
       parameters:
       - description: Google ID Token
         in: body
@@ -440,7 +427,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/api.AuthResponse'
+            $ref: '#/definitions/api.CurrentUserResponse'
         "400":
           description: Bad Request
           schema:
@@ -450,17 +437,8 @@ paths:
       - Auth
   /auth/logout:
     post:
-      consumes:
-      - application/json
-      description: End the session the refresh token belongs to. Other devices stay
-        signed in.
-      parameters:
-      - description: Refresh token of the session to end
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/api.refreshTokenRequest'
+      description: End this browser's session and clear its cookies. Other devices
+        stay signed in.
       produces:
       - application/json
       responses:
@@ -492,24 +470,15 @@ paths:
       - Auth
   /auth/refresh:
     post:
-      consumes:
-      - application/json
-      description: Obtain a new access token and refresh token using an existing refresh
-        token.
-      parameters:
-      - description: Refresh Token
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/api.refreshTokenRequest'
+      description: 'Rotate the session in the refresh_token cookie: both cookies are
+        replaced and the old refresh token stops working.'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/api.AuthResponse'
+            $ref: '#/definitions/api.CurrentUserResponse'
         "401":
           description: Unauthorized
           schema:
@@ -1509,7 +1478,8 @@ paths:
       - Users
 securityDefinitions:
   BearerAuth:
-    description: Type 'Bearer ' followed by your JWT token.
+    description: Type 'Bearer ' followed by an access token. Browsers use the httpOnly
+      access_token cookie instead.
     in: header
     name: Authorization
     type: apiKey

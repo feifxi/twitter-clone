@@ -70,7 +70,7 @@ const docTemplate = `{
         },
         "/auth/google": {
             "post": {
-                "description": "Exchange a Google ID token for a JWT access and refresh token.",
+                "description": "Exchange a Google ID token for a session. The access and refresh tokens are set as httpOnly cookies.",
                 "consumes": [
                     "application/json"
                 ],
@@ -96,7 +96,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/api.AuthResponse"
+                            "$ref": "#/definitions/api.CurrentUserResponse"
                         }
                     },
                     "400": {
@@ -110,10 +110,7 @@ const docTemplate = `{
         },
         "/auth/logout": {
             "post": {
-                "description": "End the session the refresh token belongs to. Other devices stay signed in.",
-                "consumes": [
-                    "application/json"
-                ],
+                "description": "End this browser's session and clear its cookies. Other devices stay signed in.",
                 "produces": [
                     "application/json"
                 ],
@@ -121,17 +118,6 @@ const docTemplate = `{
                     "Auth"
                 ],
                 "summary": "Logout",
-                "parameters": [
-                    {
-                        "description": "Refresh token of the session to end",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/api.refreshTokenRequest"
-                        }
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -175,10 +161,7 @@ const docTemplate = `{
         },
         "/auth/refresh": {
             "post": {
-                "description": "Obtain a new access token and refresh token using an existing refresh token.",
-                "consumes": [
-                    "application/json"
-                ],
+                "description": "Rotate the session in the refresh_token cookie: both cookies are replaced and the old refresh token stops working.",
                 "produces": [
                     "application/json"
                 ],
@@ -186,22 +169,11 @@ const docTemplate = `{
                     "Auth"
                 ],
                 "summary": "Refresh Access Token",
-                "parameters": [
-                    {
-                        "description": "Refresh Token",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/api.refreshTokenRequest"
-                        }
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/api.AuthResponse"
+                            "$ref": "#/definitions/api.CurrentUserResponse"
                         }
                     },
                     "401": {
@@ -1743,20 +1715,6 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "api.AuthResponse": {
-            "type": "object",
-            "properties": {
-                "accessToken": {
-                    "type": "string"
-                },
-                "refreshToken": {
-                    "type": "string"
-                },
-                "user": {
-                    "$ref": "#/definitions/api.CurrentUserResponse"
-                }
-            }
-        },
         "api.ConversationResponse": {
             "type": "object",
             "properties": {
@@ -2252,14 +2210,6 @@ const docTemplate = `{
                 }
             }
         },
-        "api.refreshTokenRequest": {
-            "type": "object",
-            "properties": {
-                "refreshToken": {
-                    "type": "string"
-                }
-            }
-        },
         "api.sendMessageRequest": {
             "type": "object",
             "required": [
@@ -2315,7 +2265,7 @@ const docTemplate = `{
     },
     "securityDefinitions": {
         "BearerAuth": {
-            "description": "Type 'Bearer ' followed by your JWT token.",
+            "description": "Type 'Bearer ' followed by an access token. Browsers use the httpOnly access_token cookie instead.",
             "type": "apiKey",
             "name": "Authorization",
             "in": "header"

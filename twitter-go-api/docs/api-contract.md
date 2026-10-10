@@ -3,10 +3,12 @@
 Base URL: `/api/v1`
 
 ## Auth & Session
-- Authentication is strictly token-based. No cookies are used.
-- The frontend must store tokens in **LocalStorage**.
-- All private requests must include the header: `Authorization: Bearer <accessToken>`.
-- The `refreshToken` is used via JSON body to obtain new access tokens.
+- Sessions live in two **httpOnly cookies** set by the API: `access_token` (short-lived JWT) and `refresh_token` (rotating, single use). Page scripts never see the tokens.
+- Browsers send them automatically: call the API with credentials (`fetch(..., { credentials: "include" })`, axios `withCredentials: true`, `new EventSource(url, { withCredentials: true })`).
+- Cookies are `HttpOnly; SameSite=Lax; Path=/`, `Secure` in production, scoped to `COOKIE_DOMAIN` (e.g. `chanombude.me`, so both `twitter.` and `api.` receive them; in dev, `localhost` covers every port).
+- When a request returns `401`, call `POST /auth/refresh` once and retry. Share one in-flight refresh between concurrent requests: each refresh token works once.
+- Unsafe requests (`POST`/`PUT`/`PATCH`/`DELETE`) from origins outside `ALLOWED_ORIGINS` are refused with `403` (CSRF protection).
+- Non-browser clients (curl, tests) may send `Authorization: Bearer <access token>` instead; the header wins over the cookie.
 
 ## Common Query Params
 - Pagination (where supported):
@@ -51,15 +53,6 @@ Base URL: `/api/v1`
   "followersCount": 10,
   "followingCount": 20,
   "createdAt": "2026-03-01T00:00:00Z"
-}
-```
-
-### AuthResponse
-```json
-{
-  "accessToken": "jwt",
-  "refreshToken": "uuid/jwt",
-  "user": { "...UserResponse" }
 }
 ```
 
@@ -122,28 +115,23 @@ Body:
 ```json
 { "idToken": "google_id_token" }
 ```
-Response 200: `AuthResponse`
+Response 200: `CurrentUserResponse`, and `Set-Cookie` for both session cookies.
 
 ### POST `/auth/refresh`
-Body:
-```json
-{ "refreshToken": "string" }
-```
-Response 200: `AuthResponse` with a **new** refresh token. Each refresh token works once (rotation), so clients must store the new one and must not send concurrent refreshes with the same token.
+No body; reads the `refresh_token` cookie.
+Response 200: `CurrentUserResponse`, and `Set-Cookie` with a **new** pair. The old refresh token stops working (rotation).
+Response 401 when the cookie is missing, used, expired or revoked. Cookies are left untouched on failure (a concurrent refresh may have just renewed them).
 
 ### POST `/auth/logout`
-Body:
-```json
-{ "refreshToken": "string" }
-```
-- Ends the session (device) the refresh token belongs to. Other devices stay signed in.
+No body; reads the `refresh_token` cookie.
+- Ends this browser's session and deletes both cookies. Other devices stay signed in.
 Response 200:
 ```json
 { "success": true }
 ```
 
 ### GET `/auth/me` (private)
-Response 200: `CurrentUserResponse`: `UserResponse` plus `"email"` and `"onboarded"` (false until the user has chosen a username). Email is never included in public `UserResponse`s; `AuthResponse.user` is also a `CurrentUserResponse`.
+Response 200: `CurrentUserResponse`: `UserResponse` plus `"email"` and `"onboarded"` (false until the user has chosen a username). Email is never included in public `UserResponse`s.
 
 ## Uploads
 

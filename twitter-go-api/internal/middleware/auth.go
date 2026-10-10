@@ -13,6 +13,11 @@ const (
 	authorizationHeaderKey  = "authorization"
 	authorizationTypeBearer = "bearer"
 	AuthorizationPayloadKey = "authorization_payload"
+
+	// Session cookies set by the auth handlers. Browsers use these; other
+	// clients (curl, tests) can send the access token as a Bearer header instead.
+	AccessTokenCookie  = "access_token"
+	RefreshTokenCookie = "refresh_token"
 )
 
 func AuthMiddleware(tokenMaker token.Maker) gin.HandlerFunc {
@@ -52,10 +57,14 @@ func OptionalAuthMiddleware(tokenMaker token.Maker) gin.HandlerFunc {
 	}
 }
 
+// resolveAccessToken prefers an explicit Authorization header over the session cookie.
 func resolveAccessToken(c *gin.Context) (string, error) {
 	authorizationHeader := c.GetHeader(authorizationHeaderKey)
 	if len(authorizationHeader) == 0 {
-		return "", errors.New("authorization header is not provided")
+		if cookie, err := c.Cookie(AccessTokenCookie); err == nil && cookie != "" {
+			return cookie, nil
+		}
+		return "", errors.New("no access token")
 	}
 
 	fields := strings.Fields(authorizationHeader)

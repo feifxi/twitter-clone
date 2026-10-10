@@ -76,7 +76,7 @@ The API is fully documented using **Swaggo**. You can explore the interactive AP
 - **Swagger UI**: `http://localhost:8080/swagger/index.html`
 - **OpenAPI Spec**: `http://localhost:8080/swagger/doc.json`
 
-The documentation includes request/response schemas, authentication requirements (Bearer Token), and error structures.
+The documentation includes request/response schemas, authentication requirements, and error structures. Browsers authenticate with httpOnly session cookies; in Swagger UI, sign in through the web app on localhost (the cookie is shared) or paste an access token into **Authorize** as `Bearer <token>`.
 
 ### Generating API Documentation
 

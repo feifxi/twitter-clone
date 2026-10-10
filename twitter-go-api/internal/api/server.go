@@ -4,6 +4,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"time"
@@ -15,8 +16,12 @@ import (
 )
 
 type Config struct {
-	Production     bool
+	Production bool
+	// AllowedOrigins may call the API from a browser with credentials (CORS) and
+	// send unsafe requests (cross-origin protection).
 	AllowedOrigins []string
+	// CookieDomain scopes the session cookies; empty means the API host only.
+	CookieDomain string
 }
 
 // pinger is a dependency checked by the readiness probe.
@@ -31,10 +36,18 @@ type Server struct {
 	hub    *realtime.Hub
 	db     pinger
 	redis  *redis.Client // optional: shared rate limits and readiness
+	csrf   *http.CrossOriginProtection
 	router *gin.Engine
 }
 
-func New(cfg Config, svc Services, tokens token.Maker, hub *realtime.Hub, db pinger, rdb *redis.Client) *Server {
+func New(cfg Config, svc Services, tokens token.Maker, hub *realtime.Hub, db pinger, rdb *redis.Client) (*Server, error) {
+	csrf := http.NewCrossOriginProtection()
+	for _, origin := range cfg.AllowedOrigins {
+		if err := csrf.AddTrustedOrigin(origin); err != nil {
+			return nil, fmt.Errorf("allowed origin: %w", err)
+		}
+	}
+
 	s := &Server{
 		cfg:    cfg,
 		svc:    svc,
@@ -42,9 +55,10 @@ func New(cfg Config, svc Services, tokens token.Maker, hub *realtime.Hub, db pin
 		hub:    hub,
 		db:     db,
 		redis:  rdb,
+		csrf:   csrf,
 	}
 	s.router = s.routes()
-	return s
+	return s, nil
 }
 
 func (s *Server) Handler() http.Handler {

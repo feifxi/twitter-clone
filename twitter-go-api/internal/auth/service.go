@@ -50,10 +50,14 @@ func New(cfg Config, store db.Store, tokens tokenMaker, verifier GoogleVerifier)
 	return &Service{cfg: cfg, store: store, tokens: tokens, verifier: verifier}
 }
 
+// Session is a signed-in device: a short-lived access token plus the refresh
+// token that renews it.
 type Session struct {
-	User         domain.User
-	AccessToken  string
-	RefreshToken string
+	User             domain.User
+	AccessToken      string
+	AccessExpiresAt  time.Time
+	RefreshToken     string
+	RefreshExpiresAt time.Time
 }
 
 func (s *Service) LoginWithGoogle(ctx context.Context, idToken string) (Session, error) {
@@ -96,12 +100,7 @@ func (s *Service) LoginWithGoogle(ctx context.Context, idToken string) (Session,
 		}
 	}
 
-	accessToken, refreshToken, err := s.issueSession(ctx, user.ID)
-	if err != nil {
-		return Session{}, err
-	}
-
-	return Session{User: domain.NewUser(user, false), AccessToken: accessToken, RefreshToken: refreshToken}, nil
+	return s.issueSession(ctx, domain.NewUser(user, false))
 }
 
 // Refresh rotates the session: the presented refresh token is consumed and a new
@@ -124,11 +123,7 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string) (Session, er
 		return Session{}, db.NotFound(err, "user")
 	}
 
-	accessToken, newRefreshToken, err := s.issueSession(ctx, session.UserID)
-	if err != nil {
-		return Session{}, err
-	}
-	return Session{User: domain.NewUser(row.User, false), AccessToken: accessToken, RefreshToken: newRefreshToken}, nil
+	return s.issueSession(ctx, domain.NewUser(row.User, false))
 }
 
 // Logout ends the session the refresh token belongs to; other devices stay signed in.
@@ -148,24 +143,32 @@ func (s *Service) Me(ctx context.Context, userID int64) (domain.User, error) {
 }
 
 // issueSession starts a new session (one per device) and prunes the user's expired ones.
-func (s *Service) issueSession(ctx context.Context, userID int64) (string, string, error) {
-	accessToken, err := s.tokens.CreateToken(userID, s.cfg.AccessTokenTTL)
+func (s *Service) issueSession(ctx context.Context, user domain.User) (Session, error) {
+	now := time.Now()
+	accessToken, err := s.tokens.CreateToken(user.ID, s.cfg.AccessTokenTTL)
 	if err != nil {
-		return "", "", err
+		return Session{}, err
 	}
 
 	refreshToken := rand.Text()
+	refreshExpiresAt := now.Add(s.cfg.RefreshTokenTTL)
 	if _, err := s.store.CreateRefreshToken(ctx, db.CreateRefreshTokenParams{
-		UserID:     userID,
+		UserID:     user.ID,
 		TokenHash:  hashRefreshToken(refreshToken),
-		ExpiryDate: time.Now().Add(s.cfg.RefreshTokenTTL),
+		ExpiryDate: refreshExpiresAt,
 	}); err != nil {
-		return "", "", err
+		return Session{}, err
 	}
-	if err := s.store.DeleteExpiredRefreshTokens(ctx, userID); err != nil {
-		return "", "", err
+	if err := s.store.DeleteExpiredRefreshTokens(ctx, user.ID); err != nil {
+		return Session{}, err
 	}
-	return accessToken, refreshToken, nil
+	return Session{
+		User:             user,
+		AccessToken:      accessToken,
+		AccessExpiresAt:  now.Add(s.cfg.AccessTokenTTL),
+		RefreshToken:     refreshToken,
+		RefreshExpiresAt: refreshExpiresAt,
+	}, nil
 }
 
 const (

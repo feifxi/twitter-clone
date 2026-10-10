@@ -58,6 +58,8 @@ func TestValidate(t *testing.T) {
 
 	cases := map[string]func(c *Config){
 		"short token key":        func(c *Config) { c.TokenSymmetricKey = "short" },
+		"origin with a path":     func(c *Config) { c.AllowedOrigins = []string{"https://twitter.example.com/app"} },
+		"origin without scheme":  func(c *Config) { c.AllowedOrigins = []string{"twitter.example.com"} },
 		"insecure database":      func(c *Config) { c.DatabaseURL += "&sslmode=disable" },
 		"missing bucket":         func(c *Config) { c.S3Bucket = "" },
 		"localhost origin":       func(c *Config) { c.AllowedOrigins = append(c.AllowedOrigins, "http://localhost:3000") },

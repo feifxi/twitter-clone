@@ -127,6 +127,7 @@ func (s *Server) newRouter() *gin.Engine {
 			AllowCredentials: true,
 			MaxAge:           12 * time.Hour,
 		}),
+		s.crossOriginProtection,
 	)
 
 	// Unknown paths are mostly bot scans: strict limit and no access log.
@@ -138,6 +139,19 @@ func (s *Server) newRouter() *gin.Engine {
 		},
 	)
 	return r
+}
+
+// crossOriginProtection refuses unsafe requests (POST, PUT, DELETE, …) that a
+// browser sends from an origin not in AllowedOrigins. Cookies ride along on
+// such requests, so without this any site could act as the signed-in user
+// (CSRF). It relies on the Sec-Fetch-Site and Origin headers browsers set;
+// requests without them (curl, server-to-server) aren't browser-driven and pass.
+func (s *Server) crossOriginProtection(c *gin.Context) {
+	if err := s.csrf.Check(c.Request); err != nil {
+		c.AbortWithStatusJSON(http.StatusForbidden, ErrorResponse{Code: "FORBIDDEN", Message: "cross-origin request refused", RequestID: middleware.GetRequestID(c)})
+		return
+	}
+	c.Next()
 }
 
 func securityHeaders(c *gin.Context) {

@@ -17,6 +17,7 @@ locals {
     HTTP_SERVER_ADDRESS    = "0.0.0.0:8080"
     DB_MAX_CONNS           = tostring(var.db_max_conns)
     REDIS_URL              = "redis://redis:6379"
+    COOKIE_DOMAIN          = var.root_domain
     TOKEN_SYMMETRIC_KEY    = var.token_symmetric_key
     ACCESS_TOKEN_TTL       = var.access_token_ttl
     REFRESH_TOKEN_TTL      = var.refresh_token_ttl

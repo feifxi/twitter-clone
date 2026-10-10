@@ -10,20 +10,6 @@ import (
 // ErrorResponse is a local alias for Swaggo readability.
 type ErrorResponse = apperr.ErrorResponse
 
-type AuthResponse struct {
-	AccessToken  string              `json:"accessToken"`
-	RefreshToken string              `json:"refreshToken"`
-	User         CurrentUserResponse `json:"user"`
-}
-
-func newAuthResponse(accessToken, refreshToken string, user domain.User) AuthResponse {
-	return AuthResponse{
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-		User:         newCurrentUserResponse(user),
-	}
-}
-
 // CurrentUserResponse is the authenticated user's own profile, including private fields.
 type CurrentUserResponse struct {
 	UserResponse

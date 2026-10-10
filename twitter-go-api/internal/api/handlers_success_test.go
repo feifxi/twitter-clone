@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chanombude/twitter-go-api/internal/auth"
 	"github.com/chanombude/twitter-go-api/internal/domain"
 	"github.com/chanombude/twitter-go-api/internal/pagination"
 	"github.com/chanombude/twitter-go-api/internal/tweet"
@@ -101,66 +100,6 @@ func TestUpdateProfileSuccessPassesAvatarKey(t *testing.T) {
 	}
 	if gotAvatarKey != "avatars/uuid_avatar.png" {
 		t.Fatalf("expected avatars/uuid_avatar.png, got %q", gotAvatarKey)
-	}
-}
-
-func TestRefreshTokenSuccessSetsTokensInResponse(t *testing.T) {
-	t.Parallel()
-
-	mock := &fakeAuth{
-		refreshFn: func(_ context.Context, refreshToken string) (auth.Session, error) {
-			if refreshToken != "r-old" {
-				t.Fatalf("unexpected refresh token: %s", refreshToken)
-			}
-			return auth.Session{
-				AccessToken:  "a-new",
-				RefreshToken: "r-new",
-				User: domain.User{
-					ID:       9,
-					Username: "tester",
-					Email:    "tester@example.com",
-				},
-			}, nil
-		},
-	}
-
-	reqBody := `{"refreshToken":"r-old"}`
-	ctx, rec := newHandlerTestContext(http.MethodPost, "/api/v1/auth/refresh", bytes.NewBufferString(reqBody), "application/json")
-
-	s := &Server{svc: Services{Auth: mock}}
-	s.refreshToken(ctx)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d, body=%s", rec.Code, rec.Body.String())
-	}
-
-	var got AuthResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatalf("invalid json response: %v", err)
-	}
-
-	if got.AccessToken != "a-new" || got.RefreshToken != "r-new" {
-		t.Fatalf("expected both tokens in response, got: %+v", got)
-	}
-}
-
-func TestLogoutEndsTheSessionOfTheGivenRefreshToken(t *testing.T) {
-	t.Parallel()
-
-	var got string
-	fake := &fakeAuth{logoutFn: func(_ context.Context, refreshToken string) error {
-		got = refreshToken
-		return nil
-	}}
-
-	ctx, rec := newHandlerTestContext(http.MethodPost, "/api/v1/auth/logout", bytes.NewBufferString(`{"refreshToken":"r-1"}`), "application/json")
-	(&Server{svc: Services{Auth: fake}}).logout(ctx)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rec.Code)
-	}
-	if got != "r-1" {
-		t.Fatalf("expected the body's refresh token to be revoked, got %q", got)
 	}
 }
 

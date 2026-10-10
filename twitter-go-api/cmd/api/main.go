@@ -52,7 +52,7 @@ import (
 // @securityDefinitions.apikey	BearerAuth
 // @in							header
 // @name						Authorization
-// @description				Type 'Bearer ' followed by your JWT token.
+// @description				Type 'Bearer ' followed by an access token. Browsers use the httpOnly access_token cookie instead.
 
 const shutdownTimeout = 10 * time.Second
 
@@ -175,7 +175,8 @@ func newServer(ctx context.Context, cfg config.Config, store db.Store, rdb *redi
 	return api.New(api.Config{
 		Production:     cfg.Production(),
 		AllowedOrigins: cfg.AllowedOrigins,
-	}, services, tokens, hub, store, rdb), nil
+		CookieDomain:   cfg.CookieDomain,
+	}, services, tokens, hub, store, rdb)
 }
 
 func newDBPool(ctx context.Context, cfg config.Config) (*pgxpool.Pool, error) {

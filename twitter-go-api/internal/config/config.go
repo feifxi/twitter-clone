@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net/url"
 	"strings"
 	"time"
 
@@ -30,7 +31,11 @@ type Config struct {
 	// RedisURL is optional; without it the API runs single-instance (in-memory rate limits and realtime).
 	RedisURL string `env:"REDIS_URL"`
 
+	// AllowedOrigins are the web app origins (scheme://host[:port]) allowed to call the API with cookies.
 	AllowedOrigins []string `env:"ALLOWED_ORIGINS" envSeparator:"," envDefault:"http://localhost:3000"`
+	// CookieDomain is the domain the session cookies are scoped to, e.g. example.com so that
+	// twitter.example.com and api.example.com both receive them. Empty = API host only (local dev).
+	CookieDomain string `env:"COOKIE_DOMAIN"`
 
 	TokenSymmetricKey string        `env:"TOKEN_SYMMETRIC_KEY,required,notEmpty"`
 	AccessTokenTTL    time.Duration `env:"ACCESS_TOKEN_TTL" envDefault:"15m"`
@@ -84,6 +89,11 @@ func (c Config) Validate() error {
 	var errs []error
 	if len(c.TokenSymmetricKey) < minTokenKeyLength {
 		errs = append(errs, fmt.Errorf("TOKEN_SYMMETRIC_KEY must be at least %d characters", minTokenKeyLength))
+	}
+	for _, origin := range c.AllowedOrigins {
+		if u, err := url.Parse(origin); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || (u.Path != "" && u.Path != "/") {
+			errs = append(errs, fmt.Errorf("ALLOWED_ORIGINS entry %q must look like https://host[:port]", origin))
+		}
 	}
 
 	if c.Production() {
