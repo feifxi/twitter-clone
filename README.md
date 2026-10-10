@@ -32,25 +32,53 @@ Full-stack Twitter/X clone with a Next.js frontend, Go backend, and production-r
 
 ## Architecture
 
-```
-                 twitter.<domain>                       api.<domain>
- Browser ──────────► Amplify (Next.js SSR)    Browser ──────► EC2 (public subnet, Elastic IP)
-    │                                                         ┌──────────────────────────────┐
-    │ media (GET)                                             │ Caddy :443 (Let's Encrypt)   │
-    ▼                                                         │   └► Go API :8080            │
- CloudFront ──OAC──► S3 (private) ◄── presigned PUT ──────    │        ├► Redis (container)  │
-                                                              │        └► embedding worker   │
-                                                              │ Alloy + Node Exporter        │
-                                                              └──────────────┬───────────────┘
-                                                                             ▼
-                                                             RDS PostgreSQL + pgvector (private subnets)
+How a request is served:
+
+```mermaid
+flowchart TB
+  user(["Browser"])
+  amplify["Amplify Hosting · Next.js SSR<br/>twitter.&lt;domain&gt;"]
+  cf["CloudFront"]
+  s3[("S3 media<br/>private, OAC")]
+
+  subgraph ec2["EC2 · public subnet · Docker Compose"]
+    direction LR
+    caddy["Caddy<br/>TLS, api.&lt;domain&gt;"] --> api["Go API<br/>+ embedding worker"]
+    api --> redis[("Redis")]
+  end
+
+  subgraph priv["Private subnets · no internet route"]
+    rds[("RDS PostgreSQL 16<br/>+ pgvector")]
+  end
+  ext["Google OAuth · Gemini"]
+
+  user -- pages --> amplify
+  user -- "REST + SSE, httpOnly cookies" --> caddy
+  amplify -- "server render, forwards cookies" --> caddy
+  user -- "media GET" --> cf --> s3
+  user -. "presigned PUT" .-> s3
+  api -- SQL --> rds
+  api -- HTTPS --> ext
 ```
 
-- **One host, no gateway:** Caddy terminates TLS (automatic certificates) and proxies to the API, including SSE streams.
+How code ships:
+
+```mermaid
+flowchart LR
+  push(["git push main"]) --> gha["GitHub Actions<br/>test, build"]
+  gha -- "OIDC role,<br/>push :sha" --> ecr[("ECR")]
+  gha -- "SSM Run Command<br/>deploy.sh &lt;sha&gt;" --> ec2["EC2"]
+  ec2 -- "render api.env" --> ssm[("SSM Parameter Store")]
+  ec2 -- "pull image,<br/>compose up" --> ecr
+  gha -- "GET /readyz" --> ec2
+  ec2 -- "Alloy: metrics + logs" --> grafana["Grafana Cloud"]
+  push --> amplify["Amplify<br/>builds the web app"]
+```
+
+- **One host, no gateway:** Caddy terminates TLS (automatic Let's Encrypt certificates) and proxies to the API, SSE streams included.
+- **Sessions in httpOnly cookies** scoped to the shared domain, so the browser and the Next.js server both send them; JavaScript never sees a token.
 - **Async work without queues:** tweet embeddings are jobs in a Postgres table (`embedding_jobs`), enqueued in the same transaction as the tweet and processed by a worker inside the API (`FOR UPDATE SKIP LOCKED`). No SQS, Lambda or NAT.
 - **No public database:** RDS lives in private subnets with no internet route; only the API host's security group can reach it.
-
-> The diagram image in `docs/assets/` shows the previous API Gateway + SQS + Lambda design.
 
 ## Observability
 
@@ -151,21 +179,24 @@ npm run dev
 Web: `http://localhost:3000`
 API: `http://localhost:8080`
 
+## Contributing
+
+- Enable the pre-commit hook (gofmt, `terraform fmt`, ESLint on staged files): `git config core.hooksPath .githooks`
+- Conventions for the Go API, web app and infra are in [`CLAUDE.md`](CLAUDE.md).
+
 ## Validation Commands
 
-Before pushing or deploying, ensure everything is correct:
+The same checks CI runs (`.github/workflows/ci.yml`):
 
-**Go API:**
 ```bash
-cd twitter-go-api
-go test ./...
-```
+# Go API (integration tests run when TEST_DATABASE_URL points at a disposable Postgres)
+cd twitter-go-api && go vet ./... && go test -race ./...
 
-**Next.js Web:**
-```bash
-cd twitter-next-web
-npx tsc --noEmit
-npm run lint
+# Web
+cd twitter-next-web && npm run lint && npx tsc --noEmit && npm test && npm run build
+
+# Terraform (mocked AWS provider, no credentials)
+cd infra/terraform && terraform fmt -check -recursive .. && terraform init -backend=false && terraform validate && terraform test
 ```
 
 ## AWS Infrastructure

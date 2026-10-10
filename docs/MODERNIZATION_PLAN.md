@@ -251,10 +251,10 @@ Good already: `default_tags`, the modern standalone `aws_vpc_security_group_*_ru
 - [x] Amplify custom domain `twitter.<domain>`, env vars set directly (no SSM read at build); optional Route 53 record for `api.<domain>`, otherwise `dns_records` output
 - [x] `terraform test` plans the stack against a mocked AWS provider (no credentials)
 
-### Phase 6: CI/CD & docs
+### Phase 6: CI/CD & docs ✅
 - [x] GitHub OIDC deploy role (branch-scoped); ECR with immutable SHA tags + lifecycle; no secrets in SSM command text; rollback via `image_tag` input; post-deploy `/readyz` check
 - [x] `terraform fmt -check` / `validate` / `test` in CI; README AWS sections rewritten
-- [ ] Pre-commit hook; architecture diagram image; `CLAUDE.md`
+- [x] `.githooks/pre-commit` (gofmt, terraform fmt, ESLint on staged files); Mermaid runtime + deploy diagrams in the README (stale drawio/jpg removed); `CLAUDE.md` conventions
 
 ### Phase 7: Java API parity
 - [ ] Clean `.idea` and `.github/modernize`; align `twitter-java-api` with the squashed schema and the Go API contract (DMs, assistant, presign, cursors, cookie auth)
