@@ -12,6 +12,7 @@ import (
 	"time"
 
 	_ "github.com/chanombude/twitter-go-api/docs"
+	"github.com/chanombude/twitter-go-api/internal/api"
 	"github.com/chanombude/twitter-go-api/internal/assistant"
 	"github.com/chanombude/twitter-go-api/internal/auth"
 	"github.com/chanombude/twitter-go-api/internal/config"
@@ -19,7 +20,6 @@ import (
 	"github.com/chanombude/twitter-go-api/internal/discovery"
 	"github.com/chanombude/twitter-go-api/internal/embedding"
 	"github.com/chanombude/twitter-go-api/internal/feed"
-	"github.com/chanombude/twitter-go-api/internal/httpapi"
 	"github.com/chanombude/twitter-go-api/internal/logger"
 	"github.com/chanombude/twitter-go-api/internal/media"
 	"github.com/chanombude/twitter-go-api/internal/message"
@@ -119,7 +119,7 @@ func run() error {
 }
 
 // newServer wires the feature services into the HTTP layer.
-func newServer(ctx context.Context, cfg config.Config, store db.Store, rdb *redis.Client) (*httpapi.Server, error) {
+func newServer(ctx context.Context, cfg config.Config, store db.Store, rdb *redis.Client) (*api.Server, error) {
 	tokens, err := token.NewJWTMaker(cfg.TokenSymmetricKey)
 	if err != nil {
 		return nil, fmt.Errorf("create token maker: %w", err)
@@ -148,7 +148,7 @@ func newServer(ctx context.Context, cfg config.Config, store db.Store, rdb *redi
 	go hub.Run(ctx)
 	notifications := notification.New(store, hub)
 
-	services := httpapi.Services{
+	services := api.Services{
 		Auth: auth.New(auth.Config{
 			GoogleClientID:  cfg.GoogleClientID,
 			AccessTokenTTL:  cfg.AccessTokenTTL,
@@ -172,7 +172,7 @@ func newServer(ctx context.Context, cfg config.Config, store db.Store, rdb *redi
 		}),
 	}
 
-	return httpapi.New(httpapi.Config{
+	return api.New(api.Config{
 		Production:     cfg.Production(),
 		AllowedOrigins: cfg.AllowedOrigins,
 		GatewaySecret:  cfg.GatewaySecret,

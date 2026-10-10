@@ -16,13 +16,36 @@ Primary backend API for this project.
 
 ## Architecture
 
-Package-by-feature. Dependencies point one way:
-`cmd/api` (wiring) → `httpapi` (Gin handlers, DTOs) → feature packages → `db` / `storage` / `realtime`.
+Package-by-feature, with dependencies pointing one way:
 
-- Each feature package (`auth`, `user`, `tweet`, `feed`, `search`, `discovery`, `notification`, `message`, `assistant`, `media`) exposes a `Service` built with `New(...)` and returns concrete types.
-- Interfaces are declared by their consumer: `httpapi/services.go` for handlers; small private interfaces inside features for storage/notifier dependencies.
-- `domain` holds the read models shared across features (`domain.User`, `domain.Tweet`, …) so features don't import each other in cycles.
-- HTTP DTOs (`httpapi/responses.go`) are separate from domain types; e.g. email is only exposed to its owner.
+```
+cmd/api (wiring) ──► internal/api (HTTP) ──► feature packages ──► db / storage / realtime
+                                                   │
+                                                   └──► domain (shared read models)
+```
+
+### Where things live
+
+| Looking for… | Go to |
+|---|---|
+| **Every endpoint** (method, path, auth, rate limit) | `internal/api/routes.go` |
+| A handler (bind input → call service → write DTO) | `internal/api/<feature>_handler.go` |
+| Response JSON shapes | `internal/api/responses.go` |
+| Interfaces the handlers depend on | `internal/api/services.go` |
+| Business logic | `internal/<feature>/service.go`: `auth`, `user`, `tweet`, `feed`, `search`, `discovery`, `notification`, `message`, `assistant`, `media` |
+| SQL | `internal/db/queries/*.sql` (generated Go: `internal/db/*.sql.go`) |
+| Schema | `internal/db/migrations/` (embedded, applied on startup) |
+| Startup and dependency wiring | `cmd/api/main.go` |
+| Configuration (env vars) | `internal/config/config.go`, example in `app.env.example` |
+| Cross-cutting HTTP middleware | `internal/middleware/` (auth, rate limit, request ID, logging, metrics) |
+| Real-time fan-out (SSE) | `internal/realtime/hub.go`, `internal/api/events_handler.go` |
+| Background embedding worker | `internal/embedding/worker.go` |
+| Cursor pagination | `internal/pagination/` |
+
+Conventions:
+- Feature packages expose a `Service` built with `New(...)`, return concrete types and never import Gin.
+- Interfaces are declared by their consumer (`api/services.go`, or small private interfaces inside features).
+- HTTP DTOs are separate from domain types, so e.g. email is only shown to its owner.
 
 ## Media Upload Flow
 
@@ -122,16 +145,3 @@ Monitoring baseline:
 - Track HTTP 5xx rate, p95 latency, and restart count
 - Create alert rules for sustained 5xx spikes and failing readiness probes
 - Use `requestId` from API error response to correlate app logs for incident triage
-
-
-## Main Directories
-
-- `cmd/api`: entrypoint (wiring only)
-- `internal/db/migrations`: schema migrations (embedded and applied on startup)
-- `internal/db/queries`: sqlc query source; `internal/db`: generated code + `Store` (transactions); `internal/db/dbtest`: store fake for unit tests
-- `internal/httpapi`: router, handlers, request/response DTOs
-- `internal/<feature>`: business logic per feature (see Architecture)
-- `internal/domain`: shared read models
-- `internal/realtime`: per-user event fan-out (Redis pub/sub across instances)
-- `internal/storage`: S3 presign/delete + public URLs; `internal/embedding`: embedding job publisher
-- `internal/middleware`, `internal/apperr`, `internal/config`, `internal/token`, `internal/logger`

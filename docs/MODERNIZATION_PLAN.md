@@ -98,11 +98,11 @@ twitter-go-api/
 │   ├── storage/               # S3 presign/delete (was service/storage.go)
 │   ├── embedding/             # Gemini embeddings + job worker
 │   ├── apperr/
-│   └── httpapi/               # router, handlers, DTOs (types.go), middleware/
+│   └── api/               # router, handlers, DTOs (types.go), middleware/
 └── docs/                      # swagger (generated) + api-contract.md
 ```
 
-Dependency rule: `httpapi → feature packages → db/storage/realtime`, with shared read models in `domain`. Domain packages never import `httpapi` or gin.
+Dependency rule: `api → feature packages → db/storage/realtime`, with shared read models in `domain`. Domain packages never import `api` or gin.
 
 ### AWS architecture
 
