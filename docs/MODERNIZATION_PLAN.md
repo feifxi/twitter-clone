@@ -61,6 +61,118 @@ Already good, so leave as is: sqlc + pgx, `ExecTxAfterCommit` (notify only after
 
 ---
 
+## Review 2: conventions, structure, AWS, Terraform, frontend (2026-10-10)
+
+### Go naming & idioms (Effective Go, Go Code Review Comments, Uber Go Style Guide)
+
+| # | Finding | Where | Fix |
+|---|---|---|---|
+| N1 | **Request cancellation is lost.** Handlers pass `*gin.Context` as `context.Context`; with Gin's default `ContextWithFallback=false` its `Done()` is nil, so client disconnects never cancel DB queries or Gemini calls. | all handlers | Pass `c.Request.Context()`; name the gin param `c`, not `ctx`. |
+| N2 | Package names shadowed by variables: `config, err := config.LoadConfig`, `server, err := server.NewServer`, `NewServer(config config.Config…)`. | `cmd/api/main.go`, `server/server.go` | `cfg`, `srv`. |
+| N3 | Stutter and layer-named packages: `usecase.AuthUsecase`, `usecase.NewAuthUsecase`, `usecase.AuthService`. One `usecase` package holds 10 services (~4k lines). | `internal/usecase` | Package by domain: `auth.Service`, `tweet.New(...)`. |
+| N4 | Interfaces declared next to their implementations, plus `var _` checks. Go idiom is to define interfaces where they are *consumed* ("accept interfaces, return structs"). | `usecase/interfaces.go` | Small interfaces in `server` (the consumer); domain packages return concrete types. |
+| N5 | Initialisms: `IdToken`, `AvatarUrl`, `BannerUrl`, `MediaUrl` should be `IDToken`, `AvatarURL`, `MediaURL`. Some come from sqlc. | server DTOs, `internal/db` | `rename:` in `sqlc.yaml`; fix DTO field names (JSON tags unchanged). |
+| N6 | Receiver names: `server *Server` on 60 methods (should be short, e.g. `s`); `payload`/`p` and `maker` inconsistent on one type. | `server`, `token` | One short receiver per type. |
+| N7 | `log.Fatal` outside `main` (`runDBMigration`) and many exit paths. Uber: "exit once, in main". | `cmd/api/main.go` | `func main() { if err := run(); err != nil {…} }`. |
+| N8 | Named returns plus bare `return` (`LoadConfig`, `issueSession`); mutable package globals (`viper`, the SSM `configLoadedSuccessfully` flag, zerolog global). | `config`, `usecase/auth.go` | Plain returns; inject the logger (`*slog.Logger`). |
+| N9 | `mustCurrentUserID` returns `(id, ok)`. By convention `Must…` panics. | `server/helpers.go` | `requireUserID`, or route-level middleware that guarantees it. |
+| N10 | `logger` imports `middleware` (request logging lives in the logger package). | `internal/logger` | Move the request logger into `middleware`. |
+| N11 | Stringly-typed enums (`NotifTypeLike = "LIKE"`, media types); config durations as `int` minutes or days. | `usecase/types.go`, `config` | `type NotificationType string`; `time.Duration` config fields. |
+| N12 | Narrating comments (`// 1. …`, `// --- Section ---`); Thai comments in Dockerfile and `setup-ec2.sh`. | various | Comment only the *why*; English everywhere. |
+
+Already idiomatic: `ErrX` sentinel naming, `errors.Is`/`errors.As`, `%w` wrapping, sqlc + pgx, `internal/` usage, small focused middleware, table-driven tests.
+
+### Project structure
+
+Current layout is the common "layered" one (`server → usecase → db/service`). It's fine, but the names fight Go conventions (N3), `service` actually means *AWS adapters*, and `usecase` is a grab bag. Target (package-by-feature, the layout the Go team and most Go shops use for monoliths):
+
+```
+twitter-go-api/
+├── cmd/api/main.go            # wiring only: run() error
+├── db/migrations/             # SQL source of truth (embedded via embed.FS)
+├── db/queries/
+├── internal/
+│   ├── config/                # env → typed Config (no viper)
+│   ├── postgres/              # sqlc output + Store/ExecTx (was internal/db)
+│   ├── auth/ user/ tweet/ feed/ search/ notification/ message/ assistant/ media/
+│   │   └── service.go         # business logic; returns concrete types; domain errors
+│   ├── realtime/              # SSE hub + Redis pub/sub fan-out
+│   ├── storage/               # S3 presign/delete (was service/storage.go)
+│   ├── embedding/             # Gemini embeddings + job worker
+│   ├── apperr/
+│   └── httpapi/               # router, handlers, DTOs (types.go), middleware/
+└── docs/                      # swagger (generated) + api-contract.md
+```
+
+Dependency rule: `httpapi → domain packages → postgres/storage/realtime`. Domain packages never import `httpapi` or gin.
+
+### AWS architecture
+
+The current setup works and has good choices: OAC-protected S3 behind CloudFront, IMDSv2, EC2 Instance Connect Endpoint (no SSH keys), RDS in private subnets, SSM SecureString config, Grafana Cloud free tier. The problems:
+
+| # | Kind | Finding |
+|---|---|---|
+| A1 | 🔒 | API Gateway → EC2 runs over **plain HTTP across the internet** to the instance's public IP. Port 8080 is open to `0.0.0.0/0`, so the gateway secret travels unencrypted and `/metrics`, `/healthz` and `/readyz` are publicly reachable on the instance directly. |
+| A2 | 🐞 | HTTP API Gateway has a **30s integration timeout** and **no WebSocket support**. SSE notifications and assistant streams get cut, and DMs can't work. |
+| A3 | 💰 | The **NAT instance exists only so the in-VPC Lambda can reach Gemini**. It costs ~$11/mo with its public IPv4 (the README's "$3.50" is wrong), and it's a hand-rolled box to patch. The Lambda also holds the DB password and Gemini key in plaintext env vars, uses a deprecated SDK, and is built by `pip` inside `terraform apply`. |
+| A4 | 🔒 | RDS `storage_encrypted = false`, even though encryption is free. `gp2` should be `gp3`; `backup_retention_period = 0` should be at least 1 (free within storage size). |
+| A5 | 🐞 | Prod has **no Redis**: `redis_address` defaults to `""` and the EC2 compose doesn't run it, so prod silently differs from local. That's harmless on one instance, but undocumented. |
+| A6 | 🔒 | Terraform state is local and contains every secret. CI uses long-lived IAM keys, and the deploy step writes `GHCR_PAT` into the SSM command text. |
+
+**Proposed target: simpler, cheaper (~$40 → ~$25/mo), and more secure.**
+
+```
+Browser ──► Amplify (Next.js SSR) ─┐
+   │                               │ server-side fetch with cookie → bearer
+   └──► api.<domain> ──► EC2 [Caddy (auto-TLS) → Go API + embedding worker, Redis, Alloy] ──► RDS (private)
+                                    └──► Gemini (EC2 is in a public subnet; no NAT needed)
+Media: browser ──PUT──► S3 (presigned) ──► CloudFront (OAC) ──► browser
+```
+
+- **Drop API Gateway.** Caddy on EC2 terminates TLS (Let's Encrypt). The security group opens only 80/443, and SSE/streams have no 30s cap. This fixes A1 and A2 and deletes `GatewayGuard` and the gateway secret.
+- **Drop SQS, Lambda, the DLQ and the NAT instance.** Run embeddings in the Go process as a Postgres-backed job queue (`embedding_jobs` + `FOR UPDATE SKIP LOCKED` + retry/backoff). Same async lesson, works identically in local dev (fixes G21), with no Python and no plaintext secrets. Fixes A3.
+- RDS: encryption on, `gp3`, 1-day backups. Redis as a container in the EC2 compose. Remote S3 state with `use_lockfile`; GitHub OIDC for CI.
+- Intentional trade-offs for a learning project: single AZ, a single EC2, no load balancer.
+
+### Terraform code quality
+
+Good already: `default_tags`, the modern standalone `aws_vpc_security_group_*_rule` resources, SG-to-SG references, OAC instead of legacy OAI, `sensitive` variables, typed variables, and a flat root module sized for the project. The microservices repo's 17-module layout would be overkill here.
+
+| # | Finding |
+|---|---|
+| T1 | `terraform fmt -check` fails (`amplify.tf`, `api_gateway.tf`, `ec2.tf`, …). There's no fmt or validate in CI; port the microservices `.githooks/pre-commit` terraform fmt hook. |
+| T2 | `.terraform.lock.hcl` is **gitignored**. HashiCorp recommends committing it (reproducible provider versions). |
+| T3 | Local state holding secrets. Move to an S3 backend with `use_lockfile = true` (TF ≥ 1.10, no DynamoDB needed). |
+| T4 | Hardcoded values: subnet CIDRs (use `cidrsubnet(var.vpc_cidr, 8, n)`), `ap-southeast-1` inside the Amplify build spec, and `/chmtwt/prod/` repeated in TF and Go (make it one `local` / one env var). |
+| T5 | Two identical private route tables (one is enough). Number-like settings are declared as `string` (`"25"`). No `validation` blocks (e.g. token key ≥ 32 chars). |
+| T6 | `null_resource` + `local-exec pip install` (use `terraform_data`, or build in CI; this goes away if Lambda is dropped). The Lambda IAM role grants SSM read it never uses. |
+| T7 | EC2 `user_data` nests heredocs in heredocs and installs docker compose from `releases/latest` (unpinned). Prefer a `templatefile` cloud-init with pinned versions. |
+| T8 | AWS provider `~> 5.0` (v6 is current). CloudFront uses legacy `forwarded_values` (use the managed `CachingOptimized` cache policy) and the default `PriceClass_All` (use `PriceClass_200` for Asia, or `100`). |
+
+### Frontend: microservices vs. monolith, verdict per area
+
+**Port from microservices (clearly better):**
+- **Design tokens:** exact X palette (`#1D9BF0`, `#536471`, `#2F3336`…), semantic `--like` / `--retweet` / `--banner` tokens, and a z-index scale. The monolith hardcodes `text-red-500` / `text-pink-600` / `text-green-500` and inconsistent dark greys.
+- **Component design:** `Avatar` (deterministic colored-initials fallback), `TweetActionButton` (one source for hover/active colors and counts), `TweetActionsMenu`, `UserRow` with `default|compact` variants and skeleton, `ConfirmModal` (delete/logout), `ImageLightbox`, `Tabs` primitive, `BackButton`. The monolith repeats this markup inline (three copies of the nav-item JSX in `AppNav`; avatar fallback everywhere; hand-built tab bars on four pages).
+- **States:** every list has skeleton, error + retry, and empty copy. The monolith shows `"Loading..."` text and no error states.
+- **URL-driven UI:** profile tabs as routes (`/[username]/replies|media|likes`); followers/following as pages instead of modals; explore query synced to `?q=`.
+- **Composer:** char-count ring, emoji picker, expand on focus, client-side size check, preview URL revoke on unmount.
+- **Edit profile:** floating-label fields, counters shown on focus, location + website, dirty-check on the Save button.
+- **Tweet detail:** a distinct large layout (23px body, full timestamp, stats row).
+- **Notifications:** per-item mark-read plus a "Mark all as read" button. The monolith marks everything read on page mount, so the unread highlight disappears instantly.
+- **A11y:** `aria-label`s on icon buttons. The monolith uses `<div onClick>` for back buttons.
+- **Data layer:** `query-keys.ts`, `debounced-toggle.ts`, `applyTweetUpdate` / `removeTweetEverywhere`, single-flight refresh, SSR prefetch with `HydrationBoundary`, `loading.tsx` per route.
+
+**Keep from the monolith (it's better or more complete here):**
+- Mobile bottom nav (the microservices app has none below `sm`), public browsing for logged-out users with a sign-in modal (microservices walls everything behind login), and `/{username}` URLs (microservices uses opaque `/profile/{uuid}`).
+- Working DMs and ChanomBot (microservices messages and bookmarks are placeholders), the theme toggle, notification context previews (reply plus original tweet), and video support.
+- Radix-based shadcn primitives and `sonner` toasts. Porting the *designs* doesn't require switching to Base UI; swapping primitive libraries is churn with no user-visible gain.
+- ESLint (`eslint-config-next` covers React Hooks + Next rules). Biome is optional.
+
+**Don't copy:** fake affordances (Bookmark and analytics buttons that do nothing, dead footer links), the "Not available in this build" bookmarks page, and `normalize.ts` snake→camel mapping (the monolith API is already camelCase).
+
+---
+
 ## Microservices repo: what to port vs. leave
 
 **Port (fits a monolith):**
@@ -76,20 +188,27 @@ Already good, so leave as is: sqlc + pgx, `ExecTxAfterCommit` (notify only after
 
 ---
 
-## Phases
-
-## Decisions (2026-10-10)
+## Decisions
+2026-10-10, round 1:
 - Java API: **keep**; improve it last (Phase 7), after the Go API and web are done.
 - Migrations: **squash**; local and prod data are disposable.
-- Auth: **httpOnly-cookie BFF** in Next.js with SSR prefetch; the Go API stays bearer-token based.
+- Auth: **httpOnly cookies** with SSR prefetch (design refined below).
 - Brainrot / premium / TikTok pages: **keep**.
 
-### Phase 0: Repo hygiene
-- [ ] Remove `.github/modernize` leftovers and committed `twitter-java-api/.idea`
-- [ ] Add `CLAUDE.md` with conventions
-- [x] Add PR CI: Go vet/test with `-race`; web lint, typecheck and build
+2026-10-10, round 2:
+- Go API: **package-by-feature** layout (see "Project structure"), done in Phase 2.
+- AWS: **replace API Gateway with Caddy TLS on EC2**; **replace SQS + Lambda + NAT with a Postgres job queue** in Go; **harden** RDS, state and CI.
+- Domain: `api.chanombude.me` (Go API on EC2) and `twitter.chanombude.me` (Amplify).
+- Auth design, refined by having a domain: the **Go API sets httpOnly cookies** (`Domain=.chanombude.me`, `SameSite=Lax`, `Secure`). The browser calls `api.*` directly with `credentials: "include"` (SSE included, so no Next proxy hop). Next server components read the cookie and forward it as `Authorization: Bearer`. CSRF: `SameSite=Lax`, a strict CORS allowlist, and an `Origin` check on unsafe methods. Locally, `localhost:3000` and `localhost:8080` are same-site, so this works unchanged.
 
-### Phase 1: Backend correctness & security (no API shape changes)
+## Phases
+
+### Phase 0: Repo hygiene
+- [x] Add PR CI: Go vet/test with `-race`; web lint, typecheck and build
+- [ ] Add `CLAUDE.md` with the conventions below (after Phase 2 settles them)
+- (Java leftovers `.github/modernize`, `twitter-java-api/.idea` → Phase 7)
+
+### Phase 1: Backend correctness & security ✅
 - [x] G1/G2 object keys `{folder}/{userId}/{uuid}{ext}`, validated server-side; URLs rejected; size signed into the presign; only delete keys from our own bucket
 - [x] G3 email only in `/auth/me`
 - [x] G4 require `email_verified`
@@ -102,29 +221,34 @@ Already good, so leave as is: sqlc + pgx, `ExecTxAfterCommit` (notify only after
 - [x] Frontend quick fixes W1, W2, W3, W5 (plus: stale `['auth','user']` key after a profile edit, obsolete `postinstall` patch removed)
 
 ### Phase 2: Backend foundation
-- [ ] G15/G16 `slog` and simplified env config
-- [ ] G14 unified error mapping
-- [ ] G13 extract `internal/realtime` hub; G10/G5 **one SSE stream** for notifications and DMs via Redis pub/sub (drop gorilla/websocket)
-- [ ] G9 keyset cursors (chronological lists) and an anchored-time cursor for For-You
-- [ ] G8 per-session refresh-token rotation
-- [ ] G18 `GET /users/by-username/:username`, user likes/replies/media endpoints, user `location`/`website`, username onboarding
-- [ ] G19 separate `retweets` table and `kind` feed items
+- [ ] **2a Structure & idioms:** package-by-feature move (N3, N4, N10); `run() error` main (N7); `c.Request.Context()` everywhere (N1); naming fixes N2, N5, N6, N9, N11; embed migrations
+- [ ] **2b Platform:** `slog` + env config without viper (G15, G16, N8); unified error mapping (G14); healthz with per-dependency status
+- [ ] **2c Realtime:** `internal/realtime` hub; **one SSE stream** for notifications and DMs via Redis pub/sub; drop gorilla/websocket (G10, G13, G5)
+- [ ] **2d Data:** keyset cursors plus an anchored-time cursor for For-You (G9); separate `retweets` table and `kind` feed items (G19); per-session refresh-token rotation (G8)
+- [ ] **2e Features:** `GET /users/by-username/:username`; user replies/media/likes endpoints; `location`/`website`; username onboarding (G18)
+- [ ] **2f Auth cookies:** API sets and clears httpOnly cookies on login/refresh/logout; accepts cookie or bearer; `Origin` check on unsafe methods
+- [ ] **2g Embeddings:** Postgres job queue (`embedding_jobs`, `FOR UPDATE SKIP LOCKED`, retry/backoff) plus an in-process Gemini worker; delete the SQS publisher (G21)
 
 ### Phase 3: Frontend architecture
-- [ ] W6 cookie BFF auth, `proxy.ts`, SSR prefetch, `loading.tsx`
-- [ ] Centralized query keys, cache helpers, debounced toggle, single-flight refresh
+- [ ] Cookie auth against the API (no tokens in JS); server fetch helper forwarding the cookie; `proxy.ts` redirect for signed-out routes that need auth; SSR prefetch + `HydrationBoundary`; `loading.tsx`
+- [ ] `query-keys.ts`, cache helpers, module-level debounced toggle, single-flight refresh; one SSE hook for notifications + DMs
 - [ ] W8/W9 cleanup (keep the brainrot/premium pages); split messages page
 
-### Phase 4: Frontend UI port
-- [ ] Theme tokens, Avatar, TweetCard/ActionButton, ConfirmModal, Lightbox, Composer
-- [ ] Profile layout and tabs, onboarding, trending sidebar, skeletons
+### Phase 4: Frontend UI port (see "Frontend" verdicts)
+- [ ] Theme tokens + z-index scale; `Avatar`, `TweetActionButton`, `TweetActionsMenu`, `UserRow`, `ConfirmModal`, `ImageLightbox`, `Tabs`, `BackButton`, skeletons
+- [ ] Composer (ring, emoji, focus expand); tweet detail layout; edit profile (floating fields, location/website)
+- [ ] Profile route tabs (`/[username]/replies|media|likes`), followers/following pages, onboarding, explore `?q=` sync, notifications mark-read UX
+- [ ] Keep: mobile nav, public browsing + sign-in modal, `/{username}` URLs, DMs, ChanomBot, theme toggle
 
-### Phase 5: AI / RAG
-- [ ] G21 in-process embedder fallback for local dev; Lambda migrated to `google-genai`
+### Phase 5: Infrastructure (Terraform)
+- [ ] Remove API Gateway, SQS/DLQ, Lambda, NAT instance, `infra/lambda`; EC2 SG → 80/443 only; Caddy + Redis in the EC2 compose; pinned versions in cloud-init
+- [ ] RDS encryption, `gp3`, 1-day backups; S3 remote state with `use_lockfile`; commit `.terraform.lock.hcl`; AWS provider v6
+- [ ] T1, T4–T8 cleanups (`cidrsubnet`, a single prefix local, number types, validations, CloudFront cache policy + price class)
+- [ ] Amplify custom domain `twitter.chanombude.me`; DNS records for `api.chanombude.me`
 
 ### Phase 6: CI/CD & docs
-- [ ] R2 OIDC and SHA-tagged images; no secrets in SSM command text
-- [ ] README and api-contract refresh
+- [ ] GitHub OIDC role; SHA-tagged images; no secrets in SSM command text; `terraform fmt -check` / `validate` in CI + pre-commit hook
+- [ ] README (architecture diagram, cost), api-contract, `CLAUDE.md`
 
 ### Phase 7: Java API parity
-- [ ] Align `twitter-java-api` with the squashed schema and the Go API contract (DMs, assistant, presign, cursors, cookie-BFF-compatible auth)
+- [ ] Clean `.idea` and `.github/modernize`; align `twitter-java-api` with the squashed schema and the Go API contract (DMs, assistant, presign, cursors, cookie auth)
