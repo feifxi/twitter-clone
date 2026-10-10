@@ -81,6 +81,7 @@ type Querier interface {
 	// Uses cosine distance (<=>) to match the vector_cosine_ops HNSW index.
 	ListRelatedTweetsByEmbedding(ctx context.Context, arg ListRelatedTweetsByEmbeddingParams) ([]ListRelatedTweetsByEmbeddingRow, error)
 	// Most-followed accounts the viewer doesn't follow yet (anyone, for anonymous viewers).
+	// Accounts still on their generated handle (not onboarded) aren't suggested.
 	ListSuggestedUsers(ctx context.Context, arg ListSuggestedUsersParams) ([]ListSuggestedUsersRow, error)
 	// Oldest first, so a thread reads top to bottom.
 	ListTweetReplies(ctx context.Context, arg ListTweetRepliesParams) ([]ListTweetRepliesRow, error)
@@ -89,6 +90,9 @@ type Querier interface {
 	ListUserLikes(ctx context.Context, arg ListUserLikesParams) ([]ListUserLikesRow, error)
 	ListUserMedia(ctx context.Context, arg ListUserMediaParams) ([]ListUserMediaRow, error)
 	ListUserReplies(ctx context.Context, arg ListUserRepliesParams) ([]ListUserRepliesRow, error)
+	// Serialises "find or create" for one pair of users until the transaction ends,
+	// so two first messages sent at once can't create two conversations.
+	LockDirectConversationPair(ctx context.Context, pairKey string) error
 	MarkAllNotificationsRead(ctx context.Context, recipientID int64) error
 	RetryEmbeddingJob(ctx context.Context, arg RetryEmbeddingJobParams) error
 	SearchHashtagsByPrefix(ctx context.Context, arg SearchHashtagsByPrefixParams) ([]Hashtag, error)

@@ -5,7 +5,6 @@ import { GoogleOAuthProvider } from "@react-oauth/google";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider as NextThemesProvider } from "next-themes";
 import { SignInModal } from "@/components/auth/SignInModal";
-import { SignUpModal } from "@/components/auth/SignUpModal";
 import { onSessionLost } from "@/api/axiosInstance";
 import { queryKeys } from "@/lib/query-keys";
 import { useUIStore } from "@/store/useUIStore";
@@ -47,7 +46,6 @@ export function Providers({ children, initialUser }: ProvidersProps) {
         <GoogleOAuthProvider clientId={process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID!}>
           {children}
           <SignInModal />
-          <SignUpModal />
         </GoogleOAuthProvider>
       </QueryClientProvider>
     </NextThemesProvider>

@@ -2,6 +2,7 @@ package message_test
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -19,9 +20,15 @@ type publishedEvent struct {
 	payload any
 }
 
-type recordingPublisher struct{ events []publishedEvent }
+// recordingPublisher is safe for concurrent use (sends can run in parallel in tests).
+type recordingPublisher struct {
+	mu     sync.Mutex
+	events []publishedEvent
+}
 
 func (p *recordingPublisher) Publish(_ context.Context, userID int64, eventType string, payload any) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.events = append(p.events, publishedEvent{userID, eventType, payload})
 	return nil
 }

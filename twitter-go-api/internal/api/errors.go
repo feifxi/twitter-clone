@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -23,10 +24,18 @@ func msgForTag(fe validator.FieldError) string {
 		return "this field is required"
 	case "email":
 		return "must be a valid email format"
-	case "min":
-		return fmt.Sprintf("must be at least %s units", fe.Param())
-	case "max":
-		return fmt.Sprintf("must be at most %s units", fe.Param())
+	case "min", "max":
+		bound := map[string]string{"min": "at least", "max": "at most"}[fe.Tag()]
+		switch fe.Kind() {
+		case reflect.String:
+			return fmt.Sprintf("must be %s %s characters", bound, fe.Param())
+		case reflect.Slice, reflect.Array, reflect.Map:
+			return fmt.Sprintf("must have %s %s items", bound, fe.Param())
+		default:
+			return fmt.Sprintf("must be %s %s", bound, fe.Param())
+		}
+	case "http_url":
+		return "must be a full http(s) URL"
 	case "oneof":
 		return fmt.Sprintf("must be one of [%s]", fe.Param())
 	case "numeric":

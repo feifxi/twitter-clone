@@ -377,7 +377,8 @@ func (q *Queries) ListFollowing(ctx context.Context, arg ListFollowingParams) ([
 const listSuggestedUsers = `-- name: ListSuggestedUsers :many
 SELECT u.id, u.username, u.email, u.display_name, u.bio, u.location, u.website, u.avatar_url, u.banner_url, u.role, u.provider, u.followers_count, u.following_count, u.onboarded_at, u.created_at, u.updated_at, false AS is_following
 FROM users u
-WHERE ($1::bigint IS NULL OR u.id <> $1)
+WHERE u.onboarded_at IS NOT NULL
+  AND ($1::bigint IS NULL OR u.id <> $1)
   AND NOT EXISTS (SELECT 1 FROM follows f WHERE f.following_id = u.id AND f.follower_id = $1)
 ORDER BY u.followers_count DESC, u.id DESC
 LIMIT $3 OFFSET $2
@@ -395,6 +396,7 @@ type ListSuggestedUsersRow struct {
 }
 
 // Most-followed accounts the viewer doesn't follow yet (anyone, for anonymous viewers).
+// Accounts still on their generated handle (not onboarded) aren't suggested.
 func (q *Queries) ListSuggestedUsers(ctx context.Context, arg ListSuggestedUsersParams) ([]ListSuggestedUsersRow, error) {
 	rows, err := q.db.Query(ctx, listSuggestedUsers, arg.ViewerID, arg.PageOffset, arg.PageLimit)
 	if err != nil {

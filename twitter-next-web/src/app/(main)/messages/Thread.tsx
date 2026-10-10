@@ -96,7 +96,7 @@ export function Thread({ conversationId, peer, myId, onBack, onCreated }: Thread
             placeholder="Start a new message"
             aria-label="Message"
             autoFocus
-            maxLength={1000}
+            maxLength={2000}
             className="h-10 min-w-0 flex-1 bg-transparent text-[15px] outline-none placeholder:text-muted-foreground"
           />
           <button

@@ -12,6 +12,11 @@ INSERT INTO conversation_participants (conversation_id, user_id)
 VALUES ($1, $2)
 ON CONFLICT DO NOTHING;
 
+-- name: LockDirectConversationPair :exec
+-- Serialises "find or create" for one pair of users until the transaction ends,
+-- so two first messages sent at once can't create two conversations.
+SELECT pg_advisory_xact_lock(hashtextextended(sqlc.arg(pair_key)::text, 0));
+
 -- name: FindDirectConversation :one
 SELECT c.*
 FROM conversations c

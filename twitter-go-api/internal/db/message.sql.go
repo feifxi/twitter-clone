@@ -272,6 +272,17 @@ func (q *Queries) ListUserConversations(ctx context.Context, arg ListUserConvers
 	return items, nil
 }
 
+const lockDirectConversationPair = `-- name: LockDirectConversationPair :exec
+SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))
+`
+
+// Serialises "find or create" for one pair of users until the transaction ends,
+// so two first messages sent at once can't create two conversations.
+func (q *Queries) LockDirectConversationPair(ctx context.Context, pairKey string) error {
+	_, err := q.db.Exec(ctx, lockDirectConversationPair, pairKey)
+	return err
+}
+
 const touchConversation = `-- name: TouchConversation :exec
 UPDATE conversations
 SET updated_at = CURRENT_TIMESTAMP

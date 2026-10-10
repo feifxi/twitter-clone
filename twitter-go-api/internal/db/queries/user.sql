@@ -85,9 +85,11 @@ LIMIT sqlc.arg('page_limit') OFFSET sqlc.arg('page_offset');
 
 -- name: ListSuggestedUsers :many
 -- Most-followed accounts the viewer doesn't follow yet (anyone, for anonymous viewers).
+-- Accounts still on their generated handle (not onboarded) aren't suggested.
 SELECT sqlc.embed(u), false AS is_following
 FROM users u
-WHERE (sqlc.narg('viewer_id')::bigint IS NULL OR u.id <> sqlc.narg('viewer_id'))
+WHERE u.onboarded_at IS NOT NULL
+  AND (sqlc.narg('viewer_id')::bigint IS NULL OR u.id <> sqlc.narg('viewer_id'))
   AND NOT EXISTS (SELECT 1 FROM follows f WHERE f.following_id = u.id AND f.follower_id = sqlc.narg('viewer_id'))
 ORDER BY u.followers_count DESC, u.id DESC
 LIMIT sqlc.arg('page_limit') OFFSET sqlc.arg('page_offset');

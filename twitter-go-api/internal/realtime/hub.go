@@ -43,7 +43,18 @@ func (h *Hub) Run(ctx context.Context) {
 	pubsub := h.rdb.Subscribe(ctx, redisChannel)
 	defer pubsub.Close()
 
-	for msg := range pubsub.Channel() {
+	messages := pubsub.Channel()
+	for {
+		var msg *redis.Message
+		select {
+		case <-ctx.Done():
+			return
+		case m, ok := <-messages:
+			if !ok {
+				return
+			}
+			msg = m
+		}
 		var ev Event
 		if err := json.Unmarshal([]byte(msg.Payload), &ev); err != nil {
 			slog.ErrorContext(ctx, "realtime: malformed event from Redis", "err", err)

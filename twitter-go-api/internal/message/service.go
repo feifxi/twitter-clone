@@ -4,8 +4,10 @@ package message
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/chanombude/twitter-go-api/internal/apperr"
 	"github.com/chanombude/twitter-go-api/internal/db"
@@ -37,7 +39,8 @@ func normalizeContent(content string) (string, error) {
 	if trimmed == "" {
 		return "", apperr.BadRequest("message content is required")
 	}
-	if len(trimmed) > maxContentLength {
+	// Characters, not bytes: matches the VARCHAR(2000) column (Thai is 3 bytes per character).
+	if utf8.RuneCountInString(trimmed) > maxContentLength {
 		return "", apperr.BadRequest("message content exceeds 2000 characters")
 	}
 	return trimmed, nil
@@ -220,6 +223,11 @@ func (s *Service) SendToConversation(ctx context.Context, senderID, conversation
 }
 
 func findOrCreateDirectConversation(ctx context.Context, q db.Querier, userA, userB int64) (int64, error) {
+	lo, hi := min(userA, userB), max(userA, userB)
+	if err := q.LockDirectConversationPair(ctx, fmt.Sprintf("dm:%d:%d", lo, hi)); err != nil {
+		return 0, err
+	}
+
 	conversation, err := q.FindDirectConversation(ctx, db.FindDirectConversationParams{UserID: userA, UserID_2: userB})
 	if err == nil {
 		return conversation.ID, nil

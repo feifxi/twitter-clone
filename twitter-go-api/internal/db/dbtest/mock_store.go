@@ -65,6 +65,7 @@ type MockStore struct {
 	ListUserLikesFn                  func(p0 context.Context, p1 db.ListUserLikesParams) ([]db.ListUserLikesRow, error)
 	ListUserMediaFn                  func(p0 context.Context, p1 db.ListUserMediaParams) ([]db.ListUserMediaRow, error)
 	ListUserRepliesFn                func(p0 context.Context, p1 db.ListUserRepliesParams) ([]db.ListUserRepliesRow, error)
+	LockDirectConversationPairFn     func(p0 context.Context, p1 string) error
 	MarkAllNotificationsReadFn       func(p0 context.Context, p1 int64) error
 	RetryEmbeddingJobFn              func(p0 context.Context, p1 db.RetryEmbeddingJobParams) error
 	SearchHashtagsByPrefixFn         func(p0 context.Context, p1 db.SearchHashtagsByPrefixParams) ([]db.Hashtag, error)
@@ -458,6 +459,13 @@ func (m *MockStore) ListUserReplies(p0 context.Context, p1 db.ListUserRepliesPar
 		return *new([]db.ListUserRepliesRow), nil
 	}
 	return m.ListUserRepliesFn(p0, p1)
+}
+
+func (m *MockStore) LockDirectConversationPair(p0 context.Context, p1 string) error {
+	if m.LockDirectConversationPairFn == nil {
+		return nil
+	}
+	return m.LockDirectConversationPairFn(p0, p1)
 }
 
 func (m *MockStore) MarkAllNotificationsRead(p0 context.Context, p1 int64) error {

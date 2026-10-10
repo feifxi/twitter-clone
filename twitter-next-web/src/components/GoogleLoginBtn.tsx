@@ -3,7 +3,8 @@
 import { GoogleLogin, CredentialResponse } from '@react-oauth/google';
 import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { axiosInstance } from '@/api/axiosInstance';
+import { toast } from 'sonner';
+import { axiosInstance, getErrorMessage } from '@/api/axiosInstance';
 import { queryKeys } from '@/lib/query-keys';
 import type { CurrentUserResponse } from '@/types';
 import type { GoogleAuthRequestInput } from '@/lib/validation';
@@ -52,8 +53,7 @@ export default function GoogleLoginBtn() {
       router.push(data.onboarded ? '/' : '/onboarding');
       router.refresh(); // re-render server components with the new session
     } catch (error) {
-      console.error('Login Failed:', error);
-      alert('Login failed. Please try again.');
+      toast.error(getErrorMessage(error) || 'Sign-in failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -64,7 +64,7 @@ export default function GoogleLoginBtn() {
       <GoogleLogin
         key={buttonWidth}
         onSuccess={handleSuccess}
-        onError={() => console.log('Google Login Failed')}
+        onError={() => toast.error('Google sign-in was cancelled or failed.')}
         theme="filled_black"
         shape="pill"
         size="large"

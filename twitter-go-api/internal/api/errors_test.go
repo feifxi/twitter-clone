@@ -175,3 +175,34 @@ func TestWriteValidationError(t *testing.T) {
 		t.Fatalf("unexpected detail: %+v", got.Details[0])
 	}
 }
+
+func TestValidationMessagesNameTheUnit(t *testing.T) {
+	t.Parallel()
+
+	type req struct {
+		Bio     string   `validate:"max=3"`
+		History []string `validate:"max=1"`
+		Size    int      `validate:"min=5"`
+		Website string   `validate:"http_url"`
+	}
+	err := validator.New().Struct(req{Bio: "long", History: []string{"a", "b"}, Size: 1, Website: "javascript:alert(1)"})
+
+	ctx, rec := newErrorTestContext("/api/v1/test")
+	writeError(ctx, err)
+
+	got := map[string]string{}
+	for _, d := range decodeErrorResponse(t, rec).Details {
+		got[d.Field] = d.Message
+	}
+	want := map[string]string{
+		"Bio":     "must be at most 3 characters",
+		"History": "must have at most 1 items",
+		"Size":    "must be at least 5",
+		"Website": "must be a full http(s) URL",
+	}
+	for field, msg := range want {
+		if got[field] != msg {
+			t.Errorf("%s: got %q, want %q", field, got[field], msg)
+		}
+	}
+}

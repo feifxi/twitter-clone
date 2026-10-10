@@ -3,7 +3,11 @@ package message_test
 import (
 	"context"
 	"fmt"
+	"strings"
+	"sync"
 	"testing"
+
+	"github.com/chanombude/twitter-go-api/internal/apperr"
 
 	"github.com/chanombude/twitter-go-api/internal/db/dbtest"
 	"github.com/chanombude/twitter-go-api/internal/message"
@@ -41,4 +45,43 @@ func TestMessages_PageBackwardsInReadingOrder(t *testing.T) {
 	require.Len(t, inbox.Items, 1)
 	require.Equal(t, alice.ID, inbox.Items[0].Peer.ID)
 	require.Equal(t, "m4", inbox.Items[0].LastMessage.Content)
+}
+
+// Both users sending their first message at the same moment must share one conversation.
+func TestSendToUser_ConcurrentFirstMessagesShareOneConversation(t *testing.T) {
+	store := dbtest.OpenTestDB(t)
+	ctx := context.Background()
+	svc := message.New(store, &recordingPublisher{})
+
+	for range 10 {
+		a, b := dbtest.NewUser(t, store), dbtest.NewUser(t, store)
+		var wg sync.WaitGroup
+		ids := make([]int64, 2)
+		errs := make([]error, 2)
+		for i, pair := range [][2]int64{{a.ID, b.ID}, {b.ID, a.ID}} {
+			wg.Go(func() {
+				msg, err := svc.SendToUser(ctx, pair[0], pair[1], "hi")
+				ids[i], errs[i] = msg.ConversationID, err
+			})
+		}
+		wg.Wait()
+		require.NoError(t, errs[0])
+		require.NoError(t, errs[1])
+		require.Equal(t, ids[0], ids[1], "both messages land in the same conversation")
+	}
+}
+
+func TestSendToUser_LimitCountsCharactersNotBytes(t *testing.T) {
+	store := dbtest.OpenTestDB(t)
+	ctx := context.Background()
+	svc := message.New(store, &recordingPublisher{})
+	a, b := dbtest.NewUser(t, store), dbtest.NewUser(t, store)
+
+	thai := strings.Repeat("ก", 2000) // 2000 characters, 6000 bytes
+	_, err := svc.SendToUser(ctx, a.ID, b.ID, thai)
+	require.NoError(t, err)
+
+	_, err = svc.SendToUser(ctx, a.ID, b.ID, thai+"ก")
+	kind, _ := apperr.KindOf(err)
+	require.Equal(t, apperr.KindBadRequest, kind)
 }

@@ -256,5 +256,20 @@ Good already: `default_tags`, the modern standalone `aws_vpc_security_group_*_ru
 - [x] `terraform fmt -check` / `validate` / `test` in CI; README AWS sections rewritten
 - [x] `.githooks/pre-commit` (gofmt, terraform fmt, ESLint on staged files); Mermaid runtime + deploy diagrams in the README (stale drawio/jpg removed); `CLAUDE.md` conventions
 
+### Review before Phase 7 (2026-10-10) ✅
+Full verification: gofmt, vet, staticcheck, govulncheck, race tests with Postgres, sqlc/mock drift; web lint/tsc/Vitest/build, `npm audit`; both Docker images built; Terraform fmt/validate/test; actionlint; 34 browser checks (Playwright) against a seeded API.
+
+Fixed:
+- **Security/deps:** 43 reachable Go vulnerabilities (module updates; CI pinned to the latest 1.26 patch, govulncheck in CI); Next 16.4.0 (critical advisory), Vitest 5; Node 22 image (20 is EOL); `.dockerignore`s (kept `app.env` out of the API build context; host `node_modules` was overwriting the Linux install in the web image)
+- **Bugs:** concurrent first DMs created duplicate conversations (advisory lock per user pair, proven by a test that fails without it); DM limit counted bytes (Thai got ~666 characters); proxy matcher skipped any path starting with `icon` (e.g. `/icon_man`); not-onboarded accounts were suggested in "Who to follow"
+- **UX/honesty:** onboarding redirect moved to the server (no flash); sign-in/sign-up modals merged and their fake email/password fields removed; login errors as toasts; validation messages say "characters"/"items"; DM input allows the API's 2000
+- **Robustness:** assistant history text capped; realtime hub stops on shutdown; in-memory rate limiter no longer leaks a goroutine per instance
+
+Accepted (documented, not worth the complexity here):
+- Two tabs refreshing the session at the same instant can, in a narrow window, sign one out (refresh tokens are single-use).
+- Server-rendered requests reach the API from the web server's IP, so they share per-IP rate limits.
+- An open SSE stream stays authorised until it reconnects, even after its access token expires.
+- `braces` advisory (no fixed version) in the ESLint plugin's dev dependencies only.
+
 ### Phase 7: Java API parity
 - [ ] Clean `.idea` and `.github/modernize`; align `twitter-java-api` with the squashed schema and the Go API contract (DMs, assistant, presign, cursors, cookie auth)

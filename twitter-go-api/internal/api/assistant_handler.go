@@ -12,7 +12,7 @@ import (
 
 type assistantHistoryItem struct {
 	Role string `json:"role" binding:"required,oneof=user model assistant"`
-	Text string `json:"text"`
+	Text string `json:"text" binding:"max=4000"`
 }
 
 type assistantRequest struct {
@@ -33,7 +33,7 @@ func (r assistantRequest) toInput() assistant.Input {
 }
 
 type assistantChunk struct {
-	Text string `json:"text"`
+	Text string `json:"text" binding:"max=4000"`
 }
 
 type assistantStreamError struct {

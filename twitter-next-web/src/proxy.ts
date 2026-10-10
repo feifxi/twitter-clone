@@ -44,5 +44,6 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   // Pages only: skip static assets and image optimization.
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|icon|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico)$).*)'],
+  // `icon$`, not `icon`: a prefix would also skip profiles like /icon_man.
+  matcher: ['/((?!_next/static|_next/image|favicon.ico$|icon$|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico)$).*)'],
 };

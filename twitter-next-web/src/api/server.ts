@@ -42,9 +42,9 @@ export async function serverFetch<T>(path: string): Promise<T | null> {
 /**
  * The signed-in user for the first render: null when signed out, undefined
  * when it can't be told (stale session, API unreachable), in which case the
- * browser asks itself.
+ * browser asks itself. Cached per request (root and section layouts share it).
  */
-export async function getCurrentUser(): Promise<CurrentUserResponse | null | undefined> {
+export const getCurrentUser = cache(async (): Promise<CurrentUserResponse | null | undefined> => {
   const jar = await cookies();
   if (!SESSION_COOKIES.some((name) => jar.has(name))) return null;
   try {
@@ -54,7 +54,7 @@ export async function getCurrentUser(): Promise<CurrentUserResponse | null | und
   } catch {
     return undefined;
   }
-}
+});
 
 // cache(): generateMetadata and the page share one request per render.
 export const getTweet = cache((id: number) => serverFetch<TweetResponse>(`/tweets/${id}`));

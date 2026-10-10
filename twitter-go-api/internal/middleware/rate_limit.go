@@ -22,27 +22,24 @@ type client struct {
 // RateLimiter provides in-memory token-bucket limiting (single-instance).
 func RateLimiter(r rate.Limit, b int) gin.HandlerFunc {
 	var (
-		mu      sync.Mutex
-		clients = make(map[string]*client)
+		mu        sync.Mutex
+		clients   = make(map[string]*client)
+		lastSweep = time.Now()
 	)
-
-	go func() {
-		for {
-			time.Sleep(time.Minute)
-			mu.Lock()
-			for key, c := range clients {
-				if time.Since(c.lastSeen) > 3*time.Minute {
-					delete(clients, key)
-				}
-			}
-			mu.Unlock()
-		}
-	}()
 
 	return func(c *gin.Context) {
 		// Per route and client, matching the Redis limiter's key.
 		key := c.FullPath() + "|" + c.ClientIP()
 		mu.Lock()
+		// Forget idle clients now and then (here rather than in a goroutine that would outlive the limiter).
+		if now := time.Now(); now.Sub(lastSweep) > time.Minute {
+			for k, cl := range clients {
+				if now.Sub(cl.lastSeen) > 3*time.Minute {
+					delete(clients, k)
+				}
+			}
+			lastSweep = now
+		}
 		if _, found := clients[key]; !found {
 			clients[key] = &client{limiter: rate.NewLimiter(r, b)}
 		}
