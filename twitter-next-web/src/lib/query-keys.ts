@@ -5,6 +5,9 @@
  * such as `queryKeys.feeds.all` also hits every key below it.
  */
 
+/** Page size of every list; the server prefetch and the client must agree on it. */
+export const PAGE_SIZE = 20;
+
 /** Profile timelines served by GET /users/:id/{posts,replies,media,likes}. */
 export type ProfileTab = 'posts' | 'replies' | 'media' | 'likes';
 

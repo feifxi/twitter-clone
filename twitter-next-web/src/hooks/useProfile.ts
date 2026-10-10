@@ -8,7 +8,7 @@ import { uploadFileWithPresignedUrl } from '@/api/upload';
 import { useAuth } from '@/hooks/useAuth';
 import { debouncedToggle } from '@/lib/debounced-toggle';
 import { invalidateEntities, updateUser } from '@/lib/query-cache';
-import { queryKeys, type ProfileTab } from '@/lib/query-keys';
+import { PAGE_SIZE, queryKeys, type ProfileTab } from '@/lib/query-keys';
 import type { UpdateProfileInput } from '@/lib/validation';
 import type { PageResponse, TweetResponse, UserResponse } from '@/types';
 
@@ -35,7 +35,7 @@ export function useUserProfileByUsername(username: string) {
 }
 
 /** A profile tab. Likes are private: only the owner can load their own. */
-export function useUserTimeline(userId: number | null, tab: ProfileTab = 'posts', pageSize = 20) {
+export function useUserTimeline(userId: number | null, tab: ProfileTab = 'posts', pageSize = PAGE_SIZE) {
   return useInfiniteQuery({
     queryKey: queryKeys.users.timeline(userId!, tab),
     queryFn: async ({ pageParam }: { pageParam: string | null }): Promise<PageResponse<TweetResponse>> => {

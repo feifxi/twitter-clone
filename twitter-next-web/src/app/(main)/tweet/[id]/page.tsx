@@ -1,83 +1,47 @@
-'use client';
+import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
+import { dehydrate, HydrationBoundary, QueryClient } from '@tanstack/react-query';
+import { getTweet, prefetchFirstPage } from '@/api/server';
+import { PAGE_SIZE, queryKeys } from '@/lib/query-keys';
+import { TweetDetail } from './TweetDetail';
 
-import { use } from 'react';
-import { useRouter } from 'next/navigation';
-import { ArrowLeft } from 'lucide-react';
-import { TweetCard, TweetCardSkeleton } from '@/components/TweetCard';
-import { CreateTweet } from '@/components/CreateTweet';
-import { useTweet, useRepliesInfinite } from '@/hooks/useTweet';
+type Props = { params: Promise<{ id: string }> };
 
-export default function TweetDetailPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const router = useRouter();
-  const { id } = use(params);
-  const tweetId = parseInt(id, 10);
-  const { data: tweet, isLoading: tweetLoading } = useTweet(
-    Number.isNaN(tweetId) ? null : tweetId
-  );
-  const repliesQuery = useRepliesInfinite(
-    Number.isNaN(tweetId) ? null : tweetId
-  );
-  const replyList =
-    repliesQuery.data?.pages.flatMap((p) => p.items) ?? [];
+function parseId(id: string): number | null {
+  const n = Number(id);
+  return Number.isSafeInteger(n) && n > 0 ? n : null;
+}
 
-  if (Number.isNaN(tweetId)) {
-    return (
-      <div className="p-4 text-destructive text-[15px]">Invalid tweet ID.</div>
-    );
-  }
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const id = parseId((await params).id);
+  const tweet = id ? await getTweet(id) : null;
+  if (!tweet) return { title: 'Post not found' };
+
+  const author = tweet.user.displayName ?? tweet.user.username;
+  const text = tweet.content?.slice(0, 140) ?? '';
+  return {
+    title: `${author} on Chanom Twitter: "${text}"`,
+    description: text,
+    openGraph: {
+      title: `${author} (@${tweet.user.username})`,
+      description: text,
+      images: tweet.mediaType === 'IMAGE' && tweet.mediaUrl ? [tweet.mediaUrl] : undefined,
+    },
+  };
+}
+
+export default async function TweetPage({ params }: Props) {
+  const id = parseId((await params).id);
+  const tweet = id ? await getTweet(id) : null;
+  if (!id || !tweet) notFound();
+
+  const queryClient = new QueryClient();
+  queryClient.setQueryData(queryKeys.tweets.detail(id), tweet);
+  await prefetchFirstPage(queryClient, queryKeys.tweets.replies(id), `/tweets/${id}/replies?size=${PAGE_SIZE}`);
 
   return (
-    <div className="min-h-screen">
-      {/* Sticky Header */}
-      <div className="sticky top-0 z-30 bg-background/60 backdrop-blur-md border-b border-border px-4 py-3 flex items-center gap-6">
-        <button
-          onClick={() => router.back()}
-          className="p-2 -ml-2 rounded-full hover:bg-card transition-colors"
-          aria-label="Back"
-        >
-          <ArrowLeft className="w-5 h-5 text-foreground" />
-        </button>
-        <h1 className="text-[20px] font-bold text-foreground">Post</h1>
-      </div>
-
-      {tweetLoading || !tweet ? (
-        <div className="border-b border-border">
-          <TweetCardSkeleton />
-        </div>
-      ) : (
-        <>
-          <TweetCard tweet={tweet} disableClick />
-          <div className="border-b border-border">
-            <CreateTweet
-              isReply
-              replyToId={tweet.id}
-              placeholder="Post your reply"
-              className="px-4 py-2 border-none"
-            />
-          </div>
-          <p className="px-4 py-2 text-muted-foreground text-[15px] font-medium">
-            Replies
-          </p>
-          {repliesQuery.isLoading ? (
-            <div>
-              <TweetCardSkeleton />
-              <TweetCardSkeleton />
-            </div>
-          ) : replyList.length === 0 ? (
-            <p className="p-4 text-muted-foreground text-[15px]">No replies yet.</p>
-          ) : (
-            <div>
-              {replyList.map((r) => (
-                <TweetCard key={r.id} tweet={r} />
-              ))}
-            </div>
-          )}
-        </>
-      )}
-    </div>
+    <HydrationBoundary state={dehydrate(queryClient)}>
+      <TweetDetail tweetId={id} />
+    </HydrationBoundary>
   );
 }

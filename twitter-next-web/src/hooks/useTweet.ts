@@ -6,7 +6,7 @@ import { axiosInstance } from '@/api/axiosInstance';
 import { uploadFileWithPresignedUrl } from '@/api/upload';
 import { useAuth } from '@/hooks/useAuth';
 import { snapshotEntities, updateTweet } from '@/lib/query-cache';
-import { queryKeys } from '@/lib/query-keys';
+import { PAGE_SIZE, queryKeys } from '@/lib/query-keys';
 import type { TweetRequestInput } from '@/lib/validation';
 import type { PageResponse, TweetResponse } from '@/types';
 
@@ -21,7 +21,7 @@ export function useTweet(tweetId: number | null) {
   });
 }
 
-export function useRepliesInfinite(tweetId: number | null, pageSize = 20) {
+export function useRepliesInfinite(tweetId: number | null, pageSize = PAGE_SIZE) {
   return useInfiniteQuery({
     queryKey: queryKeys.tweets.replies(tweetId!),
     queryFn: async ({ pageParam }: { pageParam: string | null }): Promise<PageResponse<TweetResponse>> => {

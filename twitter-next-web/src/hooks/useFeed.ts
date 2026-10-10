@@ -2,10 +2,8 @@
 
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { axiosInstance } from '@/api/axiosInstance';
-import { queryKeys } from '@/lib/query-keys';
+import { PAGE_SIZE, queryKeys } from '@/lib/query-keys';
 import type { PageResponse, TweetResponse } from '@/types';
-
-const PAGE_SIZE = 20;
 
 export type FeedKind = 'global' | 'following';
 

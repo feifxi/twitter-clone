@@ -1,6 +1,8 @@
 import 'server-only';
+import { cache } from 'react';
 import { cookies } from 'next/headers';
-import type { CurrentUserResponse } from '@/types';
+import type { QueryClient, QueryKey } from '@tanstack/react-query';
+import type { CurrentUserResponse, PageResponse, TweetResponse, UserResponse } from '@/types';
 
 const baseURL = process.env.NEXT_PUBLIC_API_URL;
 
@@ -15,32 +17,60 @@ async function sessionCookieHeader(): Promise<string> {
   }).join('; ');
 }
 
-/**
- * GET from the API while rendering on the server, as the visitor (their session
- * cookies are forwarded). Returns null for 401/404 so pages can render the
- * signed-out or not-found state; other failures throw.
- */
-export async function serverFetch<T>(path: string): Promise<T | null> {
-  const cookie = await sessionCookieHeader();
-  const response = await fetch(`${baseURL}${path}`, {
+async function get(path: string, cookie: string): Promise<Response> {
+  return fetch(`${baseURL}${path}`, {
     headers: cookie ? { cookie } : undefined,
     cache: 'no-store',
   });
-  if (response.status === 401 || response.status === 404) return null;
+}
+
+/**
+ * GET from the API while rendering on the server, as the visitor (their session
+ * cookies are forwarded). Returns null on 404. If the session turns out to be
+ * stale (proxy.ts couldn't renew it), the page renders anonymously and the
+ * browser renews the session and refetches. Other failures throw.
+ */
+export async function serverFetch<T>(path: string): Promise<T | null> {
+  const cookie = await sessionCookieHeader();
+  let response = await get(path, cookie);
+  if (response.status === 401 && cookie) response = await get(path, '');
+  if (response.status === 404) return null;
   if (!response.ok) throw new Error(`GET ${path}: ${response.status}`);
   return (await response.json()) as T;
 }
 
 /**
  * The signed-in user for the first render: null when signed out, undefined
- * when it can't be told (API unreachable), in which case the browser asks itself.
+ * when it can't be told (stale session, API unreachable), in which case the
+ * browser asks itself.
  */
 export async function getCurrentUser(): Promise<CurrentUserResponse | null | undefined> {
   const jar = await cookies();
   if (!SESSION_COOKIES.some((name) => jar.has(name))) return null;
   try {
-    return (await serverFetch<CurrentUserResponse>('/auth/me')) ?? undefined;
+    const response = await get('/auth/me', await sessionCookieHeader());
+    if (!response.ok) return undefined;
+    return (await response.json()) as CurrentUserResponse;
   } catch {
     return undefined;
+  }
+}
+
+// cache(): generateMetadata and the page share one request per render.
+export const getTweet = cache((id: number) => serverFetch<TweetResponse>(`/tweets/${id}`));
+export const getUserByUsername = cache((username: string) =>
+  serverFetch<UserResponse>(`/users/by-username/${encodeURIComponent(username)}`),
+);
+
+/**
+ * Loads the first page of a list into an infinite query, as useInfiniteQuery
+ * would. Best effort: on failure the browser fetches it instead.
+ */
+export async function prefetchFirstPage(queryClient: QueryClient, queryKey: QueryKey, path: string) {
+  try {
+    const page = await serverFetch<PageResponse<unknown>>(path);
+    if (page) queryClient.setQueryData(queryKey, { pages: [page], pageParams: [null] });
+  } catch {
+    // Rendered without it; the client query loads it.
   }
 }

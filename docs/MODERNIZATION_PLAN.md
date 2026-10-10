@@ -230,7 +230,8 @@ Good already: `default_tags`, the modern standalone `aws_vpc_security_group_*_ru
 
 ### Phase 3: Frontend architecture
 - [x] Cookie auth against the API (no tokens in JS, W6): `proxy.ts` renews expired sessions before rendering; root layout seeds the current user from the server (no `AuthInitializer` spinner); `useAuth` reads it from TanStack Query; single-flight refresh on `TOKEN_EXPIRED` (new API code, also from optional-auth routes so signed-in users never get silent anonymous data); native `EventSource` with credentials (polyfill removed); per-tab `QueryClient` (W8)
-- [ ] SSR prefetch + `HydrationBoundary` for the main pages; `loading.tsx`
+- [x] Server prefetch + `HydrationBoundary` for home, profile and tweet pages (viewer-specific state included); `generateMetadata` for profile/tweet; real 404s via `notFound()`. No `loading.tsx`: with it Next streams a 200 before `notFound()` can set 404
+- [x] W9 cleanup: unused `tailwind.config.ts` (Tailwind v4), `theme/tokens.ts`, `TweetCard` re-export
 - [x] `lib/query-keys.ts` (every key, W3), `lib/query-cache.ts` (one shape-aware updater for every cached copy of a tweet/user, incl. tweet authors and search results, which were previously missed), module-level `lib/debounced-toggle.ts` for like/retweet/follow (W7: survives unmount, one timer per tweet, no request if toggled back), single-flight refresh, one SSE hook; Vitest for `lib/` in CI
 - [ ] W8/W9 cleanup (keep the brainrot/premium pages); split messages page
 
