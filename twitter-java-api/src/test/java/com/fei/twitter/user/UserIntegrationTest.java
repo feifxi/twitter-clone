@@ -84,7 +84,7 @@ class UserIntegrationTest {
             assertThat(response.getStatus()).as(body).isEqualTo(200);
             List<Number> ids = JsonPath.read(body, "$.items[*].id");
             ids.forEach(id -> seen.add(id.longValue()));
-            cursor = JsonPath.read(body, "$.hasNext") ? JsonPath.read(body, "$.nextCursor") : null;
+            cursor = JsonPath.<Boolean>read(body, "$.hasNext") ? JsonPath.<String>read(body, "$.nextCursor") : null;
         } while (cursor != null);
 
         assertThat(seen).isEqualTo(fans.reversed()); // most recent follow first, no gaps or repeats

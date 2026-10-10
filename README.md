@@ -1,6 +1,6 @@
 # Twitter Clone
 
-Full-stack Twitter/X clone with a Next.js frontend, Go backend, and production-ready AWS infrastructure managed by Terraform—featuring an AI assistant with RAG and a complete observability stack with Grafana Cloud.
+A full-stack Twitter/X clone: a Next.js frontend and a Go API (with an optional Spring Boot API that serves the same contract), PostgreSQL with pgvector, real-time notifications and direct messages, and an AI assistant that answers from recent posts (RAG with Gemini). AWS infrastructure is defined in Terraform, with monitoring through Grafana Cloud.
 
 <p align="center">
   <img src="docs/assets/app-preview.png" alt="App Preview" width="100%" style="border-radius: 8px;">
