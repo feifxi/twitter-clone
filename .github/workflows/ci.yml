@@ -53,6 +53,24 @@ jobs:
       - name: Unit + integration tests (against the Postgres service)
         run: go test -race -count=1 ./...
 
+  java-api:
+    name: Java API (optional backend)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: twitter-java-api
+    steps:
+      - uses: actions/checkout@v4
+      - name: Same schema as the Go API
+        run: diff -u ../twitter-go-api/internal/db/migrations/000001_init_schema.up.sql src/main/resources/db/migration/V1__init_schema.sql
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
+          cache: maven
+      - name: Unit + integration tests (Testcontainers)
+        run: ./mvnw -B verify
+
   web:
     name: Next.js web
     runs-on: ubuntu-24.04

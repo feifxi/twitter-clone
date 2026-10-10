@@ -15,6 +15,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
@@ -90,6 +91,10 @@ public class GlobalExceptionHandler {
             default -> unexpected(e, request);
         };
     }
+
+    /** The client went away mid-stream (closed tab, navigation): nothing to answer, nothing to log. */
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    void clientGone() {}
 
     @ExceptionHandler(Exception.class)
     ResponseEntity<ErrorResponse> unexpected(Exception e, HttpServletRequest request) {

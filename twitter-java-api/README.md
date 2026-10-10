@@ -1,56 +1,52 @@
-# Twitter Java API (Legacy/Alternative)
+# Twitter Java API (optional backend)
 
-Spring Boot backend kept in the monorepo as an alternative implementation.
-
-Primary backend for active development is `twitter-go-api`.
+A Spring Boot implementation of the same API as [`twitter-go-api`](../twitter-go-api), which is the
+**primary backend**. The Java API exists to compare the two stacks: it serves the same contract
+(endpoints, JSON, cookies, cursors, error codes) on the same database schema, so the web app runs
+against either one unchanged.
 
 ## Stack
 
-- Java 21
-- Spring Boot 4
-- Spring Security
-- Spring Data JPA
-- Flyway
-- PostgreSQL
-- Maven
+Java 25 · Spring Boot 4.1 · Spring Security (OAuth2 resource server) · Spring Data JPA + `JdbcClient` ·
+Flyway · PostgreSQL + pgvector · Redis (optional) · Spring AI (Gemini) · AWS SDK (S3) · Testcontainers
 
-## Local Setup
-
-### Prerequisites
-
-- JDK 21+
-- Maven 3.8+
-- PostgreSQL
-
-### Configure
-
-Edit:
-- `src/main/resources/application.yml`
-
-Set DB connection and auth/storage settings for your environment.
-
-### Run
+## Run
 
 ```bash
-mvn spring-boot:run
+docker compose up -d                       # from the repo root: Postgres + Redis
+cp ../twitter-go-api/app.env.example app.env   # the same settings file as the Go API
+./mvnw spring-boot:run                     # http://localhost:8080, Swagger at /swagger/index.html
 ```
 
-or
+It reads the **same environment variables** as the Go API (`DATABASE_URL`, `ACCESS_TOKEN_TTL=15m`, …);
+`config/GoStyleEnvironment` translates the few that Spring names differently. Run one backend at a
+time on port 8080.
+
+## Test
 
 ```bash
-mvn clean package
-java -jar target/twitter-java-api-*.jar
+./mvnw verify      # unit + integration tests against real Postgres/Redis containers (needs Docker)
 ```
 
-API base URL: `http://localhost:8080/api/v1`
+## How it's organised
 
-## Testing
+Feature packages, each with its controller, service and data access:
 
-```bash
-mvn test
-```
+| Package | What |
+|---|---|
+| `auth` | Google sign-in, rotating refresh tokens, session cookies |
+| `user` | profiles, onboarding, follows (`User` entity via JPA; follow counters via SQL) |
+| `tweet`, `feed` | tweets, likes, retweets; home feeds and profile tabs |
+| `search` (+ `discovery`) | user/tweet/hashtag search, trending, suggestions |
+| `notification`, `message`, `realtime` | notifications, DMs, the SSE stream (Redis fan-out) |
+| `media` | presigned S3 uploads |
+| `assistant` | Gemini chat (Spring AI) with RAG over tweet embeddings, the embedding job worker |
+| `security`, `shared`, `config`, `ops` | JWT/cookie auth, CSRF origin check, errors, paging, rate limits, health |
 
-## Scope Note
+Data access is chosen per case: JPA for plain entity CRUD, `JdbcClient` with SQL where JPA gets in
+the way (ranked feeds, keyset pagination, counters updated atomically, full-text and vector search).
 
-This service remains in repository for reference/comparison.
-New architecture and behavior changes are implemented first in `twitter-go-api`.
+## Schema
+
+`src/main/resources/db/migration/V1__init_schema.sql` is a copy of the Go API's migration (CI fails
+if they differ). On a database the Go API already migrated, Flyway adopts the schema as V1.

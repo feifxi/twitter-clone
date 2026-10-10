@@ -1,26 +1,22 @@
-# Build stage
-FROM maven:3.9-eclipse-temurin-21-alpine AS builder
-
+# Build stage: the Maven wrapper pins Maven; dependencies are cached until pom.xml changes.
+FROM eclipse-temurin:25-jdk AS builder
 WORKDIR /app
-COPY pom.xml .
-COPY src ./src
+COPY .mvn .mvn
+COPY mvnw pom.xml ./
+RUN ./mvnw -q dependency:go-offline
+COPY src src
+RUN ./mvnw -q package -DskipTests && \
+    java -Djarmode=tools -jar target/twitter-java-api-*.jar extract --layers --launcher --destination /out
 
-# Build the application
-RUN mvn clean package -DskipTests
-
-# Run stage
-FROM eclipse-temurin:21-jre-alpine
-
+# Runtime: JRE only, non-root. Spring Boot's layers put dependencies (rarely changing)
+# below the application classes, so rebuilds only replace the small top layers.
+FROM eclipse-temurin:25-jre-alpine
 WORKDIR /app
-
-# Copy the built jar file
-COPY --from=builder /app/target/*.jar app.jar
-
-# Expose port
+RUN addgroup -S app && adduser -S app -G app
+COPY --from=builder /out/dependencies/ ./
+COPY --from=builder /out/spring-boot-loader/ ./
+COPY --from=builder /out/snapshot-dependencies/ ./
+COPY --from=builder /out/application/ ./
+USER app
 EXPOSE 8080
-
-# Environment variables
-ENV SPRING_PROFILES_ACTIVE=prod
-
-# Command to run the application
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75", "org.springframework.boot.loader.launch.JarLauncher"]

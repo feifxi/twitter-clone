@@ -271,5 +271,9 @@ Accepted (documented, not worth the complexity here):
 - An open SSE stream stays authorised until it reconnects, even after its access token expires.
 - `braces` advisory (no fixed version) in the ESLint plugin's dev dependencies only.
 
-### Phase 7: Java API parity
-- [ ] Clean `.idea` and `.github/modernize`; align `twitter-java-api` with the squashed schema and the Go API contract (DMs, assistant, presign, cursors, cookie auth)
+### Phase 7: Java API parity ✅ (optional backend; Go stays primary)
+- [x] Rewritten on Spring Boot 4.1 / Java 25 with idiomatic Spring (feature packages; Spring Security resource server; JPA for CRUD, `JdbcClient` for feeds/search/vectors; Spring AI for Gemini; `SseEmitter` + Redis pub/sub; `@TransactionalEventListener` for after-commit pushes; Testcontainers)
+- [x] Same contract and schema: Flyway V1 = the Go migration (CI diff), same env vars, same cookies/cursors/error codes
+- [x] Parity proven: 34/34 identical responses from both APIs on one database (every page of every list, anonymous and signed in, errors included); the web browser suites run against the Java API
+- [x] Lombok, Azure storage and the Azure deploy workflow removed; Docker image (layered, non-root, JRE 25); CI job
+- Differences by design: anonymous requests to unknown routes answer 401 (Spring Security is secure-by-default) instead of 404

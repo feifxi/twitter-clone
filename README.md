@@ -333,7 +333,7 @@ Then connect your DB tool to `127.0.0.1:5433`, database `twitter_db`, with the c
 ```
 ├── twitter-next-web/    # Next.js frontend
 ├── twitter-go-api/      # Go backend (primary)
-├── twitter-java-api/    # Java backend (legacy/alternative)
+├── twitter-java-api/    # Optional Spring Boot backend: same API and schema as the Go one
 ├── infra/
 │   ├── bootstrap/       # One-time: S3 bucket for Terraform state
 │   ├── terraform/       # AWS infrastructure (+ tests/ with a mocked-provider plan)
