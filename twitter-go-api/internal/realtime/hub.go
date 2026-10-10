@@ -7,10 +7,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"sync"
 
 	"github.com/redis/go-redis/v9"
-	"github.com/rs/zerolog/log"
 )
 
 const (
@@ -46,7 +46,7 @@ func (h *Hub) Run(ctx context.Context) {
 	for msg := range pubsub.Channel() {
 		var ev Event
 		if err := json.Unmarshal([]byte(msg.Payload), &ev); err != nil {
-			log.Error().Err(err).Msg("realtime: malformed event from Redis")
+			slog.ErrorContext(ctx, "realtime: malformed event from Redis", "err", err)
 			continue
 		}
 		h.deliver(ev)
@@ -109,7 +109,7 @@ func (h *Hub) deliver(ev Event) {
 		select {
 		case ch <- ev:
 		default:
-			log.Warn().Int64("user_id", ev.UserID).Str("type", ev.Type).Msg("realtime: dropped event, subscriber buffer full")
+			slog.Warn("realtime: dropped event, subscriber buffer full", "user_id", ev.UserID, "type", ev.Type)
 		}
 	}
 }

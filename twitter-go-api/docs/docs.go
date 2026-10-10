@@ -796,7 +796,7 @@ const docTemplate = `{
         },
         "/readyz": {
             "get": {
-                "description": "Verifies the database (and Redis, when configured) are reachable.",
+                "description": "Checks every dependency (database, and Redis when configured) and reports each one.",
                 "produces": [
                     "application/json"
                 ],
@@ -812,7 +812,7 @@ const docTemplate = `{
                         }
                     },
                     "503": {
-                        "description": "dependency failure",
+                        "description": "a dependency is unreachable",
                         "schema": {
                             "$ref": "#/definitions/httpapi.HealthResponse"
                         }
@@ -1683,8 +1683,12 @@ const docTemplate = `{
         "httpapi.HealthResponse": {
             "type": "object",
             "properties": {
-                "service": {
-                    "type": "string"
+                "checks": {
+                    "description": "Checks maps each dependency to \"ok\" or \"error\"; failure details are logged, not exposed.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
                 },
                 "status": {
                     "type": "string"

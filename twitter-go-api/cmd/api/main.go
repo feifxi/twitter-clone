@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -32,7 +33,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
-	"github.com/rs/zerolog/log"
 )
 
 // @title			Twitter Go API
@@ -58,22 +58,19 @@ const shutdownTimeout = 10 * time.Second
 
 func main() {
 	if err := run(); err != nil {
-		log.Fatal().Err(err).Msg("API exited with error")
+		slog.Error("API exited with error", "err", err)
+		os.Exit(1)
 	}
 }
 
 func run() error {
-	cfg, err := config.LoadConfig(".")
+	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
-	if err := cfg.ValidateForRuntime(); err != nil {
-		return fmt.Errorf("invalid config: %w", err)
-	}
 
-	logger.InitLogger(cfg.Environment)
-	production := strings.EqualFold(cfg.Environment, "production")
-	if production {
+	slog.SetDefault(logger.New(os.Stderr, cfg.Production(), cfg.LogLevel))
+	if cfg.Production() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
@@ -87,25 +84,25 @@ func run() error {
 	}
 	defer pool.Close()
 
-	if err := db.Migrate(cfg.DBSource); err != nil {
+	if err := db.Migrate(cfg.DatabaseURL); err != nil {
 		return err
 	}
-	log.Info().Msg("database migrated")
+	slog.Info("database migrated")
 
 	rdb := newRedis(ctx, cfg)
 	if rdb != nil {
 		defer rdb.Close()
 	}
 
-	srv, err := newServer(ctx, cfg, db.NewStore(pool), rdb, production)
+	srv, err := newServer(ctx, cfg, db.NewStore(pool), rdb)
 	if err != nil {
 		return err
 	}
 
-	httpServer := srv.HTTPServer(ctx, cfg.HTTPServerAddress)
+	httpServer := srv.HTTPServer(ctx, cfg.HTTPAddr)
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- httpServer.ListenAndServe() }()
-	log.Info().Str("addr", cfg.HTTPServerAddress).Msg("API listening")
+	slog.Info("API listening", "addr", cfg.HTTPAddr)
 
 	select {
 	case err := <-serveErr:
@@ -113,7 +110,7 @@ func run() error {
 			return fmt.Errorf("http server: %w", err)
 		}
 	case <-ctx.Done():
-		log.Info().Msg("shutting down")
+		slog.Info("shutting down")
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
@@ -122,18 +119,13 @@ func run() error {
 }
 
 // newServer wires the feature services into the HTTP layer.
-func newServer(ctx context.Context, cfg config.Config, store db.Store, rdb *redis.Client, production bool) (*httpapi.Server, error) {
+func newServer(ctx context.Context, cfg config.Config, store db.Store, rdb *redis.Client) (*httpapi.Server, error) {
 	tokens, err := token.NewJWTMaker(cfg.TokenSymmetricKey)
 	if err != nil {
 		return nil, fmt.Errorf("create token maker: %w", err)
 	}
 
-	region := cfg.S3Region
-	if region == "" {
-		region = "ap-southeast-1"
-	}
-
-	s3, err := storage.NewS3(ctx, storage.Config{Bucket: cfg.S3BucketName, Region: region, CDNDomain: cfg.CloudFrontDomain})
+	s3, err := storage.NewS3(ctx, storage.Config{Bucket: cfg.S3Bucket, Region: cfg.S3Region, CDNDomain: cfg.CloudFrontDomain})
 	if err != nil {
 		return nil, fmt.Errorf("create storage: %w", err)
 	}
@@ -142,7 +134,7 @@ func newServer(ctx context.Context, cfg config.Config, store db.Store, rdb *redi
 	if !cfg.EnableRAG {
 		queueURL = ""
 	}
-	embeddings, err := embedding.NewPublisher(ctx, queueURL, region)
+	embeddings, err := embedding.NewPublisher(ctx, queueURL, cfg.S3Region)
 	if err != nil {
 		return nil, fmt.Errorf("create embedding publisher: %w", err)
 	}
@@ -159,8 +151,8 @@ func newServer(ctx context.Context, cfg config.Config, store db.Store, rdb *redi
 	services := httpapi.Services{
 		Auth: auth.New(auth.Config{
 			GoogleClientID:  cfg.GoogleClientID,
-			AccessTokenTTL:  time.Duration(cfg.TokenDurationMinutes) * time.Minute,
-			RefreshTokenTTL: time.Duration(cfg.RefreshTokenDurationDays) * 24 * time.Hour,
+			AccessTokenTTL:  cfg.AccessTokenTTL,
+			RefreshTokenTTL: cfg.RefreshTokenTTL,
 		}, store, tokens, auth.GoogleIDTokenVerifier{}),
 		Users:         user.New(store, s3, notifications),
 		Tweets:        tweet.New(store, s3, embeddings, notifications),
@@ -182,14 +174,14 @@ func newServer(ctx context.Context, cfg config.Config, store db.Store, rdb *redi
 	}
 
 	return httpapi.New(httpapi.Config{
-		Production:     production,
-		AllowedOrigins: cfg.AllowedOrigins(),
+		Production:     cfg.Production(),
+		AllowedOrigins: cfg.AllowedOrigins,
 		GatewaySecret:  cfg.GatewaySecret,
 	}, services, tokens, hub, store, rdb), nil
 }
 
 func newDBPool(ctx context.Context, cfg config.Config) (*pgxpool.Pool, error) {
-	poolCfg, err := pgxpool.ParseConfig(cfg.DBSource)
+	poolCfg, err := pgxpool.ParseConfig(cfg.DatabaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse database URL: %w", err)
 	}
@@ -199,8 +191,8 @@ func newDBPool(ctx context.Context, cfg config.Config) (*pgxpool.Pool, error) {
 	if cfg.DBMinConns > 0 {
 		poolCfg.MinConns = cfg.DBMinConns
 	}
-	if cfg.DBMaxConnLifetimeMinutes > 0 {
-		poolCfg.MaxConnLifetime = time.Duration(cfg.DBMaxConnLifetimeMinutes) * time.Minute
+	if cfg.DBMaxConnLifetime > 0 {
+		poolCfg.MaxConnLifetime = cfg.DBMaxConnLifetime
 	}
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
@@ -213,24 +205,21 @@ func newDBPool(ctx context.Context, cfg config.Config) (*pgxpool.Pool, error) {
 // newRedis returns nil when Redis is not configured or unreachable; the API then
 // runs single-instance (in-memory rate limits and realtime fan-out).
 func newRedis(ctx context.Context, cfg config.Config) *redis.Client {
-	if cfg.RedisAddress == "" {
+	if cfg.RedisURL == "" {
 		return nil
 	}
 
-	opts, err := redis.ParseURL(cfg.RedisAddress)
+	opts, err := redis.ParseURL(cfg.RedisURL)
 	if err != nil {
-		log.Warn().Err(err).Msg("invalid REDIS_ADDRESS, starting without Redis")
+		slog.Warn("invalid REDIS_URL, starting without Redis", "err", err)
 		return nil
-	}
-	if cfg.RedisPassword != "" {
-		opts.Password = cfg.RedisPassword
 	}
 
 	client := redis.NewClient(opts)
 	pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	if err := client.Ping(pingCtx).Err(); err != nil {
-		log.Warn().Err(err).Msg("Redis unavailable, starting without Redis")
+		slog.Warn("Redis unavailable, starting without Redis", "err", err)
 		_ = client.Close()
 		return nil
 	}

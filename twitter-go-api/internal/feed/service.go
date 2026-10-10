@@ -43,7 +43,7 @@ func (s *Service) Following(ctx context.Context, userID int64, page, size int32)
 // ForUser is userID's profile timeline (their tweets and retweets).
 func (s *Service) ForUser(ctx context.Context, userID int64, page, size int32, viewerID *int64) ([]domain.Tweet, error) {
 	if _, err := s.store.GetUser(ctx, db.GetUserParams{ID: userID, ViewerID: viewerID}); err != nil {
-		return nil, err
+		return nil, db.NotFound(err, "user")
 	}
 
 	rows, err := s.store.ListUserTweets(ctx, db.ListUserTweetsParams{

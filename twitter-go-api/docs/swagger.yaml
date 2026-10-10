@@ -78,8 +78,12 @@ definitions:
     type: object
   httpapi.HealthResponse:
     properties:
-      service:
-        type: string
+      checks:
+        additionalProperties:
+          type: string
+        description: Checks maps each dependency to "ok" or "error"; failure details
+          are logged, not exposed.
+        type: object
       status:
         type: string
     type: object
@@ -844,7 +848,8 @@ paths:
       - Notifications
   /readyz:
     get:
-      description: Verifies the database (and Redis, when configured) are reachable.
+      description: Checks every dependency (database, and Redis when configured) and
+        reports each one.
       produces:
       - application/json
       responses:
@@ -853,7 +858,7 @@ paths:
           schema:
             $ref: '#/definitions/httpapi.HealthResponse'
         "503":
-          description: dependency failure
+          description: a dependency is unreachable
           schema:
             $ref: '#/definitions/httpapi.HealthResponse'
       summary: Readiness Probe

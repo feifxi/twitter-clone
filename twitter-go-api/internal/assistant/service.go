@@ -3,14 +3,14 @@ package assistant
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"iter"
+	"log/slog"
 	"strings"
 
 	"github.com/chanombude/twitter-go-api/internal/apperr"
 	"github.com/chanombude/twitter-go-api/internal/db"
 	"github.com/pgvector/pgvector-go"
-	"github.com/rs/zerolog/log"
 	"google.golang.org/genai"
 )
 
@@ -76,7 +76,7 @@ func NewGeminiClient(ctx context.Context, apiKey string) (*genai.Client, error) 
 // directly; errors mid-stream are yielded so the caller can report them on the open stream.
 func (s *Service) Chat(ctx context.Context, input Input) (iter.Seq2[string, error], error) {
 	if s.genai == nil {
-		return nil, apperr.E(apperr.KindInternal, "assistant is not configured", fmt.Errorf("GEMINI_API_KEY is not set"))
+		return nil, apperr.Internal("assistant is not configured", errors.New("GEMINI_API_KEY is not set"))
 	}
 
 	config := &genai.GenerateContentConfig{
@@ -113,7 +113,7 @@ func (s *Service) timelineContext(ctx context.Context, query string) string {
 		&genai.EmbedContentConfig{TaskType: "RETRIEVAL_QUERY", OutputDimensionality: &dim},
 	)
 	if err != nil || len(embedRes.Embeddings) == 0 {
-		log.Error().Err(err).Msg("failed to vectorize query for RAG, falling back to base chat")
+		slog.ErrorContext(ctx, "failed to vectorize query for RAG, falling back to base chat", "err", err)
 		return "Timeline context unavailable (vectorization failed)."
 	}
 
@@ -124,7 +124,7 @@ func (s *Service) timelineContext(ctx context.Context, query string) string {
 		ResultLimit:    ragResultLimit,
 	})
 	if err != nil {
-		log.Error().Err(err).Msg("failed to retrieve context from DB for RAG")
+		slog.ErrorContext(ctx, "failed to retrieve RAG context", "err", err)
 		return "Timeline context unavailable (DB error)."
 	}
 	if len(rows) == 0 {

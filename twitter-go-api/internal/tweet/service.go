@@ -87,7 +87,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (domain.Tweet, err
 			}
 			parent, err := q.GetTweet(ctx, db.GetTweetParams{ID: *in.ParentID})
 			if err != nil {
-				return err
+				return db.NotFound(err, "parent tweet")
 			}
 			pending, err = notification.Create(ctx, q, parent.Tweet.UserID, in.UserID, &created.ID, domain.NotificationReply)
 			if err != nil {
@@ -130,7 +130,7 @@ func (s *Service) publishEmbedding(tweetID int64, content string) {
 }
 
 func (s *Service) Delete(ctx context.Context, userID, tweetID int64) error {
-	t, err := s.store.GetTweet(ctx, db.GetTweetParams{ID: tweetID})
+	t, err := s.getTweet(ctx, tweetID, nil)
 	if err != nil {
 		return err
 	}
@@ -201,7 +201,7 @@ func (s *Service) deleteMedia(urls []*string) {
 }
 
 func (s *Service) Get(ctx context.Context, tweetID int64, viewerID *int64) (domain.Tweet, error) {
-	row, err := s.store.GetTweet(ctx, db.GetTweetParams{ID: tweetID, ViewerID: viewerID})
+	row, err := s.getTweet(ctx, tweetID, viewerID)
 	if err != nil {
 		return domain.Tweet{}, err
 	}
@@ -213,7 +213,7 @@ func (s *Service) Get(ctx context.Context, tweetID int64, viewerID *int64) (doma
 }
 
 func (s *Service) ListReplies(ctx context.Context, tweetID int64, page, size int32, viewerID *int64) ([]domain.Tweet, error) {
-	if _, err := s.store.GetTweet(ctx, db.GetTweetParams{ID: tweetID, ViewerID: viewerID}); err != nil {
+	if _, err := s.getTweet(ctx, tweetID, viewerID); err != nil {
 		return nil, err
 	}
 
@@ -230,7 +230,7 @@ func (s *Service) ListReplies(ctx context.Context, tweetID int64, page, size int
 }
 
 func (s *Service) Like(ctx context.Context, userID, tweetID int64) error {
-	t, err := s.store.GetTweet(ctx, db.GetTweetParams{ID: tweetID})
+	t, err := s.getTweet(ctx, tweetID, nil)
 	if err != nil {
 		return err
 	}
@@ -247,7 +247,7 @@ func (s *Service) Like(ctx context.Context, userID, tweetID int64) error {
 }
 
 func (s *Service) Unlike(ctx context.Context, userID, tweetID int64) error {
-	if _, err := s.store.GetTweet(ctx, db.GetTweetParams{ID: tweetID}); err != nil {
+	if _, err := s.getTweet(ctx, tweetID, nil); err != nil {
 		return err
 	}
 	_, err := s.store.UnlikeTweet(ctx, db.UnlikeTweetParams{UserID: userID, TweetID: tweetID})
@@ -301,15 +301,20 @@ func (s *Service) UndoRetweet(ctx context.Context, userID, tweetID int64) error 
 
 // originalOf resolves a retweet to the tweet it points at.
 func (s *Service) originalOf(ctx context.Context, tweetID int64) (db.Tweet, error) {
-	t, err := s.store.GetTweet(ctx, db.GetTweetParams{ID: tweetID})
+	t, err := s.getTweet(ctx, tweetID, nil)
 	if err != nil {
 		return db.Tweet{}, err
 	}
 	if t.Tweet.RetweetID == nil {
 		return t.Tweet, nil
 	}
-	original, err := s.store.GetTweet(ctx, db.GetTweetParams{ID: *t.Tweet.RetweetID})
+	original, err := s.getTweet(ctx, *t.Tweet.RetweetID, nil)
 	return original.Tweet, err
+}
+
+func (s *Service) getTweet(ctx context.Context, tweetID int64, viewerID *int64) (db.GetTweetRow, error) {
+	row, err := s.store.GetTweet(ctx, db.GetTweetParams{ID: tweetID, ViewerID: viewerID})
+	return row, db.NotFound(err, "tweet")
 }
 
 func trimmedOrNil(s *string) *string {

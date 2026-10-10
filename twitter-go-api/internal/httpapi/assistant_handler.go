@@ -3,12 +3,11 @@ package httpapi
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/chanombude/twitter-go-api/internal/assistant"
-	"github.com/chanombude/twitter-go-api/internal/middleware"
 	"github.com/gin-gonic/gin"
-	"github.com/rs/zerolog/log"
 )
 
 type assistantHistoryItem struct {
@@ -74,7 +73,7 @@ func (s *Server) assistant(c *gin.Context) {
 
 	for text, err := range chunks {
 		if err != nil {
-			log.Error().Err(err).Str("request_id", middleware.GetRequestID(c)).Msg("assistant stream failed")
+			slog.ErrorContext(c.Request.Context(), "assistant stream failed", "err", err)
 			writeSSE(c, "error", assistantStreamError{Message: "the assistant is unavailable, please try again"})
 			return
 		}
@@ -87,7 +86,7 @@ func (s *Server) assistant(c *gin.Context) {
 func writeSSE(c *gin.Context, event string, data any) {
 	payload, err := json.Marshal(data)
 	if err != nil {
-		log.Error().Err(err).Msg("failed to marshal SSE payload")
+		slog.ErrorContext(c.Request.Context(), "failed to marshal SSE payload", "err", err)
 		return
 	}
 	if event != "" {

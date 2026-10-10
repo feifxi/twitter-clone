@@ -2,11 +2,11 @@ package notification
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	"github.com/chanombude/twitter-go-api/internal/db"
 	"github.com/chanombude/twitter-go-api/internal/domain"
-	"github.com/rs/zerolog/log"
 )
 
 // EventType is the realtime event name for a new notification.
@@ -59,11 +59,11 @@ func (s *Service) Dispatch(n db.Notification) {
 
 	items, err := s.hydrate(ctx, []db.Notification{n})
 	if err != nil || len(items) == 0 {
-		log.Error().Err(err).Int64("notification_id", n.ID).Msg("failed to hydrate notification; not pushed")
+		slog.ErrorContext(ctx, "failed to hydrate notification; not pushed", "err", err, "notification_id", n.ID)
 		return
 	}
 	if err := s.publisher.Publish(ctx, n.RecipientID, EventType, items[0]); err != nil {
-		log.Error().Err(err).Int64("notification_id", n.ID).Msg("failed to publish notification")
+		slog.ErrorContext(ctx, "failed to publish notification", "err", err, "notification_id", n.ID)
 	}
 }
 

@@ -2,7 +2,6 @@ package apperr
 
 import (
 	"errors"
-	"fmt"
 )
 
 type Kind string
@@ -73,13 +72,6 @@ func Internal(message string, err error) *Error {
 	return E(KindInternal, message, err)
 }
 
-func Wrap(kind Kind, message string, err error) error {
-	if err == nil {
-		return nil
-	}
-	return E(kind, message, err)
-}
-
 func KindOf(err error) (Kind, bool) {
 	var appErr *Error
 	if errors.As(err, &appErr) {
@@ -94,13 +86,6 @@ func MessageOf(err error) string {
 		return appErr.Message
 	}
 	return ""
-}
-
-func Withf(err error, format string, args ...any) error {
-	if err == nil {
-		return nil
-	}
-	return fmt.Errorf(format+": %w", append(args, err)...)
 }
 
 // ErrorResponse is the standard JSON error envelope returned by HTTP handlers.

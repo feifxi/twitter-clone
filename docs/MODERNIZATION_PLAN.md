@@ -220,7 +220,8 @@ Good already: `default_tags`, the modern standalone `aws_vpc_security_group_*_ru
 
 ### Phase 2: Backend foundation
 - [x] **2a Structure & idioms:** package-by-feature move (N3, N4, N10); `run() error` main (N7); `c.Request.Context()` everywhere (N1); naming fixes N2, N5, N6, N9; embed migrations; per-package `Config` with `time.Duration` TTLs (N11, partly; the rest lands in 2b). `internal/db` kept its name (it's the sqlc convention); query strings are no longer logged (G5, partly)
-- [ ] **2b Platform:** `slog` + env config without viper (G15, G16, N8); unified error mapping (G14); healthz with per-dependency status
+- [x] **2b Platform:** `slog` with request-ID-aware handler; env config via `caarlos0/env` + optional `app.env` (no viper, no in-app SSM fetch; typed durations, `notEmpty` checks, all errors reported at once) (G15, G16, N8, N11); unified error mapping in `httpError` + `db.NotFound` for resource-specific 404s (G14); `/readyz` reports each dependency without leaking error details; sanitized `X-Request-ID`
+  - ⚠️ Env vars renamed: `FRONTEND_URL`→`ALLOWED_ORIGINS`, `TOKEN_DURATION_MINUTES`→`ACCESS_TOKEN_TTL` (`15m`), `REFRESH_TOKEN_DURATION_DAYS`→`REFRESH_TOKEN_TTL` (`720h`), `DB_MAX_CONN_LIFETIME_MINUTES`→`DB_MAX_CONN_LIFETIME` (`5m`), `REDIS_ADDRESS`+`REDIS_PASSWORD`→`REDIS_URL`, `S3_BUCKET_NAME` unchanged. The app no longer reads SSM itself: Phase 5 must render SSM into the container's env (and rename the SSM keys).
 - [ ] **2c Realtime:** ~~`internal/realtime` hub~~ (done in 2a; notifications already flow through it); **one SSE stream** for notifications and DMs; drop gorilla/websocket (G10, G13, G5)
 - [ ] **2d Data:** keyset cursors plus an anchored-time cursor for For-You (G9); separate `retweets` table and `kind` feed items (G19); per-session refresh-token rotation (G8)
 - [ ] **2e Features:** `GET /users/by-username/:username`; user replies/media/likes endpoints; `location`/`website`; username onboarding (G18)

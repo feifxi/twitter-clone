@@ -2,13 +2,13 @@ package httpapi
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	"github.com/rs/zerolog/log"
 )
 
 const (
@@ -65,7 +65,7 @@ func (s *Server) streamMessagesWS(c *gin.Context) {
 
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		log.Warn().Err(err).Msg("websocket upgrade failed")
+		slog.WarnContext(c.Request.Context(), "websocket upgrade failed", "err", err)
 		return
 	}
 
@@ -139,7 +139,7 @@ func (s *Server) sendDirectMessageWS(userIDs []int64, message MessageResponse) {
 		Message:        message,
 	})
 	if err != nil {
-		log.Error().Err(err).Msg("failed to marshal dm websocket payload")
+		slog.Error("failed to marshal DM websocket payload", "err", err)
 		return
 	}
 
@@ -149,7 +149,7 @@ func (s *Server) sendDirectMessageWS(userIDs []int64, message MessageResponse) {
 			select {
 			case client.send <- payload:
 			default:
-				log.Warn().Int64("user_id", userID).Msg("dropped dm websocket event due to full client buffer")
+				slog.Warn("dropped DM websocket event, client buffer full", "user_id", userID)
 			}
 		}
 		s.wsMu.RUnlock()

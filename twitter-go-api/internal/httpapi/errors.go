@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -14,7 +15,6 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	zlog "github.com/rs/zerolog/log"
 )
 
 func msgForTag(fe validator.FieldError) string {
@@ -86,75 +86,61 @@ func writeError(c *gin.Context, err error) {
 		return
 	}
 
-	status := http.StatusInternalServerError
-	code := "INTERNAL_ERROR"
-	message := "internal server error"
-
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		switch pgErr.Code {
-		case "23505": // unique_violation
-			status = http.StatusConflict
-			code = "CONFLICT"
-			message = "resource already exists"
-		case "23503": // foreign_key_violation
-			status = http.StatusBadRequest
-			code = "BAD_REQUEST"
-			message = "referenced resource does not exist"
-		case "23514": // check_violation
-			status = http.StatusBadRequest
-			code = "BAD_REQUEST"
-			message = "invalid request"
-		}
-	} else if errors.Is(err, pgx.ErrNoRows) {
-		status = http.StatusNotFound
-		code = "NOT_FOUND"
-		message = "resource not found"
-	} else if kind, ok := apperr.KindOf(err); ok {
-		switch kind {
-		case apperr.KindBadRequest:
-			status = http.StatusBadRequest
-			code = "BAD_REQUEST"
-			message = defaultMessage(apperr.MessageOf(err), "invalid request")
-		case apperr.KindUnauthorized:
-			status = http.StatusUnauthorized
-			code = "UNAUTHORIZED"
-			message = defaultMessage(apperr.MessageOf(err), "authentication required")
-		case apperr.KindForbidden:
-			status = http.StatusForbidden
-			code = "FORBIDDEN"
-			message = defaultMessage(apperr.MessageOf(err), "forbidden")
-		case apperr.KindNotFound:
-			status = http.StatusNotFound
-			code = "NOT_FOUND"
-			message = defaultMessage(apperr.MessageOf(err), "resource not found")
-		case apperr.KindConflict:
-			status = http.StatusConflict
-			code = "CONFLICT"
-			message = defaultMessage(apperr.MessageOf(err), "conflict")
-		case apperr.KindInternal:
-			status = http.StatusInternalServerError
-			code = "INTERNAL_ERROR"
-			message = "internal server error"
-		}
+	status, code, message := httpError(err)
+	if status >= http.StatusInternalServerError {
+		slog.ErrorContext(c.Request.Context(), "request failed", "err", err, "method", c.Request.Method, "route", c.FullPath())
 	}
-
-	if status >= 500 {
-		zlog.Error().Err(err).
-			Str("method", c.Request.Method).
-			Str("path", c.FullPath()).
-			Str("request_id", requestID).
-			Msg("Internal server error")
-	}
-
 	c.JSON(status, ErrorResponse{Code: code, Message: message, RequestID: requestID})
 }
 
-func defaultMessage(in, fallback string) string {
-	if in == "" {
-		return fallback
+type errorMapping struct {
+	status  int
+	code    string
+	message string // default when the error carries none; always used for 5xx
+}
+
+var kindMappings = map[apperr.Kind]errorMapping{
+	apperr.KindBadRequest:   {http.StatusBadRequest, "BAD_REQUEST", "invalid request"},
+	apperr.KindUnauthorized: {http.StatusUnauthorized, "UNAUTHORIZED", "authentication required"},
+	apperr.KindForbidden:    {http.StatusForbidden, "FORBIDDEN", "forbidden"},
+	apperr.KindNotFound:     {http.StatusNotFound, "NOT_FOUND", "resource not found"},
+	apperr.KindConflict:     {http.StatusConflict, "CONFLICT", "conflict"},
+}
+
+// Postgres constraint violations that reach the handler are client errors, not 500s.
+var pgMappings = map[string]errorMapping{
+	"23505": {http.StatusConflict, "CONFLICT", "resource already exists"},                 // unique_violation
+	"23503": {http.StatusBadRequest, "BAD_REQUEST", "referenced resource does not exist"}, // foreign_key_violation
+	"23514": {http.StatusBadRequest, "BAD_REQUEST", "invalid request"},                    // check_violation
+}
+
+var internalError = errorMapping{http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error"}
+
+// httpError maps a service error to a response. Only apperr messages are shown
+// to clients; anything unrecognised becomes an opaque 500.
+func httpError(err error) (status int, code, message string) {
+	if kind, ok := apperr.KindOf(err); ok {
+		if m, ok := kindMappings[kind]; ok {
+			if msg := apperr.MessageOf(err); msg != "" {
+				return m.status, m.code, msg
+			}
+			return m.status, m.code, m.message
+		}
+		return internalError.status, internalError.code, internalError.message
 	}
-	return in
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		m := kindMappings[apperr.KindNotFound]
+		return m.status, m.code, m.message
+	}
+
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		if m, ok := pgMappings[pgErr.Code]; ok {
+			return m.status, m.code, m.message
+		}
+	}
+	return internalError.status, internalError.code, internalError.message
 }
 
 func writeValidationError(c *gin.Context, field, message string) {

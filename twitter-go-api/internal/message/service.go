@@ -192,7 +192,7 @@ func (s *Service) SendToUser(ctx context.Context, senderID, recipientID int64, c
 		return domain.Message{}, nil, err
 	}
 	if _, err := s.store.GetUser(ctx, db.GetUserParams{ID: recipientID}); err != nil {
-		return domain.Message{}, nil, err
+		return domain.Message{}, nil, db.NotFound(err, "user")
 	}
 
 	var created db.DirectMessage

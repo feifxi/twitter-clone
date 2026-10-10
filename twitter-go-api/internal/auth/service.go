@@ -144,11 +144,11 @@ func (s *Service) Logout(ctx context.Context, userID *int64, refreshToken *strin
 }
 
 func (s *Service) Me(ctx context.Context, userID int64) (domain.User, error) {
-	user, err := s.store.GetUser(ctx, db.GetUserParams{ID: userID, ViewerID: nil})
+	row, err := s.store.GetUser(ctx, db.GetUserParams{ID: userID})
 	if err != nil {
-		return domain.User{}, err
+		return domain.User{}, db.NotFound(err, "user")
 	}
-	return domain.NewUser(user.User, user.IsFollowing), nil
+	return domain.NewUser(row.User, row.IsFollowing), nil
 }
 
 func (s *Service) issueSession(ctx context.Context, userID int64) (string, string, error) {

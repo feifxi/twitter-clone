@@ -5,11 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
-	"github.com/rs/zerolog/log"
 )
 
 type message struct {
@@ -29,7 +29,7 @@ type SQSPublisher struct {
 // NewPublisher returns a no-op publisher when queueURL is empty (e.g. local dev).
 func NewPublisher(ctx context.Context, queueURL, region string) (Publisher, error) {
 	if queueURL == "" {
-		log.Warn().Msg("SQS embedding queue URL is not set — embedding events will be dropped")
+		slog.WarnContext(ctx, "SQS embedding queue URL is not set; embedding events will be dropped")
 		return noopPublisher{}, nil
 	}
 

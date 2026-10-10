@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -10,7 +11,6 @@ import (
 	"github.com/chanombude/twitter-go-api/internal/notification"
 	"github.com/chanombude/twitter-go-api/internal/realtime"
 	"github.com/gin-gonic/gin"
-	"github.com/rs/zerolog/log"
 )
 
 const sseHeartbeatInterval = 15 * time.Second
@@ -67,12 +67,12 @@ func (s *Server) writeRealtimeEvent(c *gin.Context, ev realtime.Event) {
 	case notification.EventType:
 		var n domain.Notification
 		if err := json.Unmarshal(ev.Payload, &n); err != nil {
-			log.Error().Err(err).Msg("malformed notification event")
+			slog.ErrorContext(c.Request.Context(), "malformed notification event", "err", err)
 			return
 		}
 		writeSSE(c, "notification", newNotificationResponse(n))
 	default:
-		log.Warn().Str("type", ev.Type).Msg("unknown realtime event type")
+		slog.WarnContext(c.Request.Context(), "unknown realtime event type", "type", ev.Type)
 	}
 }
 

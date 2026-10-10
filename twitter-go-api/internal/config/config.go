@@ -1,211 +1,112 @@
+// Package config loads runtime settings from environment variables. Values are
+// injected by the environment (Docker, systemd, CI); app.env is only a local-dev
+// convenience and never overrides variables that are already set.
 package config
 
 import (
-	"context"
+	"errors"
 	"fmt"
-	"os"
+	"io/fs"
+	"log/slog"
 	"strings"
+	"time"
 
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/ssm"
-	"github.com/spf13/viper"
+	"github.com/caarlos0/env/v11"
+	"github.com/joho/godotenv"
 )
 
+const minTokenKeyLength = 32
+
 type Config struct {
-	Environment              string `mapstructure:"ENVIRONMENT"`
-	DBSource                 string `mapstructure:"DATABASE_URL"`
-	HTTPServerAddress        string `mapstructure:"HTTP_SERVER_ADDRESS"`
-	DBMaxConns               int32  `mapstructure:"DB_MAX_CONNS"`
-	DBMinConns               int32  `mapstructure:"DB_MIN_CONNS"`
-	DBMaxConnLifetimeMinutes int    `mapstructure:"DB_MAX_CONN_LIFETIME_MINUTES"`
-	MaxMediaBytes            int64  `mapstructure:"MAX_MEDIA_BYTES"`
-	MaxAvatarBytes           int64  `mapstructure:"MAX_AVATAR_BYTES"`
-	MaxBannerBytes           int64  `mapstructure:"MAX_BANNER_BYTES"`
-	FrontendURL              string `mapstructure:"FRONTEND_URL"`
-	TokenSymmetricKey        string `mapstructure:"TOKEN_SYMMETRIC_KEY"`
-	TokenDurationMinutes     int    `mapstructure:"TOKEN_DURATION_MINUTES"`
-	RefreshTokenDurationDays int    `mapstructure:"REFRESH_TOKEN_DURATION_DAYS"`
-	GoogleClientID           string `mapstructure:"GOOGLE_CLIENT_ID"`
-	S3BucketName             string `mapstructure:"S3_BUCKET_NAME"`
-	S3Region                 string `mapstructure:"S3_REGION"`
-	CloudFrontDomain         string `mapstructure:"CLOUDFRONT_DOMAIN"`
-	GatewaySecret            string `mapstructure:"GATEWAY_SECRET"`
-	RedisAddress             string `mapstructure:"REDIS_ADDRESS"`
-	RedisPassword            string `mapstructure:"REDIS_PASSWORD"`
-	SQSEmbeddingQueueURL     string `mapstructure:"SQS_EMBEDDING_QUEUE_URL"`
-	GeminiAPIKey             string `mapstructure:"GEMINI_API_KEY"`
-	GeminiChatModel          string `mapstructure:"GEMINI_CHAT_MODEL"`
-	GeminiEmbeddingModel     string `mapstructure:"GEMINI_EMBEDDING_MODEL"`
-	EnableRAG                bool   `mapstructure:"ENABLE_RAG"`
+	Environment string     `env:"ENVIRONMENT" envDefault:"development"`
+	LogLevel    slog.Level `env:"LOG_LEVEL" envDefault:"info"`
+	HTTPAddr    string     `env:"HTTP_SERVER_ADDRESS" envDefault:"0.0.0.0:8080"`
+
+	DatabaseURL       string        `env:"DATABASE_URL,required,notEmpty"`
+	DBMaxConns        int32         `env:"DB_MAX_CONNS" envDefault:"25"`
+	DBMinConns        int32         `env:"DB_MIN_CONNS" envDefault:"0"`
+	DBMaxConnLifetime time.Duration `env:"DB_MAX_CONN_LIFETIME" envDefault:"5m"`
+
+	// RedisURL is optional; without it the API runs single-instance (in-memory rate limits and realtime).
+	RedisURL string `env:"REDIS_URL"`
+
+	AllowedOrigins []string `env:"ALLOWED_ORIGINS" envSeparator:"," envDefault:"http://localhost:3000"`
+	// GatewaySecret, when set, must be sent by the reverse proxy in X-Gateway-Secret.
+	GatewaySecret string `env:"GATEWAY_SECRET"`
+
+	TokenSymmetricKey string        `env:"TOKEN_SYMMETRIC_KEY,required,notEmpty"`
+	AccessTokenTTL    time.Duration `env:"ACCESS_TOKEN_TTL" envDefault:"15m"`
+	RefreshTokenTTL   time.Duration `env:"REFRESH_TOKEN_TTL" envDefault:"720h"`
+	GoogleClientID    string        `env:"GOOGLE_CLIENT_ID"`
+
+	S3Bucket         string `env:"S3_BUCKET_NAME"`
+	S3Region         string `env:"S3_REGION" envDefault:"ap-southeast-1"`
+	CloudFrontDomain string `env:"CLOUDFRONT_DOMAIN"`
+	MaxMediaBytes    int64  `env:"MAX_MEDIA_BYTES" envDefault:"104857600"` // 100 MiB
+	MaxAvatarBytes   int64  `env:"MAX_AVATAR_BYTES" envDefault:"5242880"`  // 5 MiB
+	MaxBannerBytes   int64  `env:"MAX_BANNER_BYTES" envDefault:"10485760"` // 10 MiB
+
+	GeminiAPIKey         string `env:"GEMINI_API_KEY"`
+	GeminiChatModel      string `env:"GEMINI_CHAT_MODEL" envDefault:"gemini-2.5-flash"`
+	GeminiEmbeddingModel string `env:"GEMINI_EMBEDDING_MODEL" envDefault:"gemini-embedding-2-preview"`
+	EnableRAG            bool   `env:"ENABLE_RAG" envDefault:"true"`
+	SQSEmbeddingQueueURL string `env:"SQS_EMBEDDING_QUEUE_URL"`
 }
 
-func LoadConfig(path string) (config Config, err error) {
-	viper.AddConfigPath(path)
-	viper.SetConfigName("app")
-	viper.SetConfigType("env")
-
-	viper.SetDefault("FRONTEND_URL", "http://localhost:3000")
-	viper.SetDefault("GEMINI_CHAT_MODEL", "gemini-2.5-flash")
-	viper.SetDefault("GEMINI_EMBEDDING_MODEL", "gemini-embedding-2-preview")
-	viper.SetDefault("DB_MAX_CONNS", int32(25))
-	viper.SetDefault("DB_MIN_CONNS", int32(0))
-	viper.SetDefault("DB_MAX_CONN_LIFETIME_MINUTES", 5)
-	viper.SetDefault("MAX_MEDIA_BYTES", int64(100<<20)) // 100 MiB
-	viper.SetDefault("MAX_AVATAR_BYTES", int64(5<<20))  // 5 MiB
-	viper.SetDefault("MAX_BANNER_BYTES", int64(10<<20)) // 10 MiB
-	// Explicitly bind environment variables so viper.Unmarshal detects them
-	// without needing a physical app.env file (which is excluded in CI/CD).
-	viper.SetDefault("ENABLE_RAG", true)
-	viper.BindEnv("ENVIRONMENT")
-	viper.BindEnv("DATABASE_URL")
-	viper.BindEnv("HTTP_SERVER_ADDRESS")
-	viper.BindEnv("DB_MAX_CONNS")
-	viper.BindEnv("DB_MIN_CONNS")
-	viper.BindEnv("DB_MAX_CONN_LIFETIME_MINUTES")
-	viper.BindEnv("MAX_MEDIA_BYTES")
-	viper.BindEnv("MAX_AVATAR_BYTES")
-	viper.BindEnv("MAX_BANNER_BYTES")
-	viper.BindEnv("FRONTEND_URL")
-	viper.BindEnv("TOKEN_SYMMETRIC_KEY")
-	viper.BindEnv("TOKEN_DURATION_MINUTES")
-	viper.BindEnv("REFRESH_TOKEN_DURATION_DAYS")
-	viper.BindEnv("GOOGLE_CLIENT_ID")
-	viper.BindEnv("S3_BUCKET_NAME")
-	viper.BindEnv("S3_REGION")
-	viper.BindEnv("CLOUDFRONT_DOMAIN")
-	viper.BindEnv("GATEWAY_SECRET")
-	viper.BindEnv("REDIS_ADDRESS")
-	viper.BindEnv("REDIS_PASSWORD")
-	viper.BindEnv("SQS_EMBEDDING_QUEUE_URL")
-	viper.BindEnv("GEMINI_API_KEY")
-	viper.BindEnv("GEMINI_CHAT_MODEL")
-	viper.BindEnv("GEMINI_EMBEDDING_MODEL")
-	viper.BindEnv("ENABLE_RAG")
-
-	viper.AutomaticEnv()
-
-	env := os.Getenv("ENVIRONMENT")
-	if env == "production" {
-		loadFromSSM()
+// Load reads app.env (if present) and the environment, then validates the result.
+func Load() (Config, error) {
+	if err := godotenv.Load("app.env"); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return Config{}, fmt.Errorf("read app.env: %w", err)
 	}
 
-	err = viper.ReadInConfig()
-	if err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			return
-		}
-		// In production, we MUST have some config from somewhere
-		if strings.EqualFold(env, "production") && !configLoadedSuccessfully && len(viper.AllKeys()) == 0 {
-			return config, fmt.Errorf("no configuration found: app.env is missing and SSM loading failed")
-		}
+	var cfg Config
+	if err := env.Parse(&cfg); err != nil {
+		return Config{}, err
 	}
-
-	if configLoadedSuccessfully {
-		fmt.Printf("Metadata: Configuration loaded from AWS SSM (Region: %s, Prefix: %s)\n", os.Getenv("AWS_REGION"), "/chmtwt/prod/")
-	}
-
-	err = viper.Unmarshal(&config)
-	return
+	cfg.AllowedOrigins = trimList(cfg.AllowedOrigins)
+	return cfg, cfg.Validate()
 }
 
-var configLoadedSuccessfully bool
-
-func loadFromSSM() {
-	prefix := "/chmtwt/prod/"
-
-	region := os.Getenv("AWS_REGION")
-	var opts []func(*config.LoadOptions) error
-	if region != "" {
-		opts = append(opts, config.WithRegion(region))
-	}
-
-	cfg, err := config.LoadDefaultConfig(context.TODO(), opts...)
-	if err != nil {
-		fmt.Printf("Error: Unable to initialize AWS SDK: %v (Is AWS_REGION set?)\n", err)
-		return
-	}
-
-	client := ssm.NewFromConfig(cfg)
-	paginator := ssm.NewGetParametersByPathPaginator(client, &ssm.GetParametersByPathInput{
-		Path:           &prefix,
-		WithDecryption: func() *bool { b := true; return &b }(),
-	})
-
-	parameterCount := 0
-	for paginator.HasMorePages() {
-		page, err := paginator.NextPage(context.TODO())
-		if err != nil {
-			fmt.Printf("Error: Failed to fetch parameters from SSM at %s: %v\n", prefix, err)
-			return
+// trimList drops blanks and surrounding spaces ("a, ,b" → [a b]).
+func trimList(items []string) []string {
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		if item = strings.TrimSpace(item); item != "" {
+			out = append(out, item)
 		}
-		for _, p := range page.Parameters {
-			key := strings.TrimPrefix(*p.Name, prefix)
-			val := *p.Value
-			if val == "N/A" || val == "none" {
-				val = ""
-			}
-			viper.Set(key, val)
-			parameterCount++
-		}
-	}
-
-	if parameterCount > 0 {
-		configLoadedSuccessfully = true
-	} else {
-		fmt.Printf("⚠️ Warning: No parameters found in SSM path %s\n", prefix)
-	}
-}
-
-func (c Config) ValidateForRuntime() error {
-	if c.Environment != "production" {
-		return nil
-	}
-
-	if strings.TrimSpace(c.FrontendURL) == "" {
-		return fmt.Errorf("FRONTEND_URL is required in production")
-	}
-	if strings.Contains(strings.ToLower(c.DBSource), "sslmode=disable") {
-		return fmt.Errorf("DATABASE_URL must use sslmode in production")
-	}
-	if strings.TrimSpace(c.GoogleClientID) == "" {
-		return fmt.Errorf("GOOGLE_CLIENT_ID is required in production")
-	}
-	if len(strings.TrimSpace(c.TokenSymmetricKey)) < 32 {
-		return fmt.Errorf("TOKEN_SYMMETRIC_KEY must be at least 32 characters in production")
-	}
-	if strings.TrimSpace(c.S3BucketName) == "" {
-		return fmt.Errorf("S3_BUCKET_NAME is required in production")
-	}
-	if strings.TrimSpace(c.S3Region) == "" {
-		return fmt.Errorf("S3_REGION is required in production")
-	}
-	if strings.TrimSpace(c.CloudFrontDomain) == "" {
-		return fmt.Errorf("CLOUDFRONT_DOMAIN is required in production")
-	}
-
-	return nil
-}
-
-// AllowedOrigins splits the comma-separated FRONTEND_URL into CORS origins.
-func (c Config) AllowedOrigins() []string {
-	return splitList(c.FrontendURL)
-}
-
-func splitList(raw string) []string {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return nil
-	}
-	parts := strings.Split(raw, ",")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		v := strings.TrimSpace(p)
-		if v != "" {
-			out = append(out, v)
-		}
-	}
-	if len(out) == 0 {
-		return nil
 	}
 	return out
+}
+
+func (c Config) Production() bool {
+	return strings.EqualFold(c.Environment, "production")
+}
+
+// Validate rejects settings that are unsafe everywhere, plus anything production can't run without.
+func (c Config) Validate() error {
+	var errs []error
+	if len(c.TokenSymmetricKey) < minTokenKeyLength {
+		errs = append(errs, fmt.Errorf("TOKEN_SYMMETRIC_KEY must be at least %d characters", minTokenKeyLength))
+	}
+
+	if c.Production() {
+		if strings.Contains(strings.ToLower(c.DatabaseURL), "sslmode=disable") {
+			errs = append(errs, errors.New("DATABASE_URL must not disable TLS in production"))
+		}
+		for _, field := range []struct{ name, value string }{
+			{"GOOGLE_CLIENT_ID", c.GoogleClientID},
+			{"S3_BUCKET_NAME", c.S3Bucket},
+			{"CLOUDFRONT_DOMAIN", c.CloudFrontDomain},
+		} {
+			if strings.TrimSpace(field.value) == "" {
+				errs = append(errs, fmt.Errorf("%s is required in production", field.name))
+			}
+		}
+		for _, origin := range c.AllowedOrigins {
+			if strings.Contains(origin, "localhost") {
+				errs = append(errs, fmt.Errorf("ALLOWED_ORIGINS must not include %q in production", origin))
+			}
+		}
+	}
+	return errors.Join(errs...)
 }

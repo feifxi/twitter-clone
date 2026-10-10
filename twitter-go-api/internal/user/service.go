@@ -39,7 +39,7 @@ type UpdateProfileInput struct {
 }
 
 func (s *Service) Get(ctx context.Context, userID int64, viewerID *int64) (domain.User, error) {
-	row, err := s.store.GetUser(ctx, db.GetUserParams{ID: userID, ViewerID: viewerID})
+	row, err := s.getUser(ctx, userID, viewerID)
 	if err != nil {
 		return domain.User{}, err
 	}
@@ -47,7 +47,7 @@ func (s *Service) Get(ctx context.Context, userID int64, viewerID *int64) (domai
 }
 
 func (s *Service) UpdateProfile(ctx context.Context, userID int64, in UpdateProfileInput) (domain.User, error) {
-	existing, err := s.store.GetUser(ctx, db.GetUserParams{ID: userID})
+	existing, err := s.getUser(ctx, userID, nil)
 	if err != nil {
 		return domain.User{}, err
 	}
@@ -130,7 +130,7 @@ func (s *Service) Follow(ctx context.Context, followerID, targetID int64) (bool,
 	if followerID == targetID {
 		return false, apperr.BadRequest("cannot follow yourself")
 	}
-	if _, err := s.store.GetUser(ctx, db.GetUserParams{ID: targetID}); err != nil {
+	if _, err := s.getUser(ctx, targetID, nil); err != nil {
 		return false, err
 	}
 
@@ -149,7 +149,7 @@ func (s *Service) Follow(ctx context.Context, followerID, targetID int64) (bool,
 }
 
 func (s *Service) Unfollow(ctx context.Context, followerID, targetID int64) error {
-	if _, err := s.store.GetUser(ctx, db.GetUserParams{ID: targetID}); err != nil {
+	if _, err := s.getUser(ctx, targetID, nil); err != nil {
 		return err
 	}
 	_, err := s.store.UnfollowUser(ctx, db.UnfollowUserParams{FollowerID: followerID, FollowingID: targetID})
@@ -157,7 +157,7 @@ func (s *Service) Unfollow(ctx context.Context, followerID, targetID int64) erro
 }
 
 func (s *Service) Followers(ctx context.Context, userID int64, page, size int32, viewerID *int64) ([]domain.User, error) {
-	if _, err := s.store.GetUser(ctx, db.GetUserParams{ID: userID, ViewerID: viewerID}); err != nil {
+	if _, err := s.getUser(ctx, userID, viewerID); err != nil {
 		return nil, err
 	}
 
@@ -178,7 +178,7 @@ func (s *Service) Followers(ctx context.Context, userID int64, page, size int32,
 }
 
 func (s *Service) Following(ctx context.Context, userID int64, page, size int32, viewerID *int64) ([]domain.User, error) {
-	if _, err := s.store.GetUser(ctx, db.GetUserParams{ID: userID, ViewerID: viewerID}); err != nil {
+	if _, err := s.getUser(ctx, userID, viewerID); err != nil {
 		return nil, err
 	}
 
@@ -196,4 +196,9 @@ func (s *Service) Following(ctx context.Context, userID int64, page, size int32,
 		users = append(users, domain.NewUser(r.User, r.IsFollowing))
 	}
 	return users, nil
+}
+
+func (s *Service) getUser(ctx context.Context, userID int64, viewerID *int64) (db.GetUserRow, error) {
+	row, err := s.store.GetUser(ctx, db.GetUserParams{ID: userID, ViewerID: viewerID})
+	return row, db.NotFound(err, "user")
 }

@@ -40,7 +40,7 @@ func (s *Server) routes() *gin.Engine {
 		middleware.RateLimiterWithRedis(s.redis, 1, 5, "rl:noroute"), // Strict: 1 req/sec, burst of 5
 		func(c *gin.Context) {
 			// Set flag to skip logging this request in logger.GinMiddleware
-			c.Set("skip_log", true)
+			c.Set(middleware.SkipLogKey, true)
 			c.AbortWithStatusJSON(http.StatusNotFound, gin.H{
 				"error": "route not found",
 			})

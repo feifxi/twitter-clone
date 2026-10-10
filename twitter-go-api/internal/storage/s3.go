@@ -5,13 +5,13 @@ package storage
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/rs/zerolog/log"
 )
 
 const presignExpiry = 10 * time.Minute
@@ -35,7 +35,7 @@ type S3 struct {
 // so the API can still boot locally without AWS credentials.
 func NewS3(ctx context.Context, cfg Config) (*S3, error) {
 	if cfg.Bucket == "" {
-		log.Warn().Msg("S3 bucket is not set — storage operations will fail")
+		slog.WarnContext(ctx, "S3 bucket is not set; storage operations will fail")
 		return &S3{}, nil
 	}
 
@@ -88,7 +88,7 @@ func (s *S3) DeleteObject(ctx context.Context, objectKey string) error {
 		Key:    aws.String(objectKey),
 	})
 	if err != nil {
-		log.Warn().Err(err).Str("key", objectKey).Msg("Failed to delete S3 object")
+		slog.WarnContext(ctx, "failed to delete S3 object", "err", err, "key", objectKey)
 	}
 	return nil
 }
