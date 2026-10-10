@@ -48,7 +48,7 @@ public final class Api {
         String cursor = null;
         for (int i = 0; i < 100; i++) {
             String uri = path + (path.contains("?") ? "&" : "?") + "size=" + size + (cursor == null ? "" : "&cursor=" + cursor);
-            var request = mvc.get().uri(uri);
+            var request = mvc.get().uri(java.net.URI.create(uri)); // already encoded: don't encode twice
             if (viewer != null) {
                 request = request.cookie(viewer.cookie());
             }
