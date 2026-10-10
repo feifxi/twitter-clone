@@ -91,7 +91,7 @@ func (server *Server) logout(ctx *gin.Context) {
 // @Description	Fetch the profile of the currently authenticated user.
 // @Tags			Auth
 // @Produce		json
-// @Success		200		{object}	UserResponse
+// @Success		200		{object}	CurrentUserResponse
 // @Failure		401		{object}	ErrorResponse
 // @Security		BearerAuth
 // @Router			/auth/me [get]
@@ -107,7 +107,7 @@ func (server *Server) getMe(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, newUserResponse(user))
+	ctx.JSON(http.StatusOK, newCurrentUserResponse(user))
 }
 
 type refreshTokenRequest struct {

@@ -3,7 +3,6 @@ export type Role = 'USER' | 'ADMIN';
 export interface UserResponse {
     id: number;
     username: string;
-    email: string;
     displayName: string | null;
     avatarUrl: string | null;
     bannerUrl: string | null;
@@ -11,6 +10,11 @@ export interface UserResponse {
     followersCount: number;
     followingCount: number;
     isFollowing: boolean;
+}
+
+/** The signed-in user's own profile; only this shape includes private fields. */
+export interface CurrentUserResponse extends UserResponse {
+    email: string;
 }
 
 export interface UpdateProfileRequest {

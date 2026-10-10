@@ -8,10 +8,9 @@ import (
 )
 
 type createTweetRequest struct {
-	Content   *string `json:"content" binding:"required_without=MediaKey,omitempty,max=280"`
-	ParentID  *int64  `json:"parentId" binding:"omitempty,min=1"`
-	MediaKey  *string `json:"mediaKey" binding:"omitempty"`
-	MediaType *string `json:"mediaType" binding:"required_with=MediaKey,omitempty,oneof=IMAGE VIDEO"`
+	Content  *string `json:"content" binding:"required_without=MediaKey,omitempty,max=280"`
+	ParentID *int64  `json:"parentId" binding:"omitempty,min=1"`
+	MediaKey *string `json:"mediaKey" binding:"omitempty,max=200"`
 }
 
 // createTweet godoc
@@ -39,11 +38,10 @@ func (server *Server) createTweet(ctx *gin.Context) {
 	}
 
 	input := usecase.CreateTweetInput{
-		UserID:    userID,
-		Content:   req.Content,
-		ParentID:  req.ParentID,
-		MediaKey:  req.MediaKey,
-		MediaType: req.MediaType,
+		UserID:   userID,
+		Content:  req.Content,
+		ParentID: req.ParentID,
+		MediaKey: req.MediaKey,
 	}
 
 	tweet, err := server.tweetUC.CreateTweet(ctx, input)

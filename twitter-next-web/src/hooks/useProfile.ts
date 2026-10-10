@@ -5,6 +5,7 @@ import { axiosInstance } from '@/api/axiosInstance';
 import type { PageResponse, UserResponse, TweetResponse } from '@/types';
 import type { UpdateProfileInput } from '@/lib/validation';
 import { uploadFileWithPresignedUrl } from '@/api/upload';
+import { currentUserQueryKey } from './useCurrentUser';
 
 const userQueryKey = (id: number) => ['users', id] as const;
 export const userFeedQueryKey = (userId: number) => ['feeds', 'user', userId] as const;
@@ -69,7 +70,7 @@ function useUpdateUserCache() {
       if (!old) return old;
       return {
         ...old,
-        followedByMe: isFollowing,
+        isFollowing: isFollowing,
         followersCount: isFollowing ? (old.followersCount + 1) : Math.max(0, old.followersCount - 1),
       };
     });
@@ -79,7 +80,7 @@ function useUpdateUserCache() {
       if (!old) return old;
       return {
         ...old,
-        items: old.items.map(u => u.id === userId ? { ...u, followedByMe: isFollowing } : u)
+        items: old.items.map(u => u.id === userId ? { ...u, isFollowing: isFollowing } : u)
       };
     });
 
@@ -88,7 +89,7 @@ function useUpdateUserCache() {
       if (!old) return old;
       return {
         ...old,
-        items: old.items.map(u => u.id === userId ? { ...u, followedByMe: isFollowing } : u)
+        items: old.items.map(u => u.id === userId ? { ...u, isFollowing: isFollowing } : u)
       };
     });
 
@@ -193,7 +194,7 @@ export function useUpdateProfile() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: userQueryKey(data.id) });
       queryClient.invalidateQueries({ queryKey: ['users', 'byUsername', data.username] });
-      queryClient.setQueryData(['auth', 'user'], data);
+      queryClient.invalidateQueries({ queryKey: currentUserQueryKey });
     },
   });
 }

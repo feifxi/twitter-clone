@@ -14,7 +14,7 @@ definitions:
       refreshToken:
         type: string
       user:
-        $ref: '#/definitions/server.UserResponse'
+        $ref: '#/definitions/server.CurrentUserResponse'
     type: object
   server.ConversationResponse:
     properties:
@@ -25,6 +25,29 @@ definitions:
       peer:
         $ref: '#/definitions/server.UserResponse'
       updatedAt:
+        type: string
+    type: object
+  server.CurrentUserResponse:
+    properties:
+      avatarUrl:
+        type: string
+      bannerUrl:
+        type: string
+      bio:
+        type: string
+      displayName:
+        type: string
+      email:
+        type: string
+      followersCount:
+        type: integer
+      followingCount:
+        type: integer
+      id:
+        type: integer
+      isFollowing:
+        type: boolean
+      username:
         type: string
     type: object
   server.ErrorResponse:
@@ -146,6 +169,13 @@ definitions:
       nextCursor:
         type: string
     type: object
+  server.PresignResponse:
+    properties:
+      objectKey:
+        type: string
+      presignedUrl:
+        type: string
+    type: object
   server.SuccessResponse:
     properties:
       success:
@@ -192,8 +222,6 @@ definitions:
         type: string
       displayName:
         type: string
-      email:
-        type: string
       followersCount:
         type: integer
       followingCount:
@@ -211,11 +239,7 @@ definitions:
         maxLength: 280
         type: string
       mediaKey:
-        type: string
-      mediaType:
-        enum:
-        - IMAGE
-        - VIDEO
+        maxLength: 200
         type: string
       parentId:
         minimum: 1
@@ -235,13 +259,15 @@ definitions:
         type: integer
       contentType:
         type: string
-      filename:
-        type: string
       folder:
+        enum:
+        - tweets
+        - avatars
+        - banners
         type: string
     required:
+    - contentLength
     - contentType
-    - filename
     - folder
     type: object
   server.refreshTokenRequest:
@@ -306,8 +332,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: Interact with the Gemini-powered AI assistant. It provides streaming
-        responses (SSE) and has access to recent tweet context via RAG.
+      description: 'Interact with the Gemini-powered AI assistant. Streams Server-Sent
+        Events: each `data:` line is a JSON `{"text": "..."}` chunk; the stream ends
+        with `event: done`, or `event: error` with `{"message": "..."}`.'
       parameters:
       - description: Chat query and history
         in: body
@@ -393,7 +420,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.UserResponse'
+            $ref: '#/definitions/server.CurrentUserResponse'
         "401":
           description: Unauthorized
           schema:
@@ -1112,7 +1139,7 @@ paths:
       consumes:
       - application/json
       description: Generate a temporary presigned URL to upload a file directly to
-        S3.
+        S3. The upload must use exactly the declared Content-Type and Content-Length.
       parameters:
       - description: Upload request details
         in: body
@@ -1124,11 +1151,13 @@ paths:
       - application/json
       responses:
         "200":
-          description: presignedUrl and objectKey
+          description: OK
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/server.PresignResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/server.ErrorResponse'
         "401":
           description: Unauthorized
           schema:

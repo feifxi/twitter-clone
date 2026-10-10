@@ -55,6 +55,7 @@ export function useInvalidateTweet() {
 
 import { useAuthStore } from '@/store/useAuthStore';
 import { feedQueryKey } from './useFeed';
+import { userFeedQueryKey } from './useProfile';
 import type { InfiniteData } from '@tanstack/react-query';
 
 export function useCreateTweet() {
@@ -63,25 +64,8 @@ export function useCreateTweet() {
 
   return useMutation({
     mutationFn: async ({ content, media, parentId }: TweetRequestInput & { media?: File }) => {
-      let mediaKey: string | undefined;
-      let mediaType: 'IMAGE' | 'VIDEO' | undefined;
-
-      if (media) {
-        mediaKey = await uploadFileWithPresignedUrl(media, 'tweets');
-        // Determine mediaType based on file MIME type
-        if (media.type.startsWith('image/')) {
-          mediaType = 'IMAGE';
-        } else if (media.type.startsWith('video/')) {
-          mediaType = 'VIDEO';
-        }
-      }
-
-      const payload = {
-        content,
-        parentId,
-        mediaKey,
-        mediaType,
-      };
+      const mediaKey = media ? await uploadFileWithPresignedUrl(media, 'tweets') : undefined;
+      const payload = { content, parentId, mediaKey };
 
       const { data } = await axiosInstance.post<TweetResponse>('/tweets', payload);
       return data;
@@ -119,7 +103,7 @@ export function useCreateTweet() {
         prependToFeed(feedQueryKey('following'));
         // Update user's profile feed if viewing their own profile
         if (user) {
-          prependToFeed(['user-feed', user.id]);
+          prependToFeed(userFeedQueryKey(user.id));
         }
       } else {
         // Also update replies if it was a reply

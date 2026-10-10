@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useAuthStore } from '@/store/useAuthStore';
 import { LoadingScreen } from '@/components/ui/LoadingScreen';
 import { axiosInstance } from '@/api/axiosInstance';
-import type { UserResponse } from '@/types';
+import type { CurrentUserResponse } from '@/types';
 
 export function AuthInitializer({ children }: { children: React.ReactNode }) {
   const setInitialized = useAuthStore((s) => s.setInitialized);
@@ -31,7 +31,7 @@ export function AuthInitializer({ children }: { children: React.ReactNode }) {
         if (accessToken) {
             try {
                 // Verify token and get fresh user data
-                const { data } = await axiosInstance.get<UserResponse>('/auth/me');
+                const { data } = await axiosInstance.get<CurrentUserResponse>('/auth/me');
                 setAuth(accessToken, refreshToken!, data);
             } catch (error) {
                 console.error('Auth initialization failed:', error);

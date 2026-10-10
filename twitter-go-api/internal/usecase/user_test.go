@@ -4,30 +4,16 @@ import (
 	"context"
 	"testing"
 
+	"github.com/chanombude/twitter-go-api/internal/apperr"
 	"github.com/chanombude/twitter-go-api/internal/db"
 	"github.com/chanombude/twitter-go-api/internal/usecase"
 )
 
-type mockStorage struct {
-	publicURLFn  func(key string) string
-	deleteFileFn func(ctx context.Context, key string) error
-}
-
-func (m *mockStorage) PublicURL(key string) string {
-	return m.publicURLFn(key)
-}
-func (m *mockStorage) DeleteFile(ctx context.Context, key string) error {
-	return m.deleteFileFn(ctx, key)
-}
-func (m *mockStorage) GeneratePresignedURL(ctx context.Context, filename, contentType, folder string) (string, string, error) {
-	return "", "", nil
-}
-
 func TestUpdateProfile_ClearingFields(t *testing.T) {
 	ctx := context.Background()
 
-	oldAvatar := "https://cdn.com/old_avatar.png"
-	oldBanner := "https://cdn.com/old_banner.png"
+	oldAvatar := fakeStorageBaseURL + "/avatars/1/old.png"
+	oldBanner := "https://lh3.googleusercontent.com/a/banner" // external, must not be deleted
 
 	store := &MockStore{
 		GetUserFn: func(ctx context.Context, arg db.GetUserParams) (db.GetUserRow, error) {
@@ -50,11 +36,7 @@ func TestUpdateProfile_ClearingFields(t *testing.T) {
 		},
 	}
 
-	storage := &mockStorage{
-		deleteFileFn: func(ctx context.Context, key string) error {
-			return nil
-		},
-	}
+	storage := &fakeStorage{}
 
 	uc := usecase.NewUserUsecase(store, storage, nil)
 
@@ -67,6 +49,29 @@ func TestUpdateProfile_ClearingFields(t *testing.T) {
 	_, err := uc.UpdateProfile(ctx, 1, input)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(storage.deleted) != 1 || storage.deleted[0] != "avatars/1/old.png" {
+		t.Fatalf("expected only the hosted avatar to be deleted, got %v", storage.deleted)
+	}
+}
+
+func TestUpdateProfile_RejectsForeignKeys(t *testing.T) {
+	store := &MockStore{
+		GetUserFn: func(ctx context.Context, arg db.GetUserParams) (db.GetUserRow, error) {
+			return db.GetUserRow{User: db.User{ID: arg.ID}}, nil
+		},
+	}
+	uc := usecase.NewUserUsecase(store, &fakeStorage{}, nil)
+
+	for _, input := range []usecase.UpdateProfileInput{
+		{AvatarKey: ptr("avatars/2/x.png")},
+		{AvatarKey: ptr("https://evil.example/pixel.png")},
+		{BannerKey: ptr("avatars/1/x.png")},
+	} {
+		_, err := uc.UpdateProfile(context.Background(), 1, input)
+		if kind, ok := apperr.KindOf(err); !ok || kind != apperr.KindBadRequest {
+			t.Fatalf("expected bad request for %+v, got %v", input, err)
+		}
 	}
 }
 

@@ -152,12 +152,21 @@ export function CreateTweet({
 
         {previewUrl && (
           <div className="relative mt-2 mb-2">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={previewUrl}
-              alt="Media preview"
-              className="rounded-2xl max-h-[300px] object-cover border border-border"
-            />
+            {media?.type.startsWith('video/') ? (
+              <video
+                src={previewUrl}
+                controls
+                playsInline
+                className="rounded-2xl max-h-[300px] border border-border bg-black"
+              />
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={previewUrl}
+                alt="Media preview"
+                className="rounded-2xl max-h-[300px] object-cover border border-border"
+              />
+            )}
             <button
               type="button"
               onClick={clearMedia}
@@ -182,7 +191,7 @@ export function CreateTweet({
               type="file"
               ref={fileInputRef}
               className="hidden"
-              accept="image/*"
+              accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/webm"
               onChange={handleFileChange}
             />
           </div>

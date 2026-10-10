@@ -7,26 +7,30 @@ import (
 	"testing"
 
 	"github.com/chanombude/twitter-go-api/internal/apperr"
+	"github.com/chanombude/twitter-go-api/internal/usecase"
 )
 
 type mockUploadUC struct {
-	generatePresignedURLFn func(ctx context.Context, filename, contentType, folder string, contentLength *int64) (string, string, error)
+	generatePresignedURLFn func(ctx context.Context, userID int64, contentType, folder string, contentLength int64) (usecase.PresignedUpload, error)
 }
 
-func (m *mockUploadUC) GeneratePresignedURL(ctx context.Context, filename, contentType, folder string, contentLength *int64) (string, string, error) {
-	return m.generatePresignedURLFn(ctx, filename, contentType, folder, contentLength)
+func (m *mockUploadUC) GeneratePresignedURL(ctx context.Context, userID int64, contentType, folder string, contentLength int64) (usecase.PresignedUpload, error) {
+	return m.generatePresignedURLFn(ctx, userID, contentType, folder, contentLength)
 }
 
 func TestPresignUpload_Success(t *testing.T) {
 	t.Parallel()
 
 	mock := &mockUploadUC{
-		generatePresignedURLFn: func(_ context.Context, filename, contentType, folder string, contentLength *int64) (string, string, error) {
-			return "http://presigned.url", "banners/uuid_file.png", nil
+		generatePresignedURLFn: func(_ context.Context, userID int64, _, _ string, _ int64) (usecase.PresignedUpload, error) {
+			if userID != 1 {
+				t.Fatalf("expected caller's user id, got %d", userID)
+			}
+			return usecase.PresignedUpload{URL: "http://presigned.url", ObjectKey: "banners/1/file.png"}, nil
 		},
 	}
 
-	reqBody := `{"filename":"banner.png","contentType":"image/png","folder":"banners"}`
+	reqBody := `{"contentType":"image/png","folder":"banners","contentLength":1024}`
 	ctx, rec := newHandlerTestContext(http.MethodPost, "/api/v1/uploads/presign", bytes.NewBufferString(reqBody), "application/json")
 	setAuthorizedUser(ctx, 1)
 
@@ -44,12 +48,12 @@ func TestPresignUpload_UsecaseError(t *testing.T) {
 	t.Parallel()
 
 	mock := &mockUploadUC{
-		generatePresignedURLFn: func(_ context.Context, filename, contentType, folder string, contentLength *int64) (string, string, error) {
-			return "", "", apperr.BadRequest("unsupported folder")
+		generatePresignedURLFn: func(context.Context, int64, string, string, int64) (usecase.PresignedUpload, error) {
+			return usecase.PresignedUpload{}, apperr.BadRequest("file too large")
 		},
 	}
 
-	reqBody := `{"filename":"file.png","contentType":"image/png","folder":"malicious"}`
+	reqBody := `{"contentType":"image/png","folder":"banners","contentLength":999999999}`
 	ctx, rec := newHandlerTestContext(http.MethodPost, "/api/v1/uploads/presign", bytes.NewBufferString(reqBody), "application/json")
 	setAuthorizedUser(ctx, 1)
 
@@ -60,5 +64,24 @@ func TestPresignUpload_UsecaseError(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for bad request from usecase, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestPresignUpload_RequiresContentLengthAndKnownFolder(t *testing.T) {
+	t.Parallel()
+
+	for _, body := range []string{
+		`{"contentType":"image/png","folder":"banners"}`,
+		`{"contentType":"image/png","folder":"malicious","contentLength":10}`,
+	} {
+		ctx, rec := newHandlerTestContext(http.MethodPost, "/api/v1/uploads/presign", bytes.NewBufferString(body), "application/json")
+		setAuthorizedUser(ctx, 1)
+
+		s := &Server{}
+		s.presignUpload(ctx)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 for %s, got %d, body=%s", body, rec.Code, rec.Body.String())
+		}
 	}
 }

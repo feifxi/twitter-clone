@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chanombude/twitter-go-api/internal/apperr"
 	"github.com/chanombude/twitter-go-api/internal/config"
 	"github.com/chanombude/twitter-go-api/internal/db"
 	"github.com/chanombude/twitter-go-api/internal/token"
@@ -45,7 +46,7 @@ func TestAuthUsecase_LoginWithGoogle(t *testing.T) {
 
 		gv := &mockGoogleVerifier{
 			validateFn: func(ctx context.Context, idToken string, audience string) (*idtoken.Payload, error) {
-				return &idtoken.Payload{Claims: map[string]interface{}{"email": email}}, nil
+				return &idtoken.Payload{Claims: map[string]interface{}{"email": email, "email_verified": true}}, nil
 			},
 		}
 
@@ -83,7 +84,7 @@ func TestAuthUsecase_LoginWithGoogle(t *testing.T) {
 
 		gv := &mockGoogleVerifier{
 			validateFn: func(ctx context.Context, idToken string, audience string) (*idtoken.Payload, error) {
-				return &idtoken.Payload{Claims: map[string]interface{}{"email": email, "name": "New User"}}, nil
+				return &idtoken.Payload{Claims: map[string]interface{}{"email": email, "email_verified": true, "name": "New User"}}, nil
 			},
 		}
 
@@ -116,6 +117,21 @@ func TestAuthUsecase_LoginWithGoogle(t *testing.T) {
 		require.NotEmpty(t, res.AccessToken)
 		require.NotEmpty(t, res.RefreshToken)
 	})
+}
+
+func TestAuthUsecase_LoginWithGoogle_RejectsUnverifiedEmail(t *testing.T) {
+	gv := &mockGoogleVerifier{
+		validateFn: func(context.Context, string, string) (*idtoken.Payload, error) {
+			return &idtoken.Payload{Claims: map[string]interface{}{"email": "victim@example.com", "email_verified": false}}, nil
+		},
+	}
+	uc := usecase.NewAuthUsecase(config.Config{}, &MockStore{}, &mockTokenMaker{}, gv)
+
+	_, err := uc.LoginWithGoogle(context.Background(), "id-token")
+
+	kind, ok := apperr.KindOf(err)
+	require.True(t, ok)
+	require.Equal(t, apperr.KindUnauthorized, kind)
 }
 
 func TestAuthUsecase_RefreshSession(t *testing.T) {

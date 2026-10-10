@@ -30,8 +30,8 @@ export function useUnreadCount() {
     return useQuery({
         queryKey: unreadCountQueryKey,
         queryFn: async (): Promise<number> => {
-            const { data } = await axiosInstance.get<number>('/notifications/unread-count');
-            return data;
+            const { data } = await axiosInstance.get<{ count: number }>('/notifications/unread-count');
+            return data.count;
         },
         refetchInterval: 300000, // Poll every 5 minutes as fallback, rely on SSE
         staleTime: 30000,

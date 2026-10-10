@@ -10,8 +10,8 @@ import (
 type UpdateProfileInput struct {
 	Bio         *string
 	DisplayName *string
-	AvatarKey   *string // S3 object key (uploaded elsewhere)
-	BannerKey   *string // S3 object key
+	AvatarKey   *string // nil = unchanged, "" = remove, otherwise a key from a presigned upload
+	BannerKey   *string // same semantics as AvatarKey
 }
 
 func (u *UserUsecase) GetUser(ctx context.Context, targetUserID int64, viewerID *int64) (UserItem, error) {
@@ -24,69 +24,82 @@ func (u *UserUsecase) GetUser(ctx context.Context, targetUserID int64, viewerID 
 }
 
 func (u *UserUsecase) UpdateProfile(ctx context.Context, userID int64, input UpdateProfileInput) (UserItem, error) {
-	existingUser, err := u.store.GetUser(ctx, db.GetUserParams{ID: userID})
+	existing, err := u.store.GetUser(ctx, db.GetUserParams{ID: userID})
+	if err != nil {
+		return UserItem{}, err
+	}
+	current := existing.User
+
+	avatar, err := u.resolveProfileImage(current.AvatarUrl, input.AvatarKey, FolderAvatars, userID)
+	if err != nil {
+		return UserItem{}, err
+	}
+	banner, err := u.resolveProfileImage(current.BannerUrl, input.BannerKey, FolderBanners, userID)
 	if err != nil {
 		return UserItem{}, err
 	}
 
-	newAvatar := existingUser.User.AvatarUrl
-	if input.AvatarKey != nil {
-		if *input.AvatarKey == "" {
-			newAvatar = nil
-		} else {
-			url := u.storage.PublicURL(*input.AvatarKey)
-			newAvatar = &url
-		}
-	}
-
-	newBanner := existingUser.User.BannerUrl
-	if input.BannerKey != nil {
-		if *input.BannerKey == "" {
-			newBanner = nil
-		} else {
-			url := u.storage.PublicURL(*input.BannerKey)
-			newBanner = &url
-		}
-	}
-
-	bio := existingUser.User.Bio
+	bio := current.Bio
 	if input.Bio != nil {
 		bio = input.Bio
 	}
-
-	displayName := existingUser.User.DisplayName
+	displayName := current.DisplayName
 	if input.DisplayName != nil {
 		displayName = input.DisplayName
 	}
 
-	updatedUser, err := u.store.UpdateUserProfile(ctx, db.UpdateUserProfileParams{
+	updated, err := u.store.UpdateUserProfile(ctx, db.UpdateUserProfileParams{
 		ID:          userID,
 		Bio:         bio,
 		DisplayName: displayName,
-		AvatarUrl:   newAvatar,
-		BannerUrl:   newBanner,
+		AvatarUrl:   avatar,
+		BannerUrl:   banner,
 	})
 	if err != nil {
-		if input.AvatarKey != nil {
-			_ = u.storage.DeleteFile(ctx, *input.AvatarKey)
-		}
-		if input.BannerKey != nil {
-			_ = u.storage.DeleteFile(ctx, *input.BannerKey)
-		}
+		u.deleteNewUploads(ctx, input.AvatarKey, input.BannerKey)
 		return UserItem{}, err
 	}
 
-	// Clean up old avatar if we just replaced it
-	if input.AvatarKey != nil && existingUser.User.AvatarUrl != nil {
-		_ = u.storage.DeleteFile(ctx, *existingUser.User.AvatarUrl)
+	if input.AvatarKey != nil {
+		u.deleteHostedURL(ctx, current.AvatarUrl)
+	}
+	if input.BannerKey != nil {
+		u.deleteHostedURL(ctx, current.BannerUrl)
 	}
 
-	// Clean up old banner if we just replaced it
-	if input.BannerKey != nil && existingUser.User.BannerUrl != nil {
-		_ = u.storage.DeleteFile(ctx, *existingUser.User.BannerUrl)
-	}
+	return newUserItemFromDB(updated, false), nil
+}
 
-	return newUserItemFromDB(updatedUser, false), nil
+func (u *UserUsecase) resolveProfileImage(current, key *string, folder string, userID int64) (*string, error) {
+	if key == nil {
+		return current, nil
+	}
+	if *key == "" {
+		return nil, nil
+	}
+	if err := validateOwnedKey(*key, folder, userID); err != nil {
+		return nil, err
+	}
+	url := u.storage.PublicURL(*key)
+	return &url, nil
+}
+
+func (u *UserUsecase) deleteNewUploads(ctx context.Context, keys ...*string) {
+	for _, key := range keys {
+		if key != nil && *key != "" {
+			_ = u.storage.DeleteObject(ctx, *key)
+		}
+	}
+}
+
+// deleteHostedURL only removes objects in our bucket; external URLs (e.g. Google avatars) are left alone.
+func (u *UserUsecase) deleteHostedURL(ctx context.Context, url *string) {
+	if url == nil {
+		return
+	}
+	if key, ok := u.storage.KeyFromPublicURL(*url); ok {
+		_ = u.storage.DeleteObject(ctx, key)
+	}
 }
 
 func (u *UserUsecase) FollowUser(ctx context.Context, followerID, targetUserID int64) (bool, error) {
@@ -109,9 +122,9 @@ func (u *UserUsecase) FollowUser(ctx context.Context, followerID, targetUserID i
 		}
 
 		if inserted {
-			pendingNotification, _ = createNotification(ctx, q, targetUser.User.ID, followerID, nil, NotifTypeFollow)
+			pendingNotification, err = createNotification(ctx, q, targetUser.User.ID, followerID, nil, NotifTypeFollow)
 		}
-		return nil
+		return err
 	}, func() {
 		if pendingNotification.ID != 0 {
 			dispatchNotification(u.publishNotification, pendingNotification)

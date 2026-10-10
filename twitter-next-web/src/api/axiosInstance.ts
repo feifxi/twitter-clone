@@ -1,7 +1,7 @@
 import axios, { type AxiosError } from 'axios';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useUIStore } from '@/store/useUIStore';
-import type { ErrorResponse, FieldErrors, UserResponse } from '@/types';
+import type { AuthResponse, ErrorResponse, FieldErrors } from '@/types';
 
 const baseURL = process.env.NEXT_PUBLIC_API_URL;
 
@@ -42,7 +42,7 @@ axiosInstance.interceptors.response.use(
           throw new Error('No refresh token available');
         }
 
-        const { data } = await axios.post<{ accessToken: string; refreshToken: string; user: UserResponse }>(
+        const { data } = await axios.post<AuthResponse>(
           `${baseURL}/auth/refresh`,
           { refreshToken }
         );

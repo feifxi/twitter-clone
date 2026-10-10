@@ -30,7 +30,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Interact with the Gemini-powered AI assistant. It provides streaming responses (SSE) and has access to recent tweet context via RAG.",
+                "description": "Interact with the Gemini-powered AI assistant. Streams Server-Sent Events: each ` + "`" + `data:` + "`" + ` line is a JSON ` + "`" + `{\"text\": \"...\"}` + "`" + ` chunk; the stream ends with ` + "`" + `event: done` + "`" + `, or ` + "`" + `event: error` + "`" + ` with ` + "`" + `{\"message\": \"...\"}` + "`" + `.",
                 "consumes": [
                     "application/json"
                 ],
@@ -171,7 +171,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.UserResponse"
+                            "$ref": "#/definitions/server.CurrentUserResponse"
                         }
                     },
                     "401": {
@@ -1281,7 +1281,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Generate a temporary presigned URL to upload a file directly to S3.",
+                "description": "Generate a temporary presigned URL to upload a file directly to S3. The upload must use exactly the declared Content-Type and Content-Length.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1305,12 +1305,15 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "presignedUrl and objectKey",
+                        "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/server.PresignResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/server.ErrorResponse"
                         }
                     },
                     "401": {
@@ -1594,7 +1597,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "user": {
-                    "$ref": "#/definitions/server.UserResponse"
+                    "$ref": "#/definitions/server.CurrentUserResponse"
                 }
             }
         },
@@ -1611,6 +1614,41 @@ const docTemplate = `{
                     "$ref": "#/definitions/server.UserResponse"
                 },
                 "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "server.CurrentUserResponse": {
+            "type": "object",
+            "properties": {
+                "avatarUrl": {
+                    "type": "string"
+                },
+                "bannerUrl": {
+                    "type": "string"
+                },
+                "bio": {
+                    "type": "string"
+                },
+                "displayName": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "followersCount": {
+                    "type": "integer"
+                },
+                "followingCount": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "isFollowing": {
+                    "type": "boolean"
+                },
+                "username": {
                     "type": "string"
                 }
             }
@@ -1798,6 +1836,17 @@ const docTemplate = `{
                 }
             }
         },
+        "server.PresignResponse": {
+            "type": "object",
+            "properties": {
+                "objectKey": {
+                    "type": "string"
+                },
+                "presignedUrl": {
+                    "type": "string"
+                }
+            }
+        },
         "server.SuccessResponse": {
             "type": "object",
             "properties": {
@@ -1868,9 +1917,6 @@ const docTemplate = `{
                 "displayName": {
                     "type": "string"
                 },
-                "email": {
-                    "type": "string"
-                },
                 "followersCount": {
                     "type": "integer"
                 },
@@ -1896,14 +1942,8 @@ const docTemplate = `{
                     "maxLength": 280
                 },
                 "mediaKey": {
-                    "type": "string"
-                },
-                "mediaType": {
                     "type": "string",
-                    "enum": [
-                        "IMAGE",
-                        "VIDEO"
-                    ]
+                    "maxLength": 200
                 },
                 "parentId": {
                     "type": "integer",
@@ -1925,8 +1965,8 @@ const docTemplate = `{
         "server.presignRequest": {
             "type": "object",
             "required": [
+                "contentLength",
                 "contentType",
-                "filename",
                 "folder"
             ],
             "properties": {
@@ -1937,11 +1977,13 @@ const docTemplate = `{
                 "contentType": {
                     "type": "string"
                 },
-                "filename": {
-                    "type": "string"
-                },
                 "folder": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                        "tweets",
+                        "avatars",
+                        "banners"
+                    ]
                 }
             }
         },

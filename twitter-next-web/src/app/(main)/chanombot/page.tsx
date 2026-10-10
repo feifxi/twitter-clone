@@ -35,6 +35,16 @@ const INITIAL_MESSAGES: Message[] = [
   },
 ];
 
+function parseSSEFrame(frame: string): { event: string; data: string | null } {
+  let event = "message";
+  let data: string | null = null;
+  for (const line of frame.split("\n")) {
+    if (line.startsWith("event: ")) event = line.slice(7);
+    else if (line.startsWith("data: ")) data = line.slice(6);
+  }
+  return { event, data };
+}
+
 export default function ChanomBotPage() {
   const { user, isLoggedIn, accessToken } = useAuth();
   const { openSignInModal } = useUIStore();
@@ -123,19 +133,18 @@ export default function ChanomBotPage() {
         done = doneReading;
         sseBuffer += decoder.decode(value, { stream: !done });
 
-        // Parse SSE frames: each frame is "data: <content>\n\n"
+        // Each frame is "[event: <name>\n]data: <json>\n\n"; keep the trailing partial frame.
         const frames = sseBuffer.split("\n\n");
-        // Keep the last incomplete frame in the buffer
         sseBuffer = frames.pop() || "";
 
         for (const frame of frames) {
-          for (const line of frame.split("\n")) {
-            if (line.startsWith("event: error")) {
-              continue;
-            }
-            if (line.startsWith("data: ")) {
-              accumulatedContent += line.slice(6);
-            }
+          const { event, data } = parseSSEFrame(frame);
+          if (data === null) continue;
+          if (event === "error") {
+            throw new Error((JSON.parse(data) as { message: string }).message);
+          }
+          if (event === "message") {
+            accumulatedContent += (JSON.parse(data) as { text: string }).text;
           }
         }
 

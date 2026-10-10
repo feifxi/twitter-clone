@@ -3,40 +3,42 @@ package service
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/chanombude/twitter-go-api/internal/config"
-	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 )
 
 const presignExpiry = 10 * time.Minute
 
-// StorageService abstracts file storage operations.
+// StorageService abstracts object storage. Callers own the object key layout and
+// must validate keys before passing them in; this layer trusts its inputs.
 type StorageService interface {
-	// GeneratePresignedURL returns a presigned PUT URL and the resulting object key.
-	GeneratePresignedURL(ctx context.Context, filename, contentType, folder string) (presignedURL, objectKey string, err error)
-	// DeleteFile removes an object by its key.
-	DeleteFile(ctx context.Context, objectKey string) error
-	// PublicURL returns the CDN URL for a given object key.
+	// PresignUpload returns a PUT URL. contentType and contentLength are signed,
+	// so the client must upload exactly that type and size.
+	PresignUpload(ctx context.Context, objectKey, contentType string, contentLength int64) (string, error)
+	DeleteObject(ctx context.Context, objectKey string) error
 	PublicURL(objectKey string) string
+	// KeyFromPublicURL reverses PublicURL. It returns false for URLs we don't host
+	// (e.g. a Google profile picture), which must never be deleted.
+	KeyFromPublicURL(url string) (string, bool)
 }
 
 type S3StorageService struct {
 	client     *s3.Client
 	presigner  *s3.PresignClient
 	bucketName string
-	cdnDomain  string
+	baseURL    string
 }
 
 func NewS3StorageService(cfg config.Config) (StorageService, error) {
 	if cfg.S3BucketName == "" {
 		log.Warn().Msg("S3_BUCKET_NAME is not set — storage operations will fail")
-		return &S3StorageService{bucketName: ""}, nil
+		return &S3StorageService{}, nil
 	}
 
 	region := cfg.S3Region
@@ -44,51 +46,51 @@ func NewS3StorageService(cfg config.Config) (StorageService, error) {
 		region = "ap-southeast-1"
 	}
 
-	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background(),
-		awsconfig.WithRegion(region),
-	)
+	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background(), awsconfig.WithRegion(region))
 	if err != nil {
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
-	client := s3.NewFromConfig(awsCfg)
+	baseURL := fmt.Sprintf("https://%s.s3.%s.amazonaws.com", cfg.S3BucketName, region)
+	if cdn := strings.TrimRight(cfg.CloudFrontDomain, "/"); cdn != "" {
+		baseURL = "https://" + cdn
+	}
 
+	client := s3.NewFromConfig(awsCfg)
 	return &S3StorageService{
 		client:     client,
 		presigner:  s3.NewPresignClient(client),
 		bucketName: cfg.S3BucketName,
-		cdnDomain:  strings.TrimRight(cfg.CloudFrontDomain, "/"),
+		baseURL:    baseURL,
 	}, nil
 }
 
-func (s *S3StorageService) GeneratePresignedURL(ctx context.Context, filename, contentType, folder string) (string, string, error) {
+func (s *S3StorageService) PresignUpload(ctx context.Context, objectKey, contentType string, contentLength int64) (string, error) {
 	if s.client == nil {
-		return "", "", fmt.Errorf("S3 storage client is not configured")
+		return "", fmt.Errorf("S3 storage client is not configured")
 	}
-
-	objectKey := fmt.Sprintf("%s/%s_%s", folder, uuid.New().String(), filename)
 
 	out, err := s.presigner.PresignPutObject(ctx, &s3.PutObjectInput{
-		Bucket:      &s.bucketName,
-		Key:         &objectKey,
-		ContentType: &contentType,
+		Bucket:        aws.String(s.bucketName),
+		Key:           aws.String(objectKey),
+		ContentType:   aws.String(contentType),
+		ContentLength: aws.Int64(contentLength),
 	}, s3.WithPresignExpires(presignExpiry))
 	if err != nil {
-		return "", "", fmt.Errorf("failed to generate presigned URL: %w", err)
+		return "", fmt.Errorf("failed to generate presigned URL: %w", err)
 	}
-
-	return out.URL, objectKey, nil
+	return out.URL, nil
 }
 
-func (s *S3StorageService) DeleteFile(ctx context.Context, objectKey string) error {
-	objectKey = s.normalizeKey(objectKey)
+// DeleteObject is best-effort: a leaked object is cheaper than failing the user's request.
+func (s *S3StorageService) DeleteObject(ctx context.Context, objectKey string) error {
 	if s.client == nil || objectKey == "" {
 		return nil
 	}
 
 	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
-		Bucket: &s.bucketName,
-		Key:    &objectKey,
+		Bucket: aws.String(s.bucketName),
+		Key:    aws.String(objectKey),
 	})
 	if err != nil {
 		log.Warn().Err(err).Str("key", objectKey).Msg("Failed to delete S3 object")
@@ -97,35 +99,19 @@ func (s *S3StorageService) DeleteFile(ctx context.Context, objectKey string) err
 }
 
 func (s *S3StorageService) PublicURL(objectKey string) string {
-	if objectKey == "" {
-		return ""
-	}
-	if strings.HasPrefix(objectKey, "http://") || strings.HasPrefix(objectKey, "https://") {
+	if s.baseURL == "" {
 		return objectKey
 	}
-	if s.cdnDomain == "" {
-		return objectKey
-	}
-	return fmt.Sprintf("https://%s/%s", s.cdnDomain, objectKey)
+	return s.baseURL + "/" + objectKey
 }
 
-func (s *S3StorageService) normalizeKey(value string) string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return ""
+func (s *S3StorageService) KeyFromPublicURL(url string) (string, bool) {
+	if s.baseURL == "" {
+		return "", false
 	}
-
-	if strings.HasPrefix(value, "http://") || strings.HasPrefix(value, "https://") {
-		parsed, err := url.Parse(value)
-		if err == nil {
-			path := strings.TrimPrefix(parsed.Path, "/")
-			return path
-		}
+	key, ok := strings.CutPrefix(url, s.baseURL+"/")
+	if !ok || key == "" {
+		return "", false
 	}
-
-	if s.cdnDomain != "" && strings.HasPrefix(value, s.cdnDomain+"/") {
-		return strings.TrimPrefix(value, s.cdnDomain+"/")
-	}
-
-	return strings.TrimPrefix(value, "/")
+	return key, true
 }

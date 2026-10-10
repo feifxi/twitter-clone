@@ -12,23 +12,32 @@ import (
 type ErrorResponse = apperr.ErrorResponse
 
 type AuthResponse struct {
-	AccessToken  string       `json:"accessToken"`
-	RefreshToken string       `json:"refreshToken"`
-	User         UserResponse `json:"user"`
+	AccessToken  string              `json:"accessToken"`
+	RefreshToken string              `json:"refreshToken"`
+	User         CurrentUserResponse `json:"user"`
 }
 
 func newAuthResponse(accessToken, refreshToken string, user usecase.UserItem) AuthResponse {
 	return AuthResponse{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
-		User:         newUserResponse(user),
+		User:         newCurrentUserResponse(user),
 	}
+}
+
+// CurrentUserResponse is the authenticated user's own profile, including private fields.
+type CurrentUserResponse struct {
+	UserResponse
+	Email string `json:"email"`
+}
+
+func newCurrentUserResponse(user usecase.UserItem) CurrentUserResponse {
+	return CurrentUserResponse{UserResponse: newUserResponse(user), Email: user.Email}
 }
 
 type UserResponse struct {
 	ID             int64   `json:"id"`
 	Username       string  `json:"username"`
-	Email          string  `json:"email"`
 	DisplayName    *string `json:"displayName"`
 	Bio            *string `json:"bio"`
 	AvatarUrl      *string `json:"avatarUrl"`
@@ -42,7 +51,6 @@ func newUserResponse(user usecase.UserItem) UserResponse {
 	return UserResponse{
 		ID:             user.ID,
 		Username:       user.Username,
-		Email:          user.Email,
 		DisplayName:    user.DisplayName,
 		Bio:            user.Bio,
 		AvatarUrl:      user.AvatarUrl,

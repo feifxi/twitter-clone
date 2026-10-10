@@ -15,7 +15,6 @@ export async function uploadFileWithPresignedUrl(
   const { data } = await axiosInstance.post<{ presignedUrl: string; objectKey: string }>(
     '/uploads/presign',
     {
-      filename: file.name,
       contentType: file.type,
       folder,
       contentLength: file.size,

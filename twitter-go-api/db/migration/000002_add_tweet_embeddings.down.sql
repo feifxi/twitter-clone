@@ -1,2 +1,0 @@
-DROP TABLE IF EXISTS tweet_embeddings;
-DROP EXTENSION IF EXISTS vector;

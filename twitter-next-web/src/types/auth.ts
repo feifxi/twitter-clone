@@ -1,4 +1,4 @@
-import type { UserResponse } from './user';
+import type { CurrentUserResponse } from './user';
 
 export interface GoogleAuthRequest {
     idToken: string;
@@ -7,5 +7,5 @@ export interface GoogleAuthRequest {
 export interface AuthResponse {
     accessToken: string;
     refreshToken: string;
-    user: UserResponse;
+    user: CurrentUserResponse;
 }

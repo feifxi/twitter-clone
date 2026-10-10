@@ -3,7 +3,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '@/store/useAuthStore';
 import { axiosInstance } from '@/api/axiosInstance';
-import type { UserResponse } from '@/types';
+import type { CurrentUserResponse } from '@/types';
 import { currentUserQueryKey } from './useCurrentUser';
 
 /** Sync store with server on mount when we have a token (e.g. after refresh). */
@@ -13,8 +13,8 @@ export function useAuth() {
 
   const { data: serverUser, isLoading } = useQuery({
     queryKey: [...currentUserQueryKey, accessToken ?? 'none'],
-    queryFn: async (): Promise<UserResponse> => {
-      const { data } = await axiosInstance.get<UserResponse>('/auth/me');
+    queryFn: async (): Promise<CurrentUserResponse> => {
+      const { data } = await axiosInstance.get<CurrentUserResponse>('/auth/me');
       return data;
     },
     enabled: !!accessToken,

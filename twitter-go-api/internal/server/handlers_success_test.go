@@ -98,10 +98,10 @@ func (m *mockAuthUC) GetMe(context.Context, int64) (usecase.UserItem, error) {
 	return usecase.UserItem{}, nil
 }
 
-func TestCreateTweetSuccessPassesMediaKeyAndType(t *testing.T) {
+func TestCreateTweetSuccessPassesMediaKey(t *testing.T) {
 	t.Parallel()
 
-	var gotMediaKey, gotMediaType string
+	var gotMediaKey string
 	called := false
 	mock := &mockTweetUC{
 		createTweetFn: func(_ context.Context, input usecase.CreateTweetInput) (usecase.TweetItem, error) {
@@ -110,9 +110,6 @@ func TestCreateTweetSuccessPassesMediaKeyAndType(t *testing.T) {
 				t.Fatal("expected media key input")
 			}
 			gotMediaKey = *input.MediaKey
-			if input.MediaType != nil {
-				gotMediaType = *input.MediaType
-			}
 			return usecase.TweetItem{
 				ID:        123,
 				Content:   input.Content,
@@ -126,7 +123,7 @@ func TestCreateTweetSuccessPassesMediaKeyAndType(t *testing.T) {
 		},
 	}
 
-	reqBody := `{"content":"hello","mediaKey":"tweets/uuid_photo.png","mediaType":"IMAGE"}`
+	reqBody := `{"content":"hello","mediaKey":"tweets/7/photo.png"}`
 	ctx, rec := newHandlerTestContext(http.MethodPost, "/api/v1/tweets", bytes.NewBufferString(reqBody), "application/json")
 	setAuthorizedUser(ctx, 7)
 
@@ -139,11 +136,8 @@ func TestCreateTweetSuccessPassesMediaKeyAndType(t *testing.T) {
 	if !called {
 		t.Fatal("expected createTweet usecase to be called")
 	}
-	if gotMediaKey != "tweets/uuid_photo.png" {
-		t.Fatalf("expected tweets/uuid_photo.png, got %q", gotMediaKey)
-	}
-	if gotMediaType != "IMAGE" {
-		t.Fatalf("expected IMAGE, got %q", gotMediaType)
+	if gotMediaKey != "tweets/7/photo.png" {
+		t.Fatalf("expected tweets/7/photo.png, got %q", gotMediaKey)
 	}
 	if !strings.Contains(rec.Body.String(), `"id":123`) {
 		t.Fatalf("unexpected response body: %s", rec.Body.String())

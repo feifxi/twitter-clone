@@ -15,6 +15,7 @@ INSERT INTO notifications (
 ) VALUES (
   $1, $2, $3, $4
 )
+ON CONFLICT DO NOTHING
 RETURNING id, recipient_id, actor_id, tweet_id, type, is_read, created_at
 `
 

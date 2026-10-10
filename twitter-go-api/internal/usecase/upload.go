@@ -7,58 +7,46 @@ import (
 	"github.com/chanombude/twitter-go-api/internal/apperr"
 )
 
-var (
-	presignAllowedMIMEs = map[string]bool{
-		"image/jpeg": true,
-		"image/png":  true,
-		"image/gif":  true,
-		"image/webp": true,
-		"video/mp4":  true,
-		"video/webm": true,
-	}
-
-	presignAllowedFolders = map[string]bool{
-		"tweets":  true,
-		"avatars": true,
-		"banners": true,
-	}
-)
-
-func (u *UploadUsecase) GeneratePresignedURL(ctx context.Context, filename, contentType, folder string, contentLength *int64) (string, string, error) {
-	ctype := strings.ToLower(strings.TrimSpace(contentType))
-	if !presignAllowedMIMEs[ctype] {
-		return "", "", apperr.BadRequest("unsupported content type")
-	}
-
-	fldr := strings.ToLower(strings.TrimSpace(folder))
-	if !presignAllowedFolders[fldr] {
-		return "", "", apperr.BadRequest("unsupported folder")
-	}
-
-	if contentLength != nil {
-		maxSize := u.maxUploadSize(fldr)
-		if maxSize > 0 && *contentLength > maxSize {
-			return "", "", apperr.BadRequest("file too large")
-		}
-	}
-
-	presignedURL, objectKey, err := u.storage.GeneratePresignedURL(ctx, filename, ctype, fldr)
-	if err != nil {
-		return "", "", apperr.Internal("failed to generate upload URL", err)
-	}
-
-	return presignedURL, objectKey, nil
+type PresignedUpload struct {
+	URL       string
+	ObjectKey string
 }
 
-func (u *UploadUsecase) maxUploadSize(folder string) int64 {
+func (u *UploadUsecase) GeneratePresignedURL(ctx context.Context, userID int64, contentType, folder string, contentLength int64) (PresignedUpload, error) {
+	ctype := strings.ToLower(strings.TrimSpace(contentType))
+	ext, ok := uploadExtensions[ctype]
+	if !ok {
+		return PresignedUpload{}, apperr.BadRequest("unsupported content type")
+	}
+
+	maxSize, ok := u.maxUploadSize(folder)
+	if !ok {
+		return PresignedUpload{}, apperr.BadRequest("unsupported folder")
+	}
+	if contentLength <= 0 || contentLength > maxSize {
+		return PresignedUpload{}, apperr.BadRequest("file too large")
+	}
+	if folder != FolderTweets && !strings.HasPrefix(ctype, "image/") {
+		return PresignedUpload{}, apperr.BadRequest("profile images must be images")
+	}
+
+	objectKey := newObjectKey(folder, userID, ext)
+	url, err := u.storage.PresignUpload(ctx, objectKey, ctype, contentLength)
+	if err != nil {
+		return PresignedUpload{}, apperr.Internal("failed to generate upload URL", err)
+	}
+	return PresignedUpload{URL: url, ObjectKey: objectKey}, nil
+}
+
+func (u *UploadUsecase) maxUploadSize(folder string) (int64, bool) {
 	switch folder {
-	case "avatars":
-		return u.config.MaxAvatarBytes
-	case "banners":
-		return u.config.MaxBannerBytes
-	case "tweets":
-		return u.config.MaxMediaBytes
+	case FolderAvatars:
+		return u.config.MaxAvatarBytes, true
+	case FolderBanners:
+		return u.config.MaxBannerBytes, true
+	case FolderTweets:
+		return u.config.MaxMediaBytes, true
 	default:
-		return 0
+		return 0, false
 	}
 }

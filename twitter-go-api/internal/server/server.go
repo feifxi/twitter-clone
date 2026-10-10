@@ -62,6 +62,11 @@ func NewServer(config config.Config, store db.Store, redisClient *redis.Client) 
 		return nil, fmt.Errorf("cannot create sqs embedding publisher: %w", err)
 	}
 
+	genaiClient, err := usecase.NewGeminiClient(context.Background(), config.GeminiAPIKey)
+	if err != nil {
+		return nil, fmt.Errorf("cannot create gemini client: %w", err)
+	}
+
 	server := &Server{
 		config:     config,
 		store:      store,
@@ -80,7 +85,7 @@ func NewServer(config config.Config, store db.Store, redisClient *redis.Client) 
 	server.discoveryUC = usecase.NewDiscoveryUsecase(store)
 	server.notifyUC = usecase.NewNotificationUsecase(store)
 	server.messageUC = usecase.NewMessageUsecase(store)
-	server.assistantUC = usecase.NewAssistantUsecase(config, store)
+	server.assistantUC = usecase.NewAssistantUsecase(config, store, genaiClient)
 	server.uploadUC = usecase.NewUploadUsecase(config, storageService)
 
 	server.setupRouter()

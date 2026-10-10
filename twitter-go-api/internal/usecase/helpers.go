@@ -2,10 +2,12 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"regexp"
 	"strings"
 
 	"github.com/chanombude/twitter-go-api/internal/db"
+	"github.com/jackc/pgx/v5"
 )
 
 var hashtagRegex = regexp.MustCompile(`(?i)(?:^|\s)#([a-z0-9_]+)`)
@@ -68,7 +70,12 @@ func createNotification(ctx context.Context, q db.Querier, recipientID, actorID 
 		arg.TweetID = tweetID
 	}
 
-	return q.CreateNotification(ctx, arg)
+	notification, err := q.CreateNotification(ctx, arg)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// Deduped by idx_notifications_dedupe (e.g. like → unlike → like).
+		return db.Notification{}, nil
+	}
+	return notification, err
 }
 
 // dispatchNotification pushes a notification via SSE.

@@ -1,4 +1,5 @@
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE TABLE users (
     id BIGSERIAL PRIMARY KEY,
@@ -105,6 +106,8 @@ CREATE TABLE notifications (
 
 CREATE INDEX idx_notifications_recipient ON notifications(recipient_id, created_at DESC);
 CREATE INDEX idx_notifications_unread ON notifications(recipient_id) WHERE is_read = FALSE;
+-- Re-liking or re-following must not create a second notification for the same event.
+CREATE UNIQUE INDEX idx_notifications_dedupe ON notifications(recipient_id, actor_id, type, tweet_id) NULLS NOT DISTINCT;
 
 CREATE TABLE conversations (
     id BIGSERIAL PRIMARY KEY,
@@ -131,3 +134,12 @@ CREATE TABLE direct_messages (
 
 CREATE INDEX idx_direct_messages_conversation_created ON direct_messages(conversation_id, created_at DESC, id DESC);
 
+CREATE TABLE tweet_embeddings (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tweet_id BIGINT UNIQUE NOT NULL REFERENCES tweets(id) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    embedding vector(768) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_tweet_embeddings_embedding ON tweet_embeddings USING hnsw (embedding vector_cosine_ops);

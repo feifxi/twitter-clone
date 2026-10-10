@@ -7,25 +7,31 @@ import (
 )
 
 type presignRequest struct {
-	Filename      string `json:"filename" binding:"required"`
 	ContentType   string `json:"contentType" binding:"required"`
-	Folder        string `json:"folder" binding:"required"`
-	ContentLength *int64 `json:"contentLength" binding:"omitempty,min=1"`
+	Folder        string `json:"folder" binding:"required,oneof=tweets avatars banners"`
+	ContentLength int64  `json:"contentLength" binding:"required,min=1"`
+}
+
+type PresignResponse struct {
+	PresignedURL string `json:"presignedUrl"`
+	ObjectKey    string `json:"objectKey"`
 }
 
 // presignUpload godoc
 // @Summary		Presign Upload URL
-// @Description	Generate a temporary presigned URL to upload a file directly to S3.
+// @Description	Generate a temporary presigned URL to upload a file directly to S3. The upload must use exactly the declared Content-Type and Content-Length.
 // @Tags			Uploads
 // @Accept			json
 // @Produce		json
 // @Param			request	body			presignRequest	true	"Upload request details"
-// @Success		200		{object}	map[string]string	"presignedUrl and objectKey"
+// @Success		200		{object}	PresignResponse
 // @Security		BearerAuth
+// @Failure		400		{object}	ErrorResponse
 // @Failure		401		{object}	ErrorResponse
 // @Router			/uploads/presign [post]
 func (server *Server) presignUpload(ctx *gin.Context) {
-	if _, ok := mustCurrentUserID(ctx); !ok {
+	userID, ok := mustCurrentUserID(ctx)
+	if !ok {
 		return
 	}
 
@@ -35,14 +41,11 @@ func (server *Server) presignUpload(ctx *gin.Context) {
 		return
 	}
 
-	presignedURL, objectKey, err := server.uploadUC.GeneratePresignedURL(ctx, req.Filename, req.ContentType, req.Folder, req.ContentLength)
+	upload, err := server.uploadUC.GeneratePresignedURL(ctx, userID, req.ContentType, req.Folder, req.ContentLength)
 	if err != nil {
 		writeError(ctx, err)
 		return
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{
-		"presignedUrl": presignedURL,
-		"objectKey":    objectKey,
-	})
+	ctx.JSON(http.StatusOK, PresignResponse{PresignedURL: upload.URL, ObjectKey: upload.ObjectKey})
 }

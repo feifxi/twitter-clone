@@ -193,7 +193,7 @@ export function EditProfileModal({ user, isOpen, onClose }: EditProfileModalProp
                     type="file"
                     ref={bannerInputRef}
                     className="hidden"
-                    accept="image/*"
+                    accept="image/jpeg,image/png,image/gif,image/webp"
                     onChange={handleBannerChange}
                 />
                 {/* Avatar Overlay */}
@@ -211,7 +211,7 @@ export function EditProfileModal({ user, isOpen, onClose }: EditProfileModalProp
                         type="file"
                         ref={fileInputRef}
                         className="hidden"
-                        accept="image/*"
+                        accept="image/jpeg,image/png,image/gif,image/webp"
                         onChange={handleFileChange}
                      />
                 </div>

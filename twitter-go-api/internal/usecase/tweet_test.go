@@ -18,31 +18,8 @@ func (m *mockEmbeddingPublisher) PublishEmbeddingEvent(ctx context.Context, twee
 	return nil
 }
 
-type mockTweetStorageService struct {
-	deleteFileFn func(ctx context.Context, key string) error
-}
-
-func (m *mockTweetStorageService) UploadFile(ctx context.Context, key string, body []byte, contentType string) error {
-	return nil
-}
-
-func (m *mockTweetStorageService) GeneratePresignedURL(ctx context.Context, key string, contentType string, prefix string) (string, string, error) {
-	return "https://test.com/" + key, "file_url", nil
-}
-
-func (m *mockTweetStorageService) PublicURL(key string) string {
-	return "https://test.com/" + key
-}
-
-func (m *mockTweetStorageService) DeleteFile(ctx context.Context, key string) error {
-	if m.deleteFileFn != nil {
-		return m.deleteFileFn(ctx, key)
-	}
-	return nil
-}
-
 func TestTweetUsecase_CreateTweet_Validation(t *testing.T) {
-	uc := usecase.NewTweetUsecase(config.Config{}, &MockStore{}, &mockTweetStorageService{}, &mockEmbeddingPublisher{}, func(n db.Notification) {})
+	uc := usecase.NewTweetUsecase(config.Config{}, &MockStore{}, &fakeStorage{}, &mockEmbeddingPublisher{}, func(n db.Notification) {})
 
 	t.Run("empty_tweet", func(t *testing.T) {
 		_, err := uc.CreateTweet(context.Background(), usecase.CreateTweetInput{
@@ -56,14 +33,45 @@ func TestTweetUsecase_CreateTweet_Validation(t *testing.T) {
 		}
 	})
 
-	t.Run("invalid_media_key", func(t *testing.T) {
-		_, err := uc.CreateTweet(context.Background(), usecase.CreateTweetInput{
-			UserID:   1,
-			MediaKey: ptr("invalid-no-slash"),
+	for name, key := range map[string]string{
+		"no_folder":         "invalid-no-slash",
+		"another_users_key": "tweets/2/0b1c.png",
+		"wrong_folder":      "avatars/1/0b1c.png",
+		"external_url":      "https://evil.example/tweets/1/x.png",
+		"path_traversal":    "tweets/1/../2/x.png",
+		"disallowed_ext":    "tweets/1/x.exe",
+	} {
+		t.Run("rejects_"+name, func(t *testing.T) {
+			_, err := uc.CreateTweet(context.Background(), usecase.CreateTweetInput{
+				UserID:   1,
+				MediaKey: ptr(key),
+			})
+			if kind, ok := apperr.KindOf(err); !ok || kind != apperr.KindBadRequest {
+				t.Fatalf("expected bad request for %q, got %v", key, err)
+			}
 		})
-		if err == nil {
-			t.Fatal("expected error for invalid media format")
+	}
+
+	t.Run("derives_media_type_from_owned_key", func(t *testing.T) {
+		var created db.CreateTweetParams
+		store := &MockStore{
+			CreateTweetFn: func(ctx context.Context, arg db.CreateTweetParams) (db.Tweet, error) {
+				created = arg
+				return db.Tweet{ID: 10, UserID: arg.UserID, MediaUrl: arg.MediaUrl}, nil
+			},
+			GetTweetFn: func(ctx context.Context, arg db.GetTweetParams) (db.GetTweetRow, error) {
+				return db.GetTweetRow{Tweet: db.Tweet{ID: 10, UserID: 1}}, nil
+			},
+			GetUsersByIDsFn: func(ctx context.Context, arg db.GetUsersByIDsParams) ([]db.GetUsersByIDsRow, error) {
+				return []db.GetUsersByIDsRow{{User: db.User{ID: 1}}}, nil
+			},
 		}
+		uc := usecase.NewTweetUsecase(config.Config{}, store, &fakeStorage{}, &mockEmbeddingPublisher{}, func(n db.Notification) {})
+
+		_, err := uc.CreateTweet(context.Background(), usecase.CreateTweetInput{UserID: 1, MediaKey: ptr("tweets/1/clip.mp4")})
+		require.NoError(t, err)
+		require.Equal(t, usecase.MediaTypeVideo, *created.MediaType)
+		require.Equal(t, fakeStorageBaseURL+"/tweets/1/clip.mp4", *created.MediaUrl)
 	})
 
 	t.Run("success_with_hashtags", func(t *testing.T) {
@@ -94,7 +102,7 @@ func TestTweetUsecase_CreateTweet_Validation(t *testing.T) {
 			},
 		}
 
-		ucSuccess := usecase.NewTweetUsecase(config.Config{EnableRAG: false}, successStore, &mockTweetStorageService{}, &mockEmbeddingPublisher{}, func(n db.Notification) {})
+		ucSuccess := usecase.NewTweetUsecase(config.Config{EnableRAG: false}, successStore, &fakeStorage{}, &mockEmbeddingPublisher{}, func(n db.Notification) {})
 
 		tweet, err := ucSuccess.CreateTweet(context.Background(), usecase.CreateTweetInput{
 			UserID:  1,
@@ -121,7 +129,7 @@ func TestTweetUsecase_DeleteTweet(t *testing.T) {
 			},
 		}
 
-		uc := usecase.NewTweetUsecase(config.Config{}, wrongStore, &mockTweetStorageService{}, &mockEmbeddingPublisher{}, func(n db.Notification) {})
+		uc := usecase.NewTweetUsecase(config.Config{}, wrongStore, &fakeStorage{}, &mockEmbeddingPublisher{}, func(n db.Notification) {})
 
 		err := uc.DeleteTweet(context.Background(), 1, 10) // User 1 tries to delete
 		if err == nil {
@@ -133,7 +141,6 @@ func TestTweetUsecase_DeleteTweet(t *testing.T) {
 	})
 
 	t.Run("success_with_media_delete", func(t *testing.T) {
-		mediaDeleted := false
 		decrementCalled := false
 
 		successStore := &MockStore{
@@ -141,7 +148,7 @@ func TestTweetUsecase_DeleteTweet(t *testing.T) {
 				return db.GetTweetRow{Tweet: db.Tweet{ID: 10, UserID: 1}}, nil
 			},
 			ListMediaUrlsInThreadFn: func(ctx context.Context, id int64) ([]*string, error) {
-				return []*string{ptr("https://test.com/img.png")}, nil
+				return []*string{ptr(fakeStorageBaseURL + "/tweets/1/img.png"), ptr("https://elsewhere.example/tweets/2/x.png")}, nil
 			},
 			ListHashtagUsageToDecrementForDeleteRootFn: func(ctx context.Context, id int64) ([]db.ListHashtagUsageToDecrementForDeleteRootRow, error) {
 				return []db.ListHashtagUsageToDecrementForDeleteRootRow{
@@ -162,16 +169,8 @@ func TestTweetUsecase_DeleteTweet(t *testing.T) {
 			},
 		}
 
-		mockStorage := &mockTweetStorageService{
-			deleteFileFn: func(ctx context.Context, key string) error {
-				if key == "https://test.com/img.png" {
-					mediaDeleted = true
-				}
-				return nil
-			},
-		}
-
-		uc := usecase.NewTweetUsecase(config.Config{}, successStore, mockStorage, &mockEmbeddingPublisher{}, func(n db.Notification) {})
+		storage := &fakeStorage{}
+		uc := usecase.NewTweetUsecase(config.Config{}, successStore, storage, &mockEmbeddingPublisher{}, func(n db.Notification) {})
 
 		err := uc.DeleteTweet(context.Background(), 1, 10)
 		if err != nil {
@@ -180,9 +179,8 @@ func TestTweetUsecase_DeleteTweet(t *testing.T) {
 		if !decrementCalled {
 			t.Fatal("expected hashtag decrement to be called")
 		}
-		if !mediaDeleted {
-			t.Fatal("expected media to be deleted from storage")
-		}
+		// The hosted object is deleted; the external URL is never turned into a key.
+		require.Equal(t, []string{"tweets/1/img.png"}, storage.deleted)
 	})
 }
 
@@ -200,7 +198,7 @@ func TestTweetUsecase_Retweet(t *testing.T) {
 			},
 		}
 
-		uc := usecase.NewTweetUsecase(config.Config{}, successStore, &mockTweetStorageService{}, &mockEmbeddingPublisher{}, func(n db.Notification) {})
+		uc := usecase.NewTweetUsecase(config.Config{}, successStore, &fakeStorage{}, &mockEmbeddingPublisher{}, func(n db.Notification) {})
 
 		item, err := uc.Retweet(context.Background(), 2, 10)
 		if err != nil {
@@ -230,7 +228,7 @@ func TestTweetUsecase_Retweet(t *testing.T) {
 			},
 		}
 
-		uc := usecase.NewTweetUsecase(config.Config{}, duplicateStore, &mockTweetStorageService{}, &mockEmbeddingPublisher{}, func(n db.Notification) {})
+		uc := usecase.NewTweetUsecase(config.Config{}, duplicateStore, &fakeStorage{}, &mockEmbeddingPublisher{}, func(n db.Notification) {})
 
 		item, err := uc.Retweet(context.Background(), 2, 10)
 		if err != nil {

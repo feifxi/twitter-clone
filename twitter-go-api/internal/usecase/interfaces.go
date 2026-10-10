@@ -2,13 +2,14 @@ package usecase
 
 import (
 	"context"
+	"iter"
 
 	"github.com/chanombude/twitter-go-api/internal/config"
 	"github.com/chanombude/twitter-go-api/internal/db"
 	"github.com/chanombude/twitter-go-api/internal/service"
 	"github.com/chanombude/twitter-go-api/internal/token"
 	"google.golang.org/api/idtoken"
-	"io"
+	"google.golang.org/genai"
 )
 
 // --- Service Interfaces ---
@@ -72,11 +73,11 @@ type MessageService interface {
 }
 
 type AssistantService interface {
-	Chat(ctx context.Context, input AssistantInput) (io.Reader, error)
+	Chat(ctx context.Context, input AssistantInput) (iter.Seq2[string, error], error)
 }
 
 type UploadService interface {
-	GeneratePresignedURL(ctx context.Context, filename, contentType, folder string, contentLength *int64) (string, string, error)
+	GeneratePresignedURL(ctx context.Context, userID int64, contentType, folder string, contentLength int64) (PresignedUpload, error)
 }
 
 // --- Domain Helper Interfaces ---
@@ -131,6 +132,7 @@ type MessageUsecase struct {
 type AssistantUsecase struct {
 	config config.Config
 	store  db.Store
+	genai  *genai.Client
 }
 
 type UploadUsecase struct {
@@ -202,10 +204,11 @@ func NewMessageUsecase(store db.Store) *MessageUsecase {
 	return &MessageUsecase{store: store}
 }
 
-func NewAssistantUsecase(cfg config.Config, store db.Store) *AssistantUsecase {
+func NewAssistantUsecase(cfg config.Config, store db.Store, genaiClient *genai.Client) *AssistantUsecase {
 	return &AssistantUsecase{
 		config: cfg,
 		store:  store,
+		genai:  genaiClient,
 	}
 }
 

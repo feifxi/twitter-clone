@@ -14,13 +14,15 @@ import (
 const listRelatedTweetsByEmbedding = `-- name: ListRelatedTweetsByEmbedding :many
 SELECT tweet_id, content
 FROM tweet_embeddings
-ORDER BY embedding <-> $1::vector ASC
-LIMIT $2
+WHERE embedding <=> $1::vector < $2::float8
+ORDER BY embedding <=> $1::vector
+LIMIT $3
 `
 
 type ListRelatedTweetsByEmbeddingParams struct {
-	Column1 *pgvector.Vector `json:"column_1"`
-	Limit   int32            `json:"limit"`
+	QueryEmbedding *pgvector.Vector `json:"query_embedding"`
+	MaxDistance    float64          `json:"max_distance"`
+	ResultLimit    int32            `json:"result_limit"`
 }
 
 type ListRelatedTweetsByEmbeddingRow struct {
@@ -28,8 +30,9 @@ type ListRelatedTweetsByEmbeddingRow struct {
 	Content string `json:"content"`
 }
 
+// Uses cosine distance (<=>) to match the vector_cosine_ops HNSW index.
 func (q *Queries) ListRelatedTweetsByEmbedding(ctx context.Context, arg ListRelatedTweetsByEmbeddingParams) ([]ListRelatedTweetsByEmbeddingRow, error) {
-	rows, err := q.db.Query(ctx, listRelatedTweetsByEmbedding, arg.Column1, arg.Limit)
+	rows, err := q.db.Query(ctx, listRelatedTweetsByEmbedding, arg.QueryEmbedding, arg.MaxDistance, arg.ResultLimit)
 	if err != nil {
 		return nil, err
 	}

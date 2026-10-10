@@ -15,8 +15,7 @@ type CreateTweetInput struct {
 	UserID    int64
 	Content   *string
 	ParentID  *int64
-	MediaKey  *string // S3 object key (uploaded elsewhere)
-	MediaType *string // "IMAGE" or "VIDEO"
+	MediaKey  *string // S3 object key from a presigned upload; media type is derived from it
 }
 
 func (u *TweetUsecase) CreateTweet(ctx context.Context, input CreateTweetInput) (TweetItem, error) {
@@ -29,12 +28,13 @@ func (u *TweetUsecase) CreateTweet(ctx context.Context, input CreateTweetInput) 
 	var mediaURL *string
 	var mediaKey string
 	if input.MediaKey != nil && *input.MediaKey != "" {
-		if !strings.Contains(*input.MediaKey, "/") {
-			return TweetItem{}, apperr.BadRequest("invalid media key format")
-		}
-		mediaType = input.MediaType
 		mediaKey = *input.MediaKey
+		if err := validateOwnedKey(mediaKey, FolderTweets, input.UserID); err != nil {
+			return TweetItem{}, err
+		}
+		typ := mediaTypeForKey(mediaKey)
 		publicURL := u.storage.PublicURL(mediaKey)
+		mediaType = &typ
 		mediaURL = &publicURL
 	}
 
@@ -69,9 +69,13 @@ func (u *TweetUsecase) CreateTweet(ctx context.Context, input CreateTweetInput) 
 			}
 
 			parentTweet, err := q.GetTweet(ctx, db.GetTweetParams{ID: *input.ParentID})
-			if err == nil {
-				tweetID := createdTweet.ID
-				pendingNotification, _ = createNotification(ctx, q, parentTweet.Tweet.UserID, input.UserID, &tweetID, NotifTypeReply)
+			if err != nil {
+				return err
+			}
+			tweetID := createdTweet.ID
+			pendingNotification, err = createNotification(ctx, q, parentTweet.Tweet.UserID, input.UserID, &tweetID, NotifTypeReply)
+			if err != nil {
+				return err
 			}
 		}
 
@@ -96,7 +100,7 @@ func (u *TweetUsecase) CreateTweet(ctx context.Context, input CreateTweetInput) 
 	})
 	if err != nil {
 		if mediaKey != "" {
-			_ = u.storage.DeleteFile(ctx, mediaKey)
+			_ = u.storage.DeleteObject(ctx, mediaKey)
 		}
 		return TweetItem{}, err
 	}
@@ -175,14 +179,18 @@ func (u *TweetUsecase) DeleteTweet(ctx context.Context, userID, tweetID int64) e
 		defer cancel()
 		seen := make(map[string]struct{}, len(mediaURLs))
 		for _, url := range mediaURLs {
-			if url == nil || *url == "" {
+			if url == nil {
 				continue
 			}
-			if _, exists := seen[*url]; exists {
+			key, ok := u.storage.KeyFromPublicURL(*url)
+			if !ok {
 				continue
 			}
-			seen[*url] = struct{}{}
-			_ = u.storage.DeleteFile(cleanupCtx, *url)
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+			_ = u.storage.DeleteObject(cleanupCtx, key)
 		}
 	})
 }
@@ -243,9 +251,9 @@ func (u *TweetUsecase) LikeTweet(ctx context.Context, userID, tweetID int64) err
 
 		if liked {
 			id := tweet.Tweet.ID
-			pendingNotification, _ = createNotification(ctx, q, tweet.Tweet.UserID, userID, &id, NotifTypeLike)
+			pendingNotification, err = createNotification(ctx, q, tweet.Tweet.UserID, userID, &id, NotifTypeLike)
 		}
-		return nil
+		return err
 	}, func() {
 		if pendingNotification.ID != 0 {
 			dispatchNotification(u.publishNotification, pendingNotification)
@@ -306,8 +314,8 @@ func (u *TweetUsecase) Retweet(ctx context.Context, userID, tweetID int64) (Twee
 		}
 
 		id := originalTweet.Tweet.ID
-		pendingNotification, _ = createNotification(ctx, q, originalTweet.Tweet.UserID, userID, &id, NotifTypeRetweet)
-		return nil
+		pendingNotification, err = createNotification(ctx, q, originalTweet.Tweet.UserID, userID, &id, NotifTypeRetweet)
+		return err
 	}, func() {
 		if pendingNotification.ID != 0 {
 			dispatchNotification(u.publishNotification, pendingNotification)

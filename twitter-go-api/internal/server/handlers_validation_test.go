@@ -47,14 +47,13 @@ func setAuthorizedUser(ctx *gin.Context, userID int64) {
 func TestCreateTweetRejectsInvalidMediaKey(t *testing.T) {
 	t.Parallel()
 
-	// mediaKey without "/" is invalid format
-	reqBody := `{"content":"hello","mediaKey":"invalid-no-slash","mediaType":"IMAGE"}`
+	reqBody := `{"content":"hello","mediaKey":"invalid-no-slash"}`
 	ctx, rec := newHandlerTestContext(http.MethodPost, "/api/v1/tweets", bytes.NewBufferString(reqBody), "application/json")
 	setAuthorizedUser(ctx, 1)
 
 	mock := &mockTweetUC{
 		createTweetFn: func(_ context.Context, _ usecase.CreateTweetInput) (usecase.TweetItem, error) {
-			return usecase.TweetItem{}, apperr.BadRequest("invalid media key format")
+			return usecase.TweetItem{}, apperr.BadRequest("invalid media key")
 		},
 	}
 	s := &Server{config: config.Config{}, tweetUC: mock}
@@ -63,38 +62,8 @@ func TestCreateTweetRejectsInvalidMediaKey(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "invalid media key format") {
+	if !strings.Contains(rec.Body.String(), "invalid media key") {
 		t.Fatalf("unexpected response body: %s", rec.Body.String())
-	}
-}
-
-func TestCreateTweetRejectsInvalidMediaType(t *testing.T) {
-	t.Parallel()
-
-	reqBody := `{"content":"hello","mediaKey":"tweets/uuid_photo.png","mediaType":"EXECUTABLE"}`
-	ctx, rec := newHandlerTestContext(http.MethodPost, "/api/v1/tweets", bytes.NewBufferString(reqBody), "application/json")
-	setAuthorizedUser(ctx, 1)
-
-	s := &Server{config: config.Config{}}
-	s.createTweet(ctx)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 for invalid mediaType, got %d body=%s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestCreateTweetRejectsMediaKeyWithoutMediaType(t *testing.T) {
-	t.Parallel()
-
-	reqBody := `{"content":"hello","mediaKey":"tweets/uuid_photo.png"}`
-	ctx, rec := newHandlerTestContext(http.MethodPost, "/api/v1/tweets", bytes.NewBufferString(reqBody), "application/json")
-	setAuthorizedUser(ctx, 1)
-
-	s := &Server{config: config.Config{}}
-	s.createTweet(ctx)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 for missing mediaType, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

@@ -42,6 +42,10 @@ func (u *AuthUsecase) LoginWithGoogle(ctx context.Context, idToken string) (Auth
 	if !ok || strings.TrimSpace(email) == "" {
 		return AuthResult{}, apperr.Unauthorized("invalid google token")
 	}
+	// Accounts are keyed by email, so an unverified email would let someone claim another person's account.
+	if verified, _ := payload.Claims["email_verified"].(bool); !verified {
+		return AuthResult{}, apperr.Unauthorized("google email is not verified")
+	}
 
 	name, _ := payload.Claims["name"].(string)
 	picture, _ := payload.Claims["picture"].(string)

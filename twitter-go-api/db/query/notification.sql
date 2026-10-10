@@ -4,6 +4,7 @@ INSERT INTO notifications (
 ) VALUES (
   $1, $2, $3, $4
 )
+ON CONFLICT DO NOTHING
 RETURNING *;
 
 -- name: ListNotifications :many

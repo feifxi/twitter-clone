@@ -248,8 +248,19 @@ export function Tweet({ tweet, disableClick }: TweetProps) {
         {/* Media */}
         {displayTweet.mediaUrl && (
             <div className="rounded-2xl border border-border overflow-hidden mt-2 mb-2 max-h-[500px]">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={displayTweet.mediaUrl} alt="Tweet media" className="w-full max-h-[500px] object-cover text-transparent" />
+                {displayTweet.mediaType === 'VIDEO' ? (
+                  <video
+                    src={displayTweet.mediaUrl}
+                    controls
+                    playsInline
+                    preload="metadata"
+                    onClick={stopProp}
+                    className="w-full max-h-[500px] bg-black"
+                  />
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={displayTweet.mediaUrl} alt="Tweet media" className="w-full max-h-[500px] object-cover text-transparent" />
+                )}
             </div>
         )}
 

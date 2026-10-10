@@ -40,10 +40,9 @@ Base URL: `/api/v1`
 {
   "id": 1,
   "username": "alice",
-  "email": "alice@example.com",
   "displayName": "Alice",
   "bio": "hello",
-  "avatarUrl": "https://d1234.cloudfront.net/avatars/uuid_photo.jpg",
+  "avatarUrl": "https://d1234.cloudfront.net/avatars/1/0b1c....jpg",
   "isFollowing": false,
   "followersCount": 10,
   "followingCount": 20
@@ -138,7 +137,7 @@ Response 200:
 ```
 
 ### GET `/auth/me` (private)
-Response 200: `UserResponse`
+Response 200: `CurrentUserResponse`: `UserResponse` plus `"email"`. Email is never included in public `UserResponse`s; `AuthResponse.user` is also a `CurrentUserResponse`.
 
 ## Uploads
 
@@ -148,20 +147,22 @@ Request a presigned S3 PUT URL. The client then PUTs the file directly to S3.
 Body:
 ```json
 {
-  "filename": "photo.jpg",
   "contentType": "image/jpeg",
-  "folder": "tweets|avatars"
+  "folder": "tweets|avatars|banners",
+  "contentLength": 204800
 }
 ```
 Response 200:
 ```json
 {
-  "presignedUrl": "https://s3.amazonaws.com/...",
-  "objectKey": "tweets/uuid_photo.jpg"
+  "presignedUrl": "https://bucket.s3.amazonaws.com/...",
+  "objectKey": "tweets/42/0b1c4f9e-....jpg"
 }
 ```
 
-Allowed content types: `image/jpeg`, `image/png`, `image/gif`, `image/webp`, `video/mp4`, `video/webm`
+- Allowed content types: `image/jpeg`, `image/png`, `image/gif`, `image/webp`, `video/mp4`, `video/webm` (`avatars`/`banners` accept images only).
+- `contentLength` is required and checked against the folder's size limit. Content type and length are signed into the URL, so the `PUT` must send exactly those `Content-Type` and `Content-Length` values.
+- Object keys are always `{folder}/{userId}/{uuid}{ext}`. Endpoints that accept a key reject keys belonging to another user or folder.
 
 ## Users
 
@@ -174,10 +175,11 @@ Body:
 {
   "displayName": "Alice",
   "bio": "hello world",
-  "avatarKey": "avatars/uuid_photo.jpg"
+  "avatarKey": "avatars/42/0b1c....jpg",
+  "bannerKey": ""
 }
 ```
-- `avatarKey`: S3 object key from the presign endpoint (optional)
+- `avatarKey` / `bannerKey`: omit to keep the current image, `""` to remove it, or an object key from the presign endpoint (must be in `avatars/{yourId}/` or `banners/{yourId}/`).
 
 Response 200: `UserResponse`
 
@@ -189,14 +191,12 @@ Body:
 {
   "content": "tweet text",
   "parentId": 123,
-  "mediaKey": "tweets/uuid_photo.jpg",
-  "mediaType": "IMAGE"
+  "mediaKey": "tweets/42/0b1c....jpg"
 }
 ```
 - `content`: optional (max 280), required when `mediaKey` is not provided
 - `parentId`: optional (reply to tweet)
-- `mediaKey`: S3 object key from the presign endpoint (optional)
-- `mediaType`: required when `mediaKey` is provided, one of `IMAGE` or `VIDEO`
+- `mediaKey`: optional object key from the presign endpoint (must be in `tweets/{yourId}/`). The response's `mediaType` (`IMAGE`/`VIDEO`) is derived from it.
 
 Response 201: `TweetResponse`
 
@@ -348,7 +348,7 @@ Body:
   ]
 }
 ```
-- Stream response over Server-Sent Events (SSE).
-- Events:
-  1. `message` (partial streaming content chunk)
-  2. `error` (if an error occurs connecting to Gemini or processing context)
+- Stream response over Server-Sent Events (SSE). Every `data:` payload is JSON, so newlines in the model output never break framing:
+  1. default event: `data: {"text": "partial chunk"}` (repeated)
+  2. `event: done` with `data: {}` (stream finished)
+  3. `event: error` with `data: {"message": "..."}` (stream aborted)

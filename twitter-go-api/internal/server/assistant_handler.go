@@ -1,17 +1,27 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 
+	"github.com/chanombude/twitter-go-api/internal/middleware"
 	"github.com/chanombude/twitter-go-api/internal/usecase"
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog/log"
 )
+
+type assistantChunk struct {
+	Text string `json:"text"`
+}
+
+type assistantStreamError struct {
+	Message string `json:"message"`
+}
 
 // assistant godoc
 // @Summary		AI Assistant Chat (SSE)
-// @Description	Interact with the Gemini-powered AI assistant. It provides streaming responses (SSE) and has access to recent tweet context via RAG.
+// @Description	Interact with the Gemini-powered AI assistant. Streams Server-Sent Events: each `data:` line is a JSON `{"text": "..."}` chunk; the stream ends with `event: done`, or `event: error` with `{"message": "..."}`.
 // @Tags			Assistant
 // @Accept			json
 // @Produce			text/event-stream
@@ -27,39 +37,40 @@ func (server *Server) assistant(ctx *gin.Context) {
 		return
 	}
 
-	reader, err := server.assistantUC.Chat(ctx.Request.Context(), input)
+	chunks, err := server.assistantUC.Chat(ctx.Request.Context(), input)
 	if err != nil {
 		writeError(ctx, err)
 		return
 	}
 
-	// Set SSE headers before writing status code
 	ctx.Writer.Header().Set("Content-Type", "text/event-stream")
 	ctx.Writer.Header().Set("Cache-Control", "no-cache")
 	ctx.Writer.Header().Set("Connection", "keep-alive")
-	ctx.Writer.Header().Set("X-Accel-Buffering", "no") // Disable nginx/proxy buffering
+	ctx.Writer.Header().Set("X-Accel-Buffering", "no")
 	ctx.Writer.WriteHeader(http.StatusOK)
 	ctx.Writer.Flush()
 
-	buffer := make([]byte, 1024)
-	for {
-		n, readErr := reader.Read(buffer)
-		if n > 0 {
-			// Write proper SSE frame: "data: <chunk>\n\n"
-			chunk := string(buffer[:n])
-			_, _ = fmt.Fprintf(ctx.Writer, "data: %s\n\n", chunk)
-			ctx.Writer.Flush()
+	for text, err := range chunks {
+		if err != nil {
+			log.Error().Err(err).Str("request_id", middleware.GetRequestID(ctx)).Msg("assistant stream failed")
+			writeSSE(ctx, "error", assistantStreamError{Message: "the assistant is unavailable, please try again"})
+			return
 		}
-		if readErr != nil {
-			if readErr != io.EOF {
-				// Send error as SSE event before closing
-				_, _ = fmt.Fprintf(ctx.Writer, "event: error\ndata: %s\n\n", readErr.Error())
-				ctx.Writer.Flush()
-			}
-			break
-		}
+		writeSSE(ctx, "", assistantChunk{Text: text})
 	}
+	writeSSE(ctx, "done", struct{}{})
+}
 
-	// Gracefully close — no trailing writes. This ensures API Gateway
-	// doesn't hit the 29-second idle timeout on a still-open connection.
+// writeSSE JSON-encodes data so newlines in the payload can't break SSE framing.
+func writeSSE(ctx *gin.Context, event string, data any) {
+	payload, err := json.Marshal(data)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to marshal SSE payload")
+		return
+	}
+	if event != "" {
+		_, _ = fmt.Fprintf(ctx.Writer, "event: %s\n", event)
+	}
+	_, _ = fmt.Fprintf(ctx.Writer, "data: %s\n\n", payload)
+	ctx.Writer.Flush()
 }

@@ -4,7 +4,7 @@ Primary backend API for this project.
 
 ## Stack
 
-- Go 1.24+
+- Go 1.26+
 - Gin
 - PostgreSQL
 - sqlc
@@ -25,9 +25,9 @@ Primary backend API for this project.
 ## Media Upload Flow
 
 Media (images/videos) are uploaded directly to S3 via presigned URLs:
-1. Client calls `POST /api/v1/uploads/presign` with `{filename, contentType, folder}`
-2. API returns `{presignedUrl, objectKey}`
-3. Client PUTs the file directly to S3 using the presigned URL
+1. Client calls `POST /api/v1/uploads/presign` with `{contentType, folder, contentLength}`
+2. API returns `{presignedUrl, objectKey}`; the key is `{folder}/{userId}/{uuid}{ext}`
+3. Client PUTs the file directly to S3 using the presigned URL (same `Content-Type`/size; both are signed)
 4. Client includes the `objectKey` when creating a tweet or updating profile
 
 Media is served through CloudFront CDN.
@@ -69,7 +69,7 @@ swag init -g cmd/api/main.go
 
 ### Prerequisites
 
-- Go 1.24+
+- Go 1.26+
 - PostgreSQL
 - Redis
 - sqlc
