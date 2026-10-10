@@ -14,23 +14,23 @@ const (
 
 // RequestID ensures every request has a correlation id and returns it to the client.
 func RequestID() gin.HandlerFunc {
-	return func(ctx *gin.Context) {
-		requestID := strings.TrimSpace(ctx.GetHeader(RequestIDHeader))
+	return func(c *gin.Context) {
+		requestID := strings.TrimSpace(c.GetHeader(RequestIDHeader))
 		if requestID == "" {
 			requestID = uuid.NewString()
 		}
 
-		ctx.Set(RequestIDContextKey, requestID)
-		ctx.Writer.Header().Set(RequestIDHeader, requestID)
-		ctx.Next()
+		c.Set(RequestIDContextKey, requestID)
+		c.Writer.Header().Set(RequestIDHeader, requestID)
+		c.Next()
 	}
 }
 
-func GetRequestID(ctx *gin.Context) string {
-	if ctx == nil {
+func GetRequestID(c *gin.Context) string {
+	if c == nil {
 		return ""
 	}
-	if raw, ok := ctx.Get(RequestIDContextKey); ok {
+	if raw, ok := c.Get(RequestIDContextKey); ok {
 		if v, ok := raw.(string); ok {
 			return v
 		}

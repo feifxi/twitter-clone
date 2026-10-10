@@ -2,7 +2,7 @@ COMPOSE_FILE ?= ../docker-compose.yml
 DB_SERVICE ?= database
 DB_URL ?= postgres://root:rootpass@localhost:5432/twitter_db?sslmode=disable
 
-.PHONY: db-up db-down db-restart db-logs db-ps db-shell db-wait migrateup migratedown sqlc test run
+.PHONY: db-up db-down db-restart db-logs db-ps db-shell db-wait migrateup migratedown sqlc swagger lint test run
 
 db-up:
 	docker compose -f $(COMPOSE_FILE) up -d $(DB_SERVICE)
@@ -28,16 +28,23 @@ db-wait:
 	done
 
 migrateup:
-	migrate -path db/migration -database "$(DB_URL)" -verbose up
+	migrate -path internal/db/migrations -database "$(DB_URL)" -verbose up
 
 migratedown:
-	migrate -path db/migration -database "$(DB_URL)" -verbose down
+	migrate -path internal/db/migrations -database "$(DB_URL)" -verbose down
 
 sqlc:
 	sqlc generate
 
-test:
-	GOCACHE=/tmp/go-build-cache go test -v -cover ./...
+swagger:
+	swag init -g cmd/api/main.go --parseInternal
 
+lint:
+	go vet ./...
+
+test:
+	go test -race -cover ./...
+
+# The API applies embedded migrations on startup; migrateup/migratedown are for manual use.
 run:
-	go run cmd/api/main.go
+	go run ./cmd/api

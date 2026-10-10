@@ -16,11 +16,13 @@ Primary backend API for this project.
 
 ## Architecture
 
-- `handler -> usecase -> db/service`
-- Domain-oriented usecase services with explicit dependencies:
-  - auth, user, tweet, feed, search, discovery, notification, message
-- Shared error transport model in `internal/apperr`
-- DTO/domain mapping separated from generated sqlc models
+Package-by-feature. Dependencies point one way:
+`cmd/api` (wiring) → `httpapi` (Gin handlers, DTOs) → feature packages → `db` / `storage` / `realtime`.
+
+- Each feature package (`auth`, `user`, `tweet`, `feed`, `search`, `discovery`, `notification`, `message`, `assistant`, `media`) exposes a `Service` built with `New(...)` and returns concrete types.
+- Interfaces are declared by their consumer: `httpapi/services.go` for handlers; small private interfaces inside features for storage/notifier dependencies.
+- `domain` holds the read models shared across features (`domain.User`, `domain.Tweet`, …) so features don't import each other in cycles.
+- HTTP DTOs (`httpapi/responses.go`) are separate from domain types; e.g. email is only exposed to its owner.
 
 ## Media Upload Flow
 
@@ -62,7 +64,7 @@ If you modify handler annotations or response structs, you must regenerate the d
 go install github.com/swaggo/swag/cmd/swag@latest
 
 # Regenerate docs
-swag init -g cmd/api/main.go
+make swagger  # swag init -g cmd/api/main.go --parseInternal
 ```
 
 ## Local Setup
@@ -119,12 +121,12 @@ Integration test note:
 
 ## Main Directories
 
-- `cmd/api`: entrypoint
-- `db/migration`: schema migrations
-- `db/query`: sqlc query source
-- `internal/db`: generated sqlc code
-- `internal/server`: HTTP handlers/routes/response mapping
-- `internal/usecase`: business logic services and domain helpers
-- `internal/service`: external integrations (S3 storage)
-- `internal/config`: environment config
-- `internal/token`: JWT logic
+- `cmd/api`: entrypoint (wiring only)
+- `internal/db/migrations`: schema migrations (embedded and applied on startup)
+- `internal/db/queries`: sqlc query source; `internal/db`: generated code + `Store` (transactions); `internal/db/dbtest`: store fake for unit tests
+- `internal/httpapi`: router, handlers, request/response DTOs
+- `internal/<feature>`: business logic per feature (see Architecture)
+- `internal/domain`: shared read models
+- `internal/realtime`: per-user event fan-out (Redis pub/sub across instances)
+- `internal/storage`: S3 presign/delete + public URLs; `internal/embedding`: embedding job publisher
+- `internal/middleware`, `internal/apperr`, `internal/config`, `internal/token`, `internal/logger`

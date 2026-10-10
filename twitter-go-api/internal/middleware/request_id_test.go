@@ -14,11 +14,11 @@ func TestRequestIDMiddlewareGeneratesAndSetsHeader(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(RequestID())
-	r.GET("/ping", func(ctx *gin.Context) {
-		if got := GetRequestID(ctx); got == "" {
+	r.GET("/ping", func(c *gin.Context) {
+		if got := GetRequestID(c); got == "" {
 			t.Fatal("expected request id in context")
 		}
-		ctx.Status(http.StatusOK)
+		c.Status(http.StatusOK)
 	})
 
 	rec := httptest.NewRecorder()
@@ -39,8 +39,8 @@ func TestRequestIDMiddlewareRespectsIncomingHeader(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(RequestID())
-	r.GET("/ping", func(ctx *gin.Context) {
-		ctx.Status(http.StatusOK)
+	r.GET("/ping", func(c *gin.Context) {
+		c.Status(http.StatusOK)
 	})
 
 	rec := httptest.NewRecorder()

@@ -37,8 +37,8 @@ func NewPayload(userID int64, duration time.Duration) (*Payload, error) {
 	return payload, nil
 }
 
-func (payload *Payload) Valid() error {
-	if time.Now().After(payload.ExpiredAt) {
+func (p *Payload) Valid() error {
+	if time.Now().After(p.ExpiredAt) {
 		return ErrExpiredToken
 	}
 	return nil
@@ -60,23 +60,23 @@ func NewJWTMaker(secretKey string) (Maker, error) {
 	return &JWTMaker{secretKey}, nil
 }
 
-func (maker *JWTMaker) CreateToken(userID int64, duration time.Duration) (string, error) {
+func (m *JWTMaker) CreateToken(userID int64, duration time.Duration) (string, error) {
 	payload, err := NewPayload(userID, duration)
 	if err != nil {
 		return "", err
 	}
 
 	jwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, payload)
-	return jwtToken.SignedString([]byte(maker.secretKey))
+	return jwtToken.SignedString([]byte(m.secretKey))
 }
 
-func (maker *JWTMaker) VerifyToken(token string) (*Payload, error) {
+func (m *JWTMaker) VerifyToken(token string) (*Payload, error) {
 	keyFunc := func(token *jwt.Token) (any, error) {
 		_, ok := token.Method.(*jwt.SigningMethodHMAC)
 		if !ok {
 			return nil, ErrInvalidToken
 		}
-		return []byte(maker.secretKey), nil
+		return []byte(m.secretKey), nil
 	}
 
 	jwtToken, err := jwt.ParseWithClaims(token, &Payload{}, keyFunc)

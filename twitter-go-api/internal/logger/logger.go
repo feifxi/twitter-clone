@@ -4,8 +4,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/chanombude/twitter-go-api/internal/middleware"
-	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -20,63 +18,5 @@ func InitLogger(env string) {
 	} else {
 		// Strict JSON for production
 		log.Logger = zerolog.New(os.Stderr).With().Timestamp().Logger()
-	}
-}
-
-// GinMiddleware replaces the default Gin logger with Zerolog.
-func GinMiddleware() gin.HandlerFunc {
-	return func(ctx *gin.Context) {
-		start := time.Now()
-		path := ctx.Request.URL.Path
-		raw := ctx.Request.URL.RawQuery
-
-		// Skip internal health and metrics checks to reduce log noise
-		if path == "/metrics" || path == "/healthz" || path == "/readyz" {
-			ctx.Next()
-			return
-		}
-
-		route := ctx.FullPath()
-		if route == "" {
-			route = path
-		}
-		requestID := middleware.GetRequestID(ctx)
-
-		ctx.Next()
-
-		// Skip logging if a middleware (like NoRoute) has flagged it
-		if skip, _ := ctx.Get("skip_log"); skip == true {
-			return
-		}
-
-		if raw != "" {
-			path = path + "?" + raw
-		}
-
-		duration := time.Since(start)
-		statusCode := ctx.Writer.Status()
-		clientIP := ctx.ClientIP()
-		method := ctx.Request.Method
-		userAgent := ctx.Request.UserAgent()
-		errorMessage := ctx.Errors.ByType(gin.ErrorTypePrivate).String()
-		bodySize := ctx.Writer.Size()
-
-		event := log.Info()
-		if statusCode >= 400 {
-			event = log.Error()
-		}
-
-		event.
-			Int("status", statusCode).
-			Str("method", method).
-			Str("path", path).
-			Str("route", route).
-			Str("request_id", requestID).
-			Str("ip", clientIP).
-			Str("user_agent", userAgent).
-			Dur("duration", duration).
-			Int("body_size", bodySize).
-			Str("error", errorMessage).
-			Msg("HTTP request")
 	}
 }

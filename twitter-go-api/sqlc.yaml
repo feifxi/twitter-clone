@@ -1,8 +1,8 @@
 version: "2"
 sql:
   - engine: "postgresql"
-    queries: "db/query"
-    schema: "db/migration"
+    queries: "internal/db/queries"
+    schema: "internal/db/migrations"
     gen:
       go:
         package: "db"
@@ -12,6 +12,10 @@ sql:
         emit_empty_slices: true
         emit_pointers_for_null_types: true
         emit_interface: true
+        rename:
+          avatar_url: "AvatarURL"
+          banner_url: "BannerURL"
+          media_url: "MediaURL"
         overrides:
           - db_type: "pg_catalog.timestamp"
             go_type:

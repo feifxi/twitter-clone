@@ -16,44 +16,44 @@ const (
 )
 
 func AuthMiddleware(tokenMaker token.Maker) gin.HandlerFunc {
-	return func(ctx *gin.Context) {
-		accessToken, err := resolveAccessToken(ctx)
+	return func(c *gin.Context) {
+		accessToken, err := resolveAccessToken(c)
 		if err != nil {
-			abortWithError(ctx, http.StatusUnauthorized, "UNAUTHORIZED", "authentication required")
+			abortWithError(c, http.StatusUnauthorized, "UNAUTHORIZED", "authentication required")
 			return
 		}
 
 		payload, err := tokenMaker.VerifyToken(accessToken)
 		if err != nil {
-			abortWithError(ctx, http.StatusUnauthorized, "UNAUTHORIZED", "invalid or expired access token")
+			abortWithError(c, http.StatusUnauthorized, "UNAUTHORIZED", "invalid or expired access token")
 			return
 		}
 
-		ctx.Set(AuthorizationPayloadKey, payload)
-		ctx.Next()
+		c.Set(AuthorizationPayloadKey, payload)
+		c.Next()
 	}
 }
 
 // OptionalAuthMiddleware decodes access tokens when present, but never blocks the request.
 func OptionalAuthMiddleware(tokenMaker token.Maker) gin.HandlerFunc {
-	return func(ctx *gin.Context) {
-		accessToken, err := resolveAccessToken(ctx)
+	return func(c *gin.Context) {
+		accessToken, err := resolveAccessToken(c)
 		if err != nil {
-			ctx.Next()
+			c.Next()
 			return
 		}
 
 		payload, err := tokenMaker.VerifyToken(accessToken)
 		if err == nil {
-			ctx.Set(AuthorizationPayloadKey, payload)
+			c.Set(AuthorizationPayloadKey, payload)
 		}
 
-		ctx.Next()
+		c.Next()
 	}
 }
 
-func resolveAccessToken(ctx *gin.Context) (string, error) {
-	authorizationHeader := ctx.GetHeader(authorizationHeaderKey)
+func resolveAccessToken(c *gin.Context) (string, error) {
+	authorizationHeader := c.GetHeader(authorizationHeaderKey)
 	if len(authorizationHeader) == 0 {
 		return "", errors.New("authorization header is not provided")
 	}

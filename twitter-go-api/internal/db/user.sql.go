@@ -23,8 +23,8 @@ type CreateUserParams struct {
 	Email       string  `json:"email"`
 	DisplayName *string `json:"display_name"`
 	Bio         *string `json:"bio"`
-	AvatarUrl   *string `json:"avatar_url"`
-	BannerUrl   *string `json:"banner_url"`
+	AvatarURL   *string `json:"avatar_url"`
+	BannerURL   *string `json:"banner_url"`
 	Role        string  `json:"role"`
 	Provider    string  `json:"provider"`
 }
@@ -35,8 +35,8 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		arg.Email,
 		arg.DisplayName,
 		arg.Bio,
-		arg.AvatarUrl,
-		arg.BannerUrl,
+		arg.AvatarURL,
+		arg.BannerURL,
 		arg.Role,
 		arg.Provider,
 	)
@@ -47,8 +47,8 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.Email,
 		&i.DisplayName,
 		&i.Bio,
-		&i.AvatarUrl,
-		&i.BannerUrl,
+		&i.AvatarURL,
+		&i.BannerURL,
 		&i.Role,
 		&i.Provider,
 		&i.FollowersCount,
@@ -85,8 +85,8 @@ func (q *Queries) GetUser(ctx context.Context, arg GetUserParams) (GetUserRow, e
 		&i.User.Email,
 		&i.User.DisplayName,
 		&i.User.Bio,
-		&i.User.AvatarUrl,
-		&i.User.BannerUrl,
+		&i.User.AvatarURL,
+		&i.User.BannerURL,
 		&i.User.Role,
 		&i.User.Provider,
 		&i.User.FollowersCount,
@@ -112,8 +112,8 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.Email,
 		&i.DisplayName,
 		&i.Bio,
-		&i.AvatarUrl,
-		&i.BannerUrl,
+		&i.AvatarURL,
+		&i.BannerURL,
 		&i.Role,
 		&i.Provider,
 		&i.FollowersCount,
@@ -138,8 +138,8 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 		&i.Email,
 		&i.DisplayName,
 		&i.Bio,
-		&i.AvatarUrl,
-		&i.BannerUrl,
+		&i.AvatarURL,
+		&i.BannerURL,
 		&i.Role,
 		&i.Provider,
 		&i.FollowersCount,
@@ -182,8 +182,8 @@ func (q *Queries) GetUsersByIDs(ctx context.Context, arg GetUsersByIDsParams) ([
 			&i.User.Email,
 			&i.User.DisplayName,
 			&i.User.Bio,
-			&i.User.AvatarUrl,
-			&i.User.BannerUrl,
+			&i.User.AvatarURL,
+			&i.User.BannerURL,
 			&i.User.Role,
 			&i.User.Provider,
 			&i.User.FollowersCount,
@@ -263,8 +263,8 @@ func (q *Queries) ListFollowersUsers(ctx context.Context, arg ListFollowersUsers
 			&i.User.Email,
 			&i.User.DisplayName,
 			&i.User.Bio,
-			&i.User.AvatarUrl,
-			&i.User.BannerUrl,
+			&i.User.AvatarURL,
+			&i.User.BannerURL,
 			&i.User.Role,
 			&i.User.Provider,
 			&i.User.FollowersCount,
@@ -326,8 +326,8 @@ func (q *Queries) ListFollowingUsers(ctx context.Context, arg ListFollowingUsers
 			&i.User.Email,
 			&i.User.DisplayName,
 			&i.User.Bio,
-			&i.User.AvatarUrl,
-			&i.User.BannerUrl,
+			&i.User.AvatarURL,
+			&i.User.BannerURL,
 			&i.User.Role,
 			&i.User.Provider,
 			&i.User.FollowersCount,
@@ -389,8 +389,8 @@ func (q *Queries) ListSuggestedUsers(ctx context.Context, arg ListSuggestedUsers
 			&i.User.Email,
 			&i.User.DisplayName,
 			&i.User.Bio,
-			&i.User.AvatarUrl,
-			&i.User.BannerUrl,
+			&i.User.AvatarURL,
+			&i.User.BannerURL,
 			&i.User.Role,
 			&i.User.Provider,
 			&i.User.FollowersCount,
@@ -436,8 +436,8 @@ func (q *Queries) ListTopUsers(ctx context.Context, arg ListTopUsersParams) ([]U
 			&i.Email,
 			&i.DisplayName,
 			&i.Bio,
-			&i.AvatarUrl,
-			&i.BannerUrl,
+			&i.AvatarURL,
+			&i.BannerURL,
 			&i.Role,
 			&i.Provider,
 			&i.FollowersCount,
@@ -498,8 +498,8 @@ func (q *Queries) SearchUsers(ctx context.Context, arg SearchUsersParams) ([]Sea
 			&i.User.Email,
 			&i.User.DisplayName,
 			&i.User.Bio,
-			&i.User.AvatarUrl,
-			&i.User.BannerUrl,
+			&i.User.AvatarURL,
+			&i.User.BannerURL,
 			&i.User.Role,
 			&i.User.Provider,
 			&i.User.FollowersCount,
@@ -534,8 +534,8 @@ type UpdateUserProfileParams struct {
 	ID          int64   `json:"id"`
 	Bio         *string `json:"bio"`
 	DisplayName *string `json:"display_name"`
-	AvatarUrl   *string `json:"avatar_url"`
-	BannerUrl   *string `json:"banner_url"`
+	AvatarURL   *string `json:"avatar_url"`
+	BannerURL   *string `json:"banner_url"`
 }
 
 func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error) {
@@ -543,8 +543,8 @@ func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfilePa
 		arg.ID,
 		arg.Bio,
 		arg.DisplayName,
-		arg.AvatarUrl,
-		arg.BannerUrl,
+		arg.AvatarURL,
+		arg.BannerURL,
 	)
 	var i User
 	err := row.Scan(
@@ -553,8 +553,8 @@ func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfilePa
 		&i.Email,
 		&i.DisplayName,
 		&i.Bio,
-		&i.AvatarUrl,
-		&i.BannerUrl,
+		&i.AvatarURL,
+		&i.BannerURL,
 		&i.Role,
 		&i.Provider,
 		&i.FollowersCount,

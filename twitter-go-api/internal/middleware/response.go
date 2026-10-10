@@ -5,10 +5,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func abortWithError(ctx *gin.Context, status int, code, message string) {
-	ctx.AbortWithStatusJSON(status, apperr.ErrorResponse{
+func abortWithError(c *gin.Context, status int, code, message string) {
+	c.AbortWithStatusJSON(status, apperr.ErrorResponse{
 		Code:      code,
 		Message:   message,
-		RequestID: GetRequestID(ctx),
+		RequestID: GetRequestID(c),
 	})
 }

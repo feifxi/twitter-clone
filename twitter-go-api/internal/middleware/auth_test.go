@@ -16,14 +16,13 @@ func newTestContext() *gin.Context {
 	return c
 }
 
-
 func TestResolveAccessTokenFromHeader(t *testing.T) {
 	t.Parallel()
 
-	ctx := newTestContext()
-	ctx.Request.Header.Set("Authorization", "Bearer header-token")
+	c := newTestContext()
+	c.Request.Header.Set("Authorization", "Bearer header-token")
 
-	got, err := resolveAccessToken(ctx)
+	got, err := resolveAccessToken(c)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -35,10 +34,10 @@ func TestResolveAccessTokenFromHeader(t *testing.T) {
 func TestResolveAccessTokenInvalidHeader(t *testing.T) {
 	t.Parallel()
 
-	ctx := newTestContext()
-	ctx.Request.Header.Set("Authorization", "Token invalid")
+	c := newTestContext()
+	c.Request.Header.Set("Authorization", "Token invalid")
 
-	if _, err := resolveAccessToken(ctx); err == nil {
+	if _, err := resolveAccessToken(c); err == nil {
 		t.Fatal("expected invalid header error")
 	}
 }

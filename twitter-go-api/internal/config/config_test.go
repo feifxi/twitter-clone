@@ -25,7 +25,7 @@ func TestValidateForRuntime_ProductionRejectsInsecureDB(t *testing.T) {
 	cfg := Config{
 		Environment: "production",
 		FrontendURL: "https://example.com",
-		DBSource:       "postgresql://host/db?sslmode=disable",
+		DBSource:    "postgresql://host/db?sslmode=disable",
 	}
 	if err := cfg.ValidateForRuntime(); err == nil {
 		t.Fatal("expected error when DB uses sslmode=disable in production")

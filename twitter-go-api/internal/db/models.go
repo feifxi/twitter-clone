@@ -68,7 +68,7 @@ type Tweet struct {
 	UserID       int64       `json:"user_id"`
 	Content      *string     `json:"content"`
 	MediaType    *string     `json:"media_type"`
-	MediaUrl     *string     `json:"media_url"`
+	MediaURL     *string     `json:"media_url"`
 	ParentID     *int64      `json:"parent_id"`
 	RetweetID    *int64      `json:"retweet_id"`
 	ReplyCount   int32       `json:"reply_count"`
@@ -104,8 +104,8 @@ type User struct {
 	Email          string    `json:"email"`
 	DisplayName    *string   `json:"display_name"`
 	Bio            *string   `json:"bio"`
-	AvatarUrl      *string   `json:"avatar_url"`
-	BannerUrl      *string   `json:"banner_url"`
+	AvatarURL      *string   `json:"avatar_url"`
+	BannerURL      *string   `json:"banner_url"`
 	Role           string    `json:"role"`
 	Provider       string    `json:"provider"`
 	FollowersCount int32     `json:"followers_count"`

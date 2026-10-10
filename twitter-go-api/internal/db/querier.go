@@ -51,7 +51,7 @@ type Querier interface {
 	ListFollowingUsers(ctx context.Context, arg ListFollowingUsersParams) ([]ListFollowingUsersRow, error)
 	ListForYouFeed(ctx context.Context, arg ListForYouFeedParams) ([]ListForYouFeedRow, error)
 	ListHashtagUsageToDecrementForDeleteRoot(ctx context.Context, id int64) ([]ListHashtagUsageToDecrementForDeleteRootRow, error)
-	ListMediaUrlsInThread(ctx context.Context, id int64) ([]*string, error)
+	ListMediaURLsInThread(ctx context.Context, id int64) ([]*string, error)
 	ListNotifications(ctx context.Context, arg ListNotificationsParams) ([]Notification, error)
 	// Uses cosine distance (<=>) to match the vector_cosine_ops HNSW index.
 	ListRelatedTweetsByEmbedding(ctx context.Context, arg ListRelatedTweetsByEmbeddingParams) ([]ListRelatedTweetsByEmbeddingRow, error)

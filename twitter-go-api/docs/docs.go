@@ -48,7 +48,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/usecase.AssistantInput"
+                            "$ref": "#/definitions/httpapi.assistantRequest"
                         }
                     }
                 ],
@@ -62,7 +62,7 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/httpapi.ErrorResponse"
                         }
                     }
                 }
@@ -88,7 +88,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/server.googleLoginRequest"
+                            "$ref": "#/definitions/httpapi.googleLoginRequest"
                         }
                     }
                 ],
@@ -96,13 +96,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.AuthResponse"
+                            "$ref": "#/definitions/httpapi.AuthResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/httpapi.ErrorResponse"
                         }
                     }
                 }
@@ -132,7 +132,7 @@ const docTemplate = `{
                         "name": "request",
                         "in": "body",
                         "schema": {
-                            "$ref": "#/definitions/server.refreshTokenRequest"
+                            "$ref": "#/definitions/httpapi.refreshTokenRequest"
                         }
                     }
                 ],
@@ -140,13 +140,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.SuccessResponse"
+                            "$ref": "#/definitions/httpapi.SuccessResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/httpapi.ErrorResponse"
                         }
                     }
                 }
@@ -171,13 +171,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.CurrentUserResponse"
+                            "$ref": "#/definitions/httpapi.CurrentUserResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/httpapi.ErrorResponse"
                         }
                     }
                 }
@@ -203,7 +203,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/server.refreshTokenRequest"
+                            "$ref": "#/definitions/httpapi.refreshTokenRequest"
                         }
                     }
                 ],
@@ -211,13 +211,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.AuthResponse"
+                            "$ref": "#/definitions/httpapi.AuthResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/httpapi.ErrorResponse"
                         }
                     }
                 }
@@ -247,7 +247,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/server.HashtagResponse"
+                                "$ref": "#/definitions/httpapi.HashtagResponse"
                             }
                         }
                     }
@@ -282,7 +282,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.PageResponse-server_UserResponse"
+                            "$ref": "#/definitions/httpapi.PageResponse-httpapi_UserResponse"
                         }
                     }
                 }
@@ -321,13 +321,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.PageResponse-server_TweetResponse"
+                            "$ref": "#/definitions/httpapi.PageResponse-httpapi_TweetResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/httpapi.ErrorResponse"
                         }
                     }
                 }
@@ -361,7 +361,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.PageResponse-server_TweetResponse"
+                            "$ref": "#/definitions/httpapi.PageResponse-httpapi_TweetResponse"
                         }
                     }
                 }
@@ -402,7 +402,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.PageResponse-server_TweetResponse"
+                            "$ref": "#/definitions/httpapi.PageResponse-httpapi_TweetResponse"
                         }
                     }
                 }
@@ -410,7 +410,7 @@ const docTemplate = `{
         },
         "/healthz": {
             "get": {
-                "description": "Simple health check to verify the API server is running and reachable.",
+                "description": "Reports that the process is up. Never checks dependencies, so a database blip doesn't get the container restarted.",
                 "produces": [
                     "application/json"
                 ],
@@ -420,12 +420,9 @@ const docTemplate = `{
                 "summary": "Liveness Probe",
                 "responses": {
                     "200": {
-                        "description": "status ok",
+                        "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/httpapi.HealthResponse"
                         }
                     }
                 }
@@ -464,13 +461,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.PageResponse-server_ConversationResponse"
+                            "$ref": "#/definitions/httpapi.PageResponse-httpapi_ConversationResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/httpapi.ErrorResponse"
                         }
                     }
                 }
@@ -516,13 +513,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.PageResponse-server_MessageResponse"
+                            "$ref": "#/definitions/httpapi.PageResponse-httpapi_MessageResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/httpapi.ErrorResponse"
                         }
                     }
                 }
@@ -559,7 +556,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/server.sendMessageRequest"
+                            "$ref": "#/definitions/httpapi.sendMessageRequest"
                         }
                     }
                 ],
@@ -567,13 +564,13 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/server.MessageResponse"
+                            "$ref": "#/definitions/httpapi.MessageResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/httpapi.ErrorResponse"
                         }
                     }
                 }
@@ -612,7 +609,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/server.sendMessageRequest"
+                            "$ref": "#/definitions/httpapi.sendMessageRequest"
                         }
                     }
                 ],
@@ -620,13 +617,13 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/server.MessageResponse"
+                            "$ref": "#/definitions/httpapi.MessageResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/httpapi.ErrorResponse"
                         }
                     }
                 }
@@ -695,13 +692,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.PageResponse-server_NotificationResponse"
+                            "$ref": "#/definitions/httpapi.PageResponse-httpapi_NotificationResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/httpapi.ErrorResponse"
                         }
                     }
                 }
@@ -723,13 +720,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.SuccessResponse"
+                            "$ref": "#/definitions/httpapi.SuccessResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/httpapi.ErrorResponse"
                         }
                     }
                 }
@@ -760,7 +757,7 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/httpapi.ErrorResponse"
                         }
                     }
                 }
@@ -783,19 +780,15 @@ const docTemplate = `{
                 "summary": "Get Unread Count",
                 "responses": {
                     "200": {
-                        "description": "unread count",
+                        "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "integer",
-                                "format": "int64"
-                            }
+                            "$ref": "#/definitions/httpapi.UnreadCountResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/httpapi.ErrorResponse"
                         }
                     }
                 }
@@ -803,7 +796,7 @@ const docTemplate = `{
         },
         "/readyz": {
             "get": {
-                "description": "Comprehensive readiness check that verifies active connections to the database and Redis cache.",
+                "description": "Verifies the database (and Redis, when configured) are reachable.",
                 "produces": [
                     "application/json"
                 ],
@@ -813,21 +806,15 @@ const docTemplate = `{
                 "summary": "Readiness Probe",
                 "responses": {
                     "200": {
-                        "description": "status ready",
+                        "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/httpapi.HealthResponse"
                         }
                     },
                     "503": {
                         "description": "dependency failure",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/httpapi.HealthResponse"
                         }
                     }
                 }
@@ -864,7 +851,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/server.HashtagResponse"
+                                "$ref": "#/definitions/httpapi.HashtagResponse"
                             }
                         }
                     }
@@ -906,7 +893,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.PageResponse-server_TweetResponse"
+                            "$ref": "#/definitions/httpapi.PageResponse-httpapi_TweetResponse"
                         }
                     }
                 }
@@ -947,7 +934,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.PageResponse-server_UserResponse"
+                            "$ref": "#/definitions/httpapi.PageResponse-httpapi_UserResponse"
                         }
                     }
                 }
@@ -978,7 +965,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/server.createTweetRequest"
+                            "$ref": "#/definitions/httpapi.createTweetRequest"
                         }
                     }
                 ],
@@ -986,19 +973,19 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/server.TweetResponse"
+                            "$ref": "#/definitions/httpapi.TweetResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/httpapi.ErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/httpapi.ErrorResponse"
                         }
                     }
                 }
@@ -1028,13 +1015,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.TweetResponse"
+                            "$ref": "#/definitions/httpapi.TweetResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/httpapi.ErrorResponse"
                         }
                     }
                 }
@@ -1064,19 +1051,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.SuccessResponse"
+                            "$ref": "#/definitions/httpapi.SuccessResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/httpapi.ErrorResponse"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/httpapi.ErrorResponse"
                         }
                     }
                 }
@@ -1108,13 +1095,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.SuccessResponse"
+                            "$ref": "#/definitions/httpapi.SuccessResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/httpapi.ErrorResponse"
                         }
                     }
                 }
@@ -1144,13 +1131,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.SuccessResponse"
+                            "$ref": "#/definitions/httpapi.SuccessResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/httpapi.ErrorResponse"
                         }
                     }
                 }
@@ -1191,7 +1178,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.PageResponse-server_TweetResponse"
+                            "$ref": "#/definitions/httpapi.PageResponse-httpapi_TweetResponse"
                         }
                     }
                 }
@@ -1226,13 +1213,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.TweetResponse"
+                            "$ref": "#/definitions/httpapi.TweetResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/httpapi.ErrorResponse"
                         }
                     }
                 }
@@ -1262,13 +1249,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.SuccessResponse"
+                            "$ref": "#/definitions/httpapi.SuccessResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/httpapi.ErrorResponse"
                         }
                     }
                 }
@@ -1299,7 +1286,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/server.presignRequest"
+                            "$ref": "#/definitions/httpapi.presignRequest"
                         }
                     }
                 ],
@@ -1307,19 +1294,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.PresignResponse"
+                            "$ref": "#/definitions/httpapi.PresignResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/httpapi.ErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/httpapi.ErrorResponse"
                         }
                     }
                 }
@@ -1350,7 +1337,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/server.updateProfileRequest"
+                            "$ref": "#/definitions/httpapi.updateProfileRequest"
                         }
                     }
                 ],
@@ -1358,19 +1345,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.UserResponse"
+                            "$ref": "#/definitions/httpapi.UserResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/httpapi.ErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/httpapi.ErrorResponse"
                         }
                     }
                 }
@@ -1400,13 +1387,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.UserResponse"
+                            "$ref": "#/definitions/httpapi.UserResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/httpapi.ErrorResponse"
                         }
                     }
                 }
@@ -1441,13 +1428,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.SuccessResponse"
+                            "$ref": "#/definitions/httpapi.SuccessResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/httpapi.ErrorResponse"
                         }
                     }
                 }
@@ -1480,13 +1467,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.SuccessResponse"
+                            "$ref": "#/definitions/httpapi.SuccessResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/httpapi.ErrorResponse"
                         }
                     }
                 }
@@ -1527,7 +1514,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.PageResponse-server_UserResponse"
+                            "$ref": "#/definitions/httpapi.PageResponse-httpapi_UserResponse"
                         }
                     }
                 }
@@ -1568,7 +1555,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.PageResponse-server_UserResponse"
+                            "$ref": "#/definitions/httpapi.PageResponse-httpapi_UserResponse"
                         }
                     }
                 }
@@ -1587,7 +1574,7 @@ const docTemplate = `{
                 }
             }
         },
-        "server.AuthResponse": {
+        "httpapi.AuthResponse": {
             "type": "object",
             "properties": {
                 "accessToken": {
@@ -1597,28 +1584,28 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "user": {
-                    "$ref": "#/definitions/server.CurrentUserResponse"
+                    "$ref": "#/definitions/httpapi.CurrentUserResponse"
                 }
             }
         },
-        "server.ConversationResponse": {
+        "httpapi.ConversationResponse": {
             "type": "object",
             "properties": {
                 "id": {
                     "type": "integer"
                 },
                 "lastMessage": {
-                    "$ref": "#/definitions/server.MessageResponse"
+                    "$ref": "#/definitions/httpapi.MessageResponse"
                 },
                 "peer": {
-                    "$ref": "#/definitions/server.UserResponse"
+                    "$ref": "#/definitions/httpapi.UserResponse"
                 },
                 "updatedAt": {
                     "type": "string"
                 }
             }
         },
-        "server.CurrentUserResponse": {
+        "httpapi.CurrentUserResponse": {
             "type": "object",
             "properties": {
                 "avatarUrl": {
@@ -1653,7 +1640,7 @@ const docTemplate = `{
                 }
             }
         },
-        "server.ErrorResponse": {
+        "httpapi.ErrorResponse": {
             "type": "object",
             "properties": {
                 "code": {
@@ -1673,7 +1660,7 @@ const docTemplate = `{
                 }
             }
         },
-        "server.HashtagResponse": {
+        "httpapi.HashtagResponse": {
             "type": "object",
             "properties": {
                 "createdAt": {
@@ -1693,7 +1680,18 @@ const docTemplate = `{
                 }
             }
         },
-        "server.MessageResponse": {
+        "httpapi.HealthResponse": {
+            "type": "object",
+            "properties": {
+                "service": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "httpapi.MessageResponse": {
             "type": "object",
             "properties": {
                 "content": {
@@ -1709,15 +1707,15 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "sender": {
-                    "$ref": "#/definitions/server.UserResponse"
+                    "$ref": "#/definitions/httpapi.UserResponse"
                 }
             }
         },
-        "server.NotificationResponse": {
+        "httpapi.NotificationResponse": {
             "type": "object",
             "properties": {
                 "actor": {
-                    "$ref": "#/definitions/server.UserResponse"
+                    "$ref": "#/definitions/httpapi.UserResponse"
                 },
                 "createdAt": {
                     "type": "string"
@@ -1751,7 +1749,7 @@ const docTemplate = `{
                 }
             }
         },
-        "server.PageResponse-server_ConversationResponse": {
+        "httpapi.PageResponse-httpapi_ConversationResponse": {
             "type": "object",
             "properties": {
                 "hasNext": {
@@ -1760,7 +1758,7 @@ const docTemplate = `{
                 "items": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/server.ConversationResponse"
+                        "$ref": "#/definitions/httpapi.ConversationResponse"
                     }
                 },
                 "nextCursor": {
@@ -1768,7 +1766,7 @@ const docTemplate = `{
                 }
             }
         },
-        "server.PageResponse-server_MessageResponse": {
+        "httpapi.PageResponse-httpapi_MessageResponse": {
             "type": "object",
             "properties": {
                 "hasNext": {
@@ -1777,7 +1775,7 @@ const docTemplate = `{
                 "items": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/server.MessageResponse"
+                        "$ref": "#/definitions/httpapi.MessageResponse"
                     }
                 },
                 "nextCursor": {
@@ -1785,7 +1783,7 @@ const docTemplate = `{
                 }
             }
         },
-        "server.PageResponse-server_NotificationResponse": {
+        "httpapi.PageResponse-httpapi_NotificationResponse": {
             "type": "object",
             "properties": {
                 "hasNext": {
@@ -1794,7 +1792,7 @@ const docTemplate = `{
                 "items": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/server.NotificationResponse"
+                        "$ref": "#/definitions/httpapi.NotificationResponse"
                     }
                 },
                 "nextCursor": {
@@ -1802,7 +1800,7 @@ const docTemplate = `{
                 }
             }
         },
-        "server.PageResponse-server_TweetResponse": {
+        "httpapi.PageResponse-httpapi_TweetResponse": {
             "type": "object",
             "properties": {
                 "hasNext": {
@@ -1811,7 +1809,7 @@ const docTemplate = `{
                 "items": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/server.TweetResponse"
+                        "$ref": "#/definitions/httpapi.TweetResponse"
                     }
                 },
                 "nextCursor": {
@@ -1819,7 +1817,7 @@ const docTemplate = `{
                 }
             }
         },
-        "server.PageResponse-server_UserResponse": {
+        "httpapi.PageResponse-httpapi_UserResponse": {
             "type": "object",
             "properties": {
                 "hasNext": {
@@ -1828,7 +1826,7 @@ const docTemplate = `{
                 "items": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/server.UserResponse"
+                        "$ref": "#/definitions/httpapi.UserResponse"
                     }
                 },
                 "nextCursor": {
@@ -1836,7 +1834,7 @@ const docTemplate = `{
                 }
             }
         },
-        "server.PresignResponse": {
+        "httpapi.PresignResponse": {
             "type": "object",
             "properties": {
                 "objectKey": {
@@ -1847,7 +1845,7 @@ const docTemplate = `{
                 }
             }
         },
-        "server.SuccessResponse": {
+        "httpapi.SuccessResponse": {
             "type": "object",
             "properties": {
                 "success": {
@@ -1855,7 +1853,7 @@ const docTemplate = `{
                 }
             }
         },
-        "server.TweetResponse": {
+        "httpapi.TweetResponse": {
             "type": "object",
             "properties": {
                 "content": {
@@ -1895,14 +1893,22 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "retweetedTweet": {
-                    "$ref": "#/definitions/server.TweetResponse"
+                    "$ref": "#/definitions/httpapi.TweetResponse"
                 },
                 "user": {
-                    "$ref": "#/definitions/server.UserResponse"
+                    "$ref": "#/definitions/httpapi.UserResponse"
                 }
             }
         },
-        "server.UserResponse": {
+        "httpapi.UnreadCountResponse": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "httpapi.UserResponse": {
             "type": "object",
             "properties": {
                 "avatarUrl": {
@@ -1934,7 +1940,45 @@ const docTemplate = `{
                 }
             }
         },
-        "server.createTweetRequest": {
+        "httpapi.assistantHistoryItem": {
+            "type": "object",
+            "required": [
+                "role"
+            ],
+            "properties": {
+                "role": {
+                    "type": "string",
+                    "enum": [
+                        "user",
+                        "model",
+                        "assistant"
+                    ]
+                },
+                "text": {
+                    "type": "string"
+                }
+            }
+        },
+        "httpapi.assistantRequest": {
+            "type": "object",
+            "required": [
+                "query"
+            ],
+            "properties": {
+                "history": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                        "$ref": "#/definitions/httpapi.assistantHistoryItem"
+                    }
+                },
+                "query": {
+                    "type": "string",
+                    "maxLength": 4000
+                }
+            }
+        },
+        "httpapi.createTweetRequest": {
             "type": "object",
             "properties": {
                 "content": {
@@ -1951,7 +1995,7 @@ const docTemplate = `{
                 }
             }
         },
-        "server.googleLoginRequest": {
+        "httpapi.googleLoginRequest": {
             "type": "object",
             "required": [
                 "idToken"
@@ -1962,7 +2006,7 @@ const docTemplate = `{
                 }
             }
         },
-        "server.presignRequest": {
+        "httpapi.presignRequest": {
             "type": "object",
             "required": [
                 "contentLength",
@@ -1987,7 +2031,7 @@ const docTemplate = `{
                 }
             }
         },
-        "server.refreshTokenRequest": {
+        "httpapi.refreshTokenRequest": {
             "type": "object",
             "properties": {
                 "refreshToken": {
@@ -1995,7 +2039,7 @@ const docTemplate = `{
                 }
             }
         },
-        "server.sendMessageRequest": {
+        "httpapi.sendMessageRequest": {
             "type": "object",
             "required": [
                 "content"
@@ -2007,7 +2051,7 @@ const docTemplate = `{
                 }
             }
         },
-        "server.updateProfileRequest": {
+        "httpapi.updateProfileRequest": {
             "type": "object",
             "properties": {
                 "avatarKey": {
@@ -2023,35 +2067,6 @@ const docTemplate = `{
                 "displayName": {
                     "type": "string",
                     "maxLength": 30
-                }
-            }
-        },
-        "usecase.AssistantHistoryItem": {
-            "type": "object",
-            "properties": {
-                "role": {
-                    "description": "\"user\" or \"model\" (for Gemini)",
-                    "type": "string"
-                },
-                "text": {
-                    "type": "string"
-                }
-            }
-        },
-        "usecase.AssistantInput": {
-            "type": "object",
-            "required": [
-                "query"
-            ],
-            "properties": {
-                "history": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/usecase.AssistantHistoryItem"
-                    }
-                },
-                "query": {
-                    "type": "string"
                 }
             }
         }

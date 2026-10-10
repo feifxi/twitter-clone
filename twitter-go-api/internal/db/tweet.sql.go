@@ -35,7 +35,7 @@ type CreateRetweetRow struct {
 	UserID       int64       `json:"user_id"`
 	Content      *string     `json:"content"`
 	MediaType    *string     `json:"media_type"`
-	MediaUrl     *string     `json:"media_url"`
+	MediaURL     *string     `json:"media_url"`
 	ParentID     *int64      `json:"parent_id"`
 	RetweetID    *int64      `json:"retweet_id"`
 	ReplyCount   int32       `json:"reply_count"`
@@ -54,7 +54,7 @@ func (q *Queries) CreateRetweet(ctx context.Context, arg CreateRetweetParams) (C
 		&i.UserID,
 		&i.Content,
 		&i.MediaType,
-		&i.MediaUrl,
+		&i.MediaURL,
 		&i.ParentID,
 		&i.RetweetID,
 		&i.ReplyCount,
@@ -80,7 +80,7 @@ type CreateTweetParams struct {
 	UserID    int64   `json:"user_id"`
 	Content   *string `json:"content"`
 	MediaType *string `json:"media_type"`
-	MediaUrl  *string `json:"media_url"`
+	MediaURL  *string `json:"media_url"`
 	ParentID  *int64  `json:"parent_id"`
 	RetweetID *int64  `json:"retweet_id"`
 }
@@ -90,7 +90,7 @@ func (q *Queries) CreateTweet(ctx context.Context, arg CreateTweetParams) (Tweet
 		arg.UserID,
 		arg.Content,
 		arg.MediaType,
-		arg.MediaUrl,
+		arg.MediaURL,
 		arg.ParentID,
 		arg.RetweetID,
 	)
@@ -100,7 +100,7 @@ func (q *Queries) CreateTweet(ctx context.Context, arg CreateTweetParams) (Tweet
 		&i.UserID,
 		&i.Content,
 		&i.MediaType,
-		&i.MediaUrl,
+		&i.MediaURL,
 		&i.ParentID,
 		&i.RetweetID,
 		&i.ReplyCount,
@@ -148,7 +148,7 @@ type DeleteRetweetByUserRow struct {
 	UserID       int64       `json:"user_id"`
 	Content      *string     `json:"content"`
 	MediaType    *string     `json:"media_type"`
-	MediaUrl     *string     `json:"media_url"`
+	MediaURL     *string     `json:"media_url"`
 	ParentID     *int64      `json:"parent_id"`
 	RetweetID    *int64      `json:"retweet_id"`
 	ReplyCount   int32       `json:"reply_count"`
@@ -167,7 +167,7 @@ func (q *Queries) DeleteRetweetByUser(ctx context.Context, arg DeleteRetweetByUs
 		&i.UserID,
 		&i.Content,
 		&i.MediaType,
-		&i.MediaUrl,
+		&i.MediaURL,
 		&i.ParentID,
 		&i.RetweetID,
 		&i.ReplyCount,
@@ -199,7 +199,7 @@ func (q *Queries) DeleteTweetByOwner(ctx context.Context, arg DeleteTweetByOwner
 		&i.UserID,
 		&i.Content,
 		&i.MediaType,
-		&i.MediaUrl,
+		&i.MediaURL,
 		&i.ParentID,
 		&i.RetweetID,
 		&i.ReplyCount,
@@ -241,7 +241,7 @@ func (q *Queries) GetTweet(ctx context.Context, arg GetTweetParams) (GetTweetRow
 		&i.Tweet.UserID,
 		&i.Tweet.Content,
 		&i.Tweet.MediaType,
-		&i.Tweet.MediaUrl,
+		&i.Tweet.MediaURL,
 		&i.Tweet.ParentID,
 		&i.Tweet.RetweetID,
 		&i.Tweet.ReplyCount,
@@ -292,7 +292,7 @@ func (q *Queries) GetTweetsByIDs(ctx context.Context, arg GetTweetsByIDsParams) 
 			&i.Tweet.UserID,
 			&i.Tweet.Content,
 			&i.Tweet.MediaType,
-			&i.Tweet.MediaUrl,
+			&i.Tweet.MediaURL,
 			&i.Tweet.ParentID,
 			&i.Tweet.RetweetID,
 			&i.Tweet.ReplyCount,
@@ -334,7 +334,7 @@ func (q *Queries) GetUserRetweet(ctx context.Context, arg GetUserRetweetParams) 
 		&i.UserID,
 		&i.Content,
 		&i.MediaType,
-		&i.MediaUrl,
+		&i.MediaURL,
 		&i.ParentID,
 		&i.RetweetID,
 		&i.ReplyCount,
@@ -405,7 +405,7 @@ func (q *Queries) ListFollowingFeed(ctx context.Context, arg ListFollowingFeedPa
 			&i.Tweet.UserID,
 			&i.Tweet.Content,
 			&i.Tweet.MediaType,
-			&i.Tweet.MediaUrl,
+			&i.Tweet.MediaURL,
 			&i.Tweet.ParentID,
 			&i.Tweet.RetweetID,
 			&i.Tweet.ReplyCount,
@@ -470,7 +470,7 @@ func (q *Queries) ListForYouFeed(ctx context.Context, arg ListForYouFeedParams) 
 			&i.Tweet.UserID,
 			&i.Tweet.Content,
 			&i.Tweet.MediaType,
-			&i.Tweet.MediaUrl,
+			&i.Tweet.MediaURL,
 			&i.Tweet.ParentID,
 			&i.Tweet.RetweetID,
 			&i.Tweet.ReplyCount,
@@ -493,7 +493,7 @@ func (q *Queries) ListForYouFeed(ctx context.Context, arg ListForYouFeedParams) 
 	return items, nil
 }
 
-const listMediaUrlsInThread = `-- name: ListMediaUrlsInThread :many
+const listMediaURLsInThread = `-- name: ListMediaURLsInThread :many
 WITH RECURSIVE tweet_tree AS (
   SELECT t.id, t.media_url
   FROM tweets t
@@ -508,8 +508,8 @@ FROM tweet_tree
 WHERE media_url IS NOT NULL AND media_url <> ''
 `
 
-func (q *Queries) ListMediaUrlsInThread(ctx context.Context, id int64) ([]*string, error) {
-	rows, err := q.db.Query(ctx, listMediaUrlsInThread, id)
+func (q *Queries) ListMediaURLsInThread(ctx context.Context, id int64) ([]*string, error) {
+	rows, err := q.db.Query(ctx, listMediaURLsInThread, id)
 	if err != nil {
 		return nil, err
 	}
@@ -573,7 +573,7 @@ func (q *Queries) ListTweetReplies(ctx context.Context, arg ListTweetRepliesPara
 			&i.Tweet.UserID,
 			&i.Tweet.Content,
 			&i.Tweet.MediaType,
-			&i.Tweet.MediaUrl,
+			&i.Tweet.MediaURL,
 			&i.Tweet.ParentID,
 			&i.Tweet.RetweetID,
 			&i.Tweet.ReplyCount,
@@ -642,7 +642,7 @@ func (q *Queries) ListUserTweets(ctx context.Context, arg ListUserTweetsParams) 
 			&i.Tweet.UserID,
 			&i.Tweet.Content,
 			&i.Tweet.MediaType,
-			&i.Tweet.MediaUrl,
+			&i.Tweet.MediaURL,
 			&i.Tweet.ParentID,
 			&i.Tweet.RetweetID,
 			&i.Tweet.ReplyCount,
@@ -712,7 +712,7 @@ func (q *Queries) SearchTweetsByHashtag(ctx context.Context, arg SearchTweetsByH
 			&i.Tweet.UserID,
 			&i.Tweet.Content,
 			&i.Tweet.MediaType,
-			&i.Tweet.MediaUrl,
+			&i.Tweet.MediaURL,
 			&i.Tweet.ParentID,
 			&i.Tweet.RetweetID,
 			&i.Tweet.ReplyCount,
@@ -779,7 +779,7 @@ func (q *Queries) SearchTweetsFullText(ctx context.Context, arg SearchTweetsFull
 			&i.Tweet.UserID,
 			&i.Tweet.Content,
 			&i.Tweet.MediaType,
-			&i.Tweet.MediaUrl,
+			&i.Tweet.MediaURL,
 			&i.Tweet.ParentID,
 			&i.Tweet.RetweetID,
 			&i.Tweet.ReplyCount,

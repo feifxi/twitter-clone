@@ -39,8 +39,8 @@ func RateLimiter(r rate.Limit, b int) gin.HandlerFunc {
 		}
 	}()
 
-	return func(ctx *gin.Context) {
-		ip := ctx.ClientIP()
+	return func(c *gin.Context) {
+		ip := c.ClientIP()
 		mu.Lock()
 		if _, found := clients[ip]; !found {
 			clients[ip] = &client{limiter: rate.NewLimiter(r, b)}
@@ -50,11 +50,11 @@ func RateLimiter(r rate.Limit, b int) gin.HandlerFunc {
 		mu.Unlock()
 
 		if !limiter.Allow() {
-			abortWithError(ctx, http.StatusTooManyRequests, "TOO_MANY_REQUESTS", "rate limit exceeded")
+			abortWithError(c, http.StatusTooManyRequests, "TOO_MANY_REQUESTS", "rate limit exceeded")
 			return
 		}
 
-		ctx.Next()
+		c.Next()
 	}
 }
 
@@ -79,51 +79,51 @@ func RateLimiterWithRedis(redisClient *redis.Client, r rate.Limit, b int, prefix
 		windowSeconds = 1
 	}
 
-	return func(ctx *gin.Context) {
-		path := ctx.FullPath()
+	return func(c *gin.Context) {
+		path := c.FullPath()
 		if path == "" {
-			path = ctx.Request.URL.Path
+			path = c.Request.URL.Path
 		}
-		key := fmt.Sprintf("%s:%s:%s", prefix, path, ctx.ClientIP())
+		key := fmt.Sprintf("%s:%s:%s", prefix, path, c.ClientIP())
 
-		redisCtx, cancel := context.WithTimeout(ctx.Request.Context(), 200*time.Millisecond)
+		redisCtx, cancel := context.WithTimeout(c.Request.Context(), 200*time.Millisecond)
 		defer cancel()
 
 		raw, err := redisWindowScript.Run(redisCtx, redisClient, []string{key}, windowSeconds).Result()
 		if err != nil {
-			localFallback(ctx)
+			localFallback(c)
 			return
 		}
 
 		results, ok := raw.([]any)
 		if !ok || len(results) != 2 {
-			localFallback(ctx)
+			localFallback(c)
 			return
 		}
 
 		current, okCurrent := toInt64(results[0])
 		ttl, okTTL := toInt64(results[1])
 		if !okCurrent || !okTTL {
-			localFallback(ctx)
+			localFallback(c)
 			return
 		}
 
 		limit := int64(b)
-		ctx.Header("X-RateLimit-Limit", strconv.FormatInt(limit, 10))
+		c.Header("X-RateLimit-Limit", strconv.FormatInt(limit, 10))
 		remaining := limit - current
 		if remaining < 0 {
 			remaining = 0
 		}
-		ctx.Header("X-RateLimit-Remaining", strconv.FormatInt(remaining, 10))
+		c.Header("X-RateLimit-Remaining", strconv.FormatInt(remaining, 10))
 
 		if current > limit {
 			retryAfter := max(ttl, 1)
-			ctx.Header("Retry-After", strconv.FormatInt(retryAfter, 10))
-			abortWithError(ctx, http.StatusTooManyRequests, "TOO_MANY_REQUESTS", "rate limit exceeded")
+			c.Header("Retry-After", strconv.FormatInt(retryAfter, 10))
+			abortWithError(c, http.StatusTooManyRequests, "TOO_MANY_REQUESTS", "rate limit exceeded")
 			return
 		}
 
-		ctx.Next()
+		c.Next()
 	}
 }
 

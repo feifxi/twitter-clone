@@ -50,9 +50,9 @@ func LoadConfig(path string) (config Config, err error) {
 	viper.SetDefault("DB_MAX_CONNS", int32(25))
 	viper.SetDefault("DB_MIN_CONNS", int32(0))
 	viper.SetDefault("DB_MAX_CONN_LIFETIME_MINUTES", 5)
-	viper.SetDefault("MAX_MEDIA_BYTES", int64(100<<20))  // 100 MiB
-	viper.SetDefault("MAX_AVATAR_BYTES", int64(5<<20))   // 5 MiB
-	viper.SetDefault("MAX_BANNER_BYTES", int64(10<<20))  // 10 MiB
+	viper.SetDefault("MAX_MEDIA_BYTES", int64(100<<20)) // 100 MiB
+	viper.SetDefault("MAX_AVATAR_BYTES", int64(5<<20))  // 5 MiB
+	viper.SetDefault("MAX_BANNER_BYTES", int64(10<<20)) // 10 MiB
 	// Explicitly bind environment variables so viper.Unmarshal detects them
 	// without needing a physical app.env file (which is excluded in CI/CD).
 	viper.SetDefault("ENABLE_RAG", true)
@@ -184,4 +184,28 @@ func (c Config) ValidateForRuntime() error {
 	}
 
 	return nil
+}
+
+// AllowedOrigins splits the comma-separated FRONTEND_URL into CORS origins.
+func (c Config) AllowedOrigins() []string {
+	return splitList(c.FrontendURL)
+}
+
+func splitList(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		v := strings.TrimSpace(p)
+		if v != "" {
+			out = append(out, v)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }

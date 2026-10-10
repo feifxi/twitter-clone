@@ -89,11 +89,9 @@ Current layout is the common "layered" one (`server → usecase → db/service`)
 ```
 twitter-go-api/
 ├── cmd/api/main.go            # wiring only: run() error
-├── db/migrations/             # SQL source of truth (embedded via embed.FS)
-├── db/queries/
 ├── internal/
 │   ├── config/                # env → typed Config (no viper)
-│   ├── postgres/              # sqlc output + Store/ExecTx (was internal/db)
+│   ├── db/                    # sqlc output + Store/ExecTx, migrations/ (embedded), queries/
 │   ├── auth/ user/ tweet/ feed/ search/ notification/ message/ assistant/ media/
 │   │   └── service.go         # business logic; returns concrete types; domain errors
 │   ├── realtime/              # SSE hub + Redis pub/sub fan-out
@@ -104,7 +102,7 @@ twitter-go-api/
 └── docs/                      # swagger (generated) + api-contract.md
 ```
 
-Dependency rule: `httpapi → domain packages → postgres/storage/realtime`. Domain packages never import `httpapi` or gin.
+Dependency rule: `httpapi → feature packages → db/storage/realtime`, with shared read models in `domain`. Domain packages never import `httpapi` or gin.
 
 ### AWS architecture
 
@@ -221,9 +219,9 @@ Good already: `default_tags`, the modern standalone `aws_vpc_security_group_*_ru
 - [x] Frontend quick fixes W1, W2, W3, W5 (plus: stale `['auth','user']` key after a profile edit, obsolete `postinstall` patch removed)
 
 ### Phase 2: Backend foundation
-- [ ] **2a Structure & idioms:** package-by-feature move (N3, N4, N10); `run() error` main (N7); `c.Request.Context()` everywhere (N1); naming fixes N2, N5, N6, N9, N11; embed migrations
+- [x] **2a Structure & idioms:** package-by-feature move (N3, N4, N10); `run() error` main (N7); `c.Request.Context()` everywhere (N1); naming fixes N2, N5, N6, N9; embed migrations; per-package `Config` with `time.Duration` TTLs (N11, partly; the rest lands in 2b). `internal/db` kept its name (it's the sqlc convention); query strings are no longer logged (G5, partly)
 - [ ] **2b Platform:** `slog` + env config without viper (G15, G16, N8); unified error mapping (G14); healthz with per-dependency status
-- [ ] **2c Realtime:** `internal/realtime` hub; **one SSE stream** for notifications and DMs via Redis pub/sub; drop gorilla/websocket (G10, G13, G5)
+- [ ] **2c Realtime:** ~~`internal/realtime` hub~~ (done in 2a; notifications already flow through it); **one SSE stream** for notifications and DMs; drop gorilla/websocket (G10, G13, G5)
 - [ ] **2d Data:** keyset cursors plus an anchored-time cursor for For-You (G9); separate `retweets` table and `kind` feed items (G19); per-session refresh-token rotation (G8)
 - [ ] **2e Features:** `GET /users/by-username/:username`; user replies/media/likes endpoints; `location`/`website`; username onboarding (G18)
 - [ ] **2f Auth cookies:** API sets and clears httpOnly cookies on login/refresh/logout; accepts cookie or bearer; `Origin` check on unsafe methods

@@ -7,27 +7,27 @@ definitions:
       message:
         type: string
     type: object
-  server.AuthResponse:
+  httpapi.AuthResponse:
     properties:
       accessToken:
         type: string
       refreshToken:
         type: string
       user:
-        $ref: '#/definitions/server.CurrentUserResponse'
+        $ref: '#/definitions/httpapi.CurrentUserResponse'
     type: object
-  server.ConversationResponse:
+  httpapi.ConversationResponse:
     properties:
       id:
         type: integer
       lastMessage:
-        $ref: '#/definitions/server.MessageResponse'
+        $ref: '#/definitions/httpapi.MessageResponse'
       peer:
-        $ref: '#/definitions/server.UserResponse'
+        $ref: '#/definitions/httpapi.UserResponse'
       updatedAt:
         type: string
     type: object
-  server.CurrentUserResponse:
+  httpapi.CurrentUserResponse:
     properties:
       avatarUrl:
         type: string
@@ -50,7 +50,7 @@ definitions:
       username:
         type: string
     type: object
-  server.ErrorResponse:
+  httpapi.ErrorResponse:
     properties:
       code:
         type: string
@@ -63,7 +63,7 @@ definitions:
       requestId:
         type: string
     type: object
-  server.HashtagResponse:
+  httpapi.HashtagResponse:
     properties:
       createdAt:
         type: string
@@ -76,7 +76,14 @@ definitions:
       usageCount:
         type: integer
     type: object
-  server.MessageResponse:
+  httpapi.HealthResponse:
+    properties:
+      service:
+        type: string
+      status:
+        type: string
+    type: object
+  httpapi.MessageResponse:
     properties:
       content:
         type: string
@@ -87,12 +94,12 @@ definitions:
       id:
         type: integer
       sender:
-        $ref: '#/definitions/server.UserResponse'
+        $ref: '#/definitions/httpapi.UserResponse'
     type: object
-  server.NotificationResponse:
+  httpapi.NotificationResponse:
     properties:
       actor:
-        $ref: '#/definitions/server.UserResponse'
+        $ref: '#/definitions/httpapi.UserResponse'
       createdAt:
         type: string
       id:
@@ -114,74 +121,74 @@ definitions:
       type:
         type: string
     type: object
-  server.PageResponse-server_ConversationResponse:
+  httpapi.PageResponse-httpapi_ConversationResponse:
     properties:
       hasNext:
         type: boolean
       items:
         items:
-          $ref: '#/definitions/server.ConversationResponse'
+          $ref: '#/definitions/httpapi.ConversationResponse'
         type: array
       nextCursor:
         type: string
     type: object
-  server.PageResponse-server_MessageResponse:
+  httpapi.PageResponse-httpapi_MessageResponse:
     properties:
       hasNext:
         type: boolean
       items:
         items:
-          $ref: '#/definitions/server.MessageResponse'
+          $ref: '#/definitions/httpapi.MessageResponse'
         type: array
       nextCursor:
         type: string
     type: object
-  server.PageResponse-server_NotificationResponse:
+  httpapi.PageResponse-httpapi_NotificationResponse:
     properties:
       hasNext:
         type: boolean
       items:
         items:
-          $ref: '#/definitions/server.NotificationResponse'
+          $ref: '#/definitions/httpapi.NotificationResponse'
         type: array
       nextCursor:
         type: string
     type: object
-  server.PageResponse-server_TweetResponse:
+  httpapi.PageResponse-httpapi_TweetResponse:
     properties:
       hasNext:
         type: boolean
       items:
         items:
-          $ref: '#/definitions/server.TweetResponse'
+          $ref: '#/definitions/httpapi.TweetResponse'
         type: array
       nextCursor:
         type: string
     type: object
-  server.PageResponse-server_UserResponse:
+  httpapi.PageResponse-httpapi_UserResponse:
     properties:
       hasNext:
         type: boolean
       items:
         items:
-          $ref: '#/definitions/server.UserResponse'
+          $ref: '#/definitions/httpapi.UserResponse'
         type: array
       nextCursor:
         type: string
     type: object
-  server.PresignResponse:
+  httpapi.PresignResponse:
     properties:
       objectKey:
         type: string
       presignedUrl:
         type: string
     type: object
-  server.SuccessResponse:
+  httpapi.SuccessResponse:
     properties:
       success:
         type: boolean
     type: object
-  server.TweetResponse:
+  httpapi.TweetResponse:
     properties:
       content:
         type: string
@@ -208,11 +215,16 @@ definitions:
       retweetCount:
         type: integer
       retweetedTweet:
-        $ref: '#/definitions/server.TweetResponse'
+        $ref: '#/definitions/httpapi.TweetResponse'
       user:
-        $ref: '#/definitions/server.UserResponse'
+        $ref: '#/definitions/httpapi.UserResponse'
     type: object
-  server.UserResponse:
+  httpapi.UnreadCountResponse:
+    properties:
+      count:
+        type: integer
+    type: object
+  httpapi.UserResponse:
     properties:
       avatarUrl:
         type: string
@@ -233,7 +245,33 @@ definitions:
       username:
         type: string
     type: object
-  server.createTweetRequest:
+  httpapi.assistantHistoryItem:
+    properties:
+      role:
+        enum:
+        - user
+        - model
+        - assistant
+        type: string
+      text:
+        type: string
+    required:
+    - role
+    type: object
+  httpapi.assistantRequest:
+    properties:
+      history:
+        items:
+          $ref: '#/definitions/httpapi.assistantHistoryItem'
+        maxItems: 100
+        type: array
+      query:
+        maxLength: 4000
+        type: string
+    required:
+    - query
+    type: object
+  httpapi.createTweetRequest:
     properties:
       content:
         maxLength: 280
@@ -245,14 +283,14 @@ definitions:
         minimum: 1
         type: integer
     type: object
-  server.googleLoginRequest:
+  httpapi.googleLoginRequest:
     properties:
       idToken:
         type: string
     required:
     - idToken
     type: object
-  server.presignRequest:
+  httpapi.presignRequest:
     properties:
       contentLength:
         minimum: 1
@@ -270,12 +308,12 @@ definitions:
     - contentType
     - folder
     type: object
-  server.refreshTokenRequest:
+  httpapi.refreshTokenRequest:
     properties:
       refreshToken:
         type: string
     type: object
-  server.sendMessageRequest:
+  httpapi.sendMessageRequest:
     properties:
       content:
         maxLength: 2000
@@ -283,7 +321,7 @@ definitions:
     required:
     - content
     type: object
-  server.updateProfileRequest:
+  httpapi.updateProfileRequest:
     properties:
       avatarKey:
         type: string
@@ -295,25 +333,6 @@ definitions:
       displayName:
         maxLength: 30
         type: string
-    type: object
-  usecase.AssistantHistoryItem:
-    properties:
-      role:
-        description: '"user" or "model" (for Gemini)'
-        type: string
-      text:
-        type: string
-    type: object
-  usecase.AssistantInput:
-    properties:
-      history:
-        items:
-          $ref: '#/definitions/usecase.AssistantHistoryItem'
-        type: array
-      query:
-        type: string
-    required:
-    - query
     type: object
 host: localhost:8080
 info:
@@ -341,7 +360,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/usecase.AssistantInput'
+          $ref: '#/definitions/httpapi.assistantRequest'
       produces:
       - text/event-stream
       responses:
@@ -352,7 +371,7 @@ paths:
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/httpapi.ErrorResponse'
       security:
       - BearerAuth: []
       summary: AI Assistant Chat (SSE)
@@ -369,18 +388,18 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/server.googleLoginRequest'
+          $ref: '#/definitions/httpapi.googleLoginRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.AuthResponse'
+            $ref: '#/definitions/httpapi.AuthResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/httpapi.ErrorResponse'
       summary: Login with Google
       tags:
       - Auth
@@ -394,18 +413,18 @@ paths:
         in: body
         name: request
         schema:
-          $ref: '#/definitions/server.refreshTokenRequest'
+          $ref: '#/definitions/httpapi.refreshTokenRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.SuccessResponse'
+            $ref: '#/definitions/httpapi.SuccessResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/httpapi.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Logout
@@ -420,11 +439,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.CurrentUserResponse'
+            $ref: '#/definitions/httpapi.CurrentUserResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/httpapi.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Get Current User
@@ -442,18 +461,18 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/server.refreshTokenRequest'
+          $ref: '#/definitions/httpapi.refreshTokenRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.AuthResponse'
+            $ref: '#/definitions/httpapi.AuthResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/httpapi.ErrorResponse'
       summary: Refresh Access Token
       tags:
       - Auth
@@ -472,7 +491,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/server.HashtagResponse'
+              $ref: '#/definitions/httpapi.HashtagResponse'
             type: array
       summary: Trending Hashtags
       tags:
@@ -495,7 +514,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.PageResponse-server_UserResponse'
+            $ref: '#/definitions/httpapi.PageResponse-httpapi_UserResponse'
       summary: Suggested Users
       tags:
       - Discovery
@@ -517,11 +536,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.PageResponse-server_TweetResponse'
+            $ref: '#/definitions/httpapi.PageResponse-httpapi_TweetResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/httpapi.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Following Feed
@@ -545,7 +564,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.PageResponse-server_TweetResponse'
+            $ref: '#/definitions/httpapi.PageResponse-httpapi_TweetResponse'
       summary: Global Feed
       tags:
       - Feeds
@@ -572,22 +591,21 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.PageResponse-server_TweetResponse'
+            $ref: '#/definitions/httpapi.PageResponse-httpapi_TweetResponse'
       summary: User Profile Feed
       tags:
       - Feeds
   /healthz:
     get:
-      description: Simple health check to verify the API server is running and reachable.
+      description: Reports that the process is up. Never checks dependencies, so a
+        database blip doesn't get the container restarted.
       produces:
       - application/json
       responses:
         "200":
-          description: status ok
+          description: OK
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/httpapi.HealthResponse'
       summary: Liveness Probe
       tags:
       - Monitoring
@@ -609,11 +627,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.PageResponse-server_ConversationResponse'
+            $ref: '#/definitions/httpapi.PageResponse-httpapi_ConversationResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/httpapi.ErrorResponse'
       security:
       - BearerAuth: []
       summary: List Conversations
@@ -642,11 +660,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.PageResponse-server_MessageResponse'
+            $ref: '#/definitions/httpapi.PageResponse-httpapi_MessageResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/httpapi.ErrorResponse'
       security:
       - BearerAuth: []
       summary: List Conversation Messages
@@ -668,18 +686,18 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/server.sendMessageRequest'
+          $ref: '#/definitions/httpapi.sendMessageRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/server.MessageResponse'
+            $ref: '#/definitions/httpapi.MessageResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/httpapi.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Send Message to Conversation
@@ -702,18 +720,18 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/server.sendMessageRequest'
+          $ref: '#/definitions/httpapi.sendMessageRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/server.MessageResponse'
+            $ref: '#/definitions/httpapi.MessageResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/httpapi.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Send Message to User
@@ -758,11 +776,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.PageResponse-server_NotificationResponse'
+            $ref: '#/definitions/httpapi.PageResponse-httpapi_NotificationResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/httpapi.ErrorResponse'
       security:
       - BearerAuth: []
       summary: List Notifications
@@ -775,11 +793,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.SuccessResponse'
+            $ref: '#/definitions/httpapi.SuccessResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/httpapi.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Mark All Read
@@ -799,7 +817,7 @@ paths:
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/httpapi.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Stream Real-time Notifications (SSE)
@@ -812,16 +830,13 @@ paths:
       - application/json
       responses:
         "200":
-          description: unread count
+          description: OK
           schema:
-            additionalProperties:
-              format: int64
-              type: integer
-            type: object
+            $ref: '#/definitions/httpapi.UnreadCountResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/httpapi.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Get Unread Count
@@ -829,23 +844,18 @@ paths:
       - Notifications
   /readyz:
     get:
-      description: Comprehensive readiness check that verifies active connections
-        to the database and Redis cache.
+      description: Verifies the database (and Redis, when configured) are reachable.
       produces:
       - application/json
       responses:
         "200":
-          description: status ready
+          description: OK
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/httpapi.HealthResponse'
         "503":
           description: dependency failure
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/httpapi.HealthResponse'
       summary: Readiness Probe
       tags:
       - Monitoring
@@ -869,7 +879,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/server.HashtagResponse'
+              $ref: '#/definitions/httpapi.HashtagResponse'
             type: array
       summary: Search Hashtags
       tags:
@@ -897,7 +907,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.PageResponse-server_TweetResponse'
+            $ref: '#/definitions/httpapi.PageResponse-httpapi_TweetResponse'
       summary: Search Tweets
       tags:
       - Search
@@ -924,7 +934,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.PageResponse-server_UserResponse'
+            $ref: '#/definitions/httpapi.PageResponse-httpapi_UserResponse'
       summary: Search Users
       tags:
       - Search
@@ -939,22 +949,22 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/server.createTweetRequest'
+          $ref: '#/definitions/httpapi.createTweetRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/server.TweetResponse'
+            $ref: '#/definitions/httpapi.TweetResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/httpapi.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/httpapi.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Create Tweet
@@ -974,15 +984,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.SuccessResponse'
+            $ref: '#/definitions/httpapi.SuccessResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/httpapi.ErrorResponse'
         "403":
           description: Forbidden
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/httpapi.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Delete Tweet
@@ -1003,11 +1013,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.TweetResponse'
+            $ref: '#/definitions/httpapi.TweetResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/httpapi.ErrorResponse'
       summary: Get Tweet
       tags:
       - Tweets
@@ -1025,11 +1035,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.SuccessResponse'
+            $ref: '#/definitions/httpapi.SuccessResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/httpapi.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Unlike Tweet
@@ -1048,11 +1058,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.SuccessResponse'
+            $ref: '#/definitions/httpapi.SuccessResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/httpapi.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Like Tweet
@@ -1081,7 +1091,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.PageResponse-server_TweetResponse'
+            $ref: '#/definitions/httpapi.PageResponse-httpapi_TweetResponse'
       summary: Get Tweet Replies
       tags:
       - Tweets
@@ -1099,11 +1109,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.SuccessResponse'
+            $ref: '#/definitions/httpapi.SuccessResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/httpapi.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Undo Retweet
@@ -1124,11 +1134,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.TweetResponse'
+            $ref: '#/definitions/httpapi.TweetResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/httpapi.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Retweet
@@ -1146,22 +1156,22 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/server.presignRequest'
+          $ref: '#/definitions/httpapi.presignRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.PresignResponse'
+            $ref: '#/definitions/httpapi.PresignResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/httpapi.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/httpapi.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Presign Upload URL
@@ -1183,11 +1193,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.UserResponse'
+            $ref: '#/definitions/httpapi.UserResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/httpapi.ErrorResponse'
       summary: Get User Profile
       tags:
       - Users
@@ -1207,11 +1217,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.SuccessResponse'
+            $ref: '#/definitions/httpapi.SuccessResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/httpapi.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Unfollow User
@@ -1232,11 +1242,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.SuccessResponse'
+            $ref: '#/definitions/httpapi.SuccessResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/httpapi.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Follow User
@@ -1265,7 +1275,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.PageResponse-server_UserResponse'
+            $ref: '#/definitions/httpapi.PageResponse-httpapi_UserResponse'
       summary: List Followers
       tags:
       - Users
@@ -1292,7 +1302,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.PageResponse-server_UserResponse'
+            $ref: '#/definitions/httpapi.PageResponse-httpapi_UserResponse'
       summary: List Following
       tags:
       - Users
@@ -1308,22 +1318,22 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/server.updateProfileRequest'
+          $ref: '#/definitions/httpapi.updateProfileRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.UserResponse'
+            $ref: '#/definitions/httpapi.UserResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/httpapi.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/httpapi.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Update User Profile
