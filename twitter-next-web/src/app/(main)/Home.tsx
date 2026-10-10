@@ -1,81 +1,43 @@
 'use client';
 
 import { Suspense } from 'react';
-import { useSearchParams, useRouter, usePathname } from 'next/navigation';
-import { FeedList } from '@/components/FeedList';
+import { useSearchParams } from 'next/navigation';
 import { CreateTweet } from '@/components/CreateTweet';
-import { useGlobalFeed, useFollowingFeed } from '@/hooks/useFeed';
+import { FeedList } from '@/components/FeedList';
+import { TabBar } from '@/components/TabBar';
 import { useAuth } from '@/hooks/useAuth';
+import { useFollowingFeed, useGlobalFeed } from '@/hooks/useFeed';
 
 function HomeContent() {
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const pathname = usePathname();
   const { isLoggedIn } = useAuth();
-  
-  const currentTab = searchParams.get('tab') === 'following' ? 'following' : 'for-you';
+  const following = useSearchParams().get('tab') === 'following' && isLoggedIn;
 
-  const globalFeed = useGlobalFeed(currentTab === 'for-you');
-  const followingFeed = useFollowingFeed(isLoggedIn && currentTab === 'following');
-
-  const feed = currentTab === 'for-you' ? globalFeed : followingFeed;
-  const tweets = feed.data?.pages.flatMap((p) => p.items) ?? [];
-
-  const handleTabChange = (newTab: 'for-you' | 'following') => {
-    // Only update if changed
-    if (newTab !== currentTab) {
-        const params = new URLSearchParams(searchParams);
-        params.set('tab', newTab);
-        router.replace(`${pathname}?${params.toString()}`);
-    }
-  };
+  const globalFeed = useGlobalFeed(!following);
+  const followingFeed = useFollowingFeed(following);
 
   return (
     <div className="min-h-screen">
-      {/* Tab bar: flattened, blur */}
-      <div className="sticky top-0 z-30 bg-background/80 backdrop-blur-md border-b border-border">
-        <div className="flex">
-          <button
-            type="button"
-            onClick={() => handleTabChange('for-you')}
-            className={`flex-1 py-4 text-[15px] font-bold transition-colors hover:bg-card/50 cursor-pointer ${
-              currentTab === 'for-you'
-                ? 'text-foreground border-b-2 border-primary'
-                : 'text-muted-foreground'
-            }`}
-          > 
-            For you
-          </button>
-          <button
-            type="button"
-            onClick={() => handleTabChange('following')}
-            disabled={!isLoggedIn}
-            className={`flex-1 py-4 text-[15px] font-bold transition-colors hover:bg-card/50 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
-              currentTab === 'following'
-                ? 'text-foreground border-b-2 border-primary'
-                : 'text-muted-foreground'
-            }`}
-          >
-            Following
-          </button>
-        </div>
-      </div>
-      {currentTab === 'following' && !isLoggedIn && (
-        <div className="p-4 text-center text-muted-foreground text-[15px]">
-          Sign in to see tweets from people you follow.
+      <header className="sticky top-0 z-30 border-b border-border bg-background/80 backdrop-blur-md">
+        <TabBar
+          replace
+          tabs={[
+            { label: 'For you', href: '/', active: !following },
+            { label: 'Following', href: '/?tab=following', active: following, disabled: !isLoggedIn },
+          ]}
+        />
+      </header>
+      {isLoggedIn && (
+        <div className="hidden border-b border-border sm:block">
+          <CreateTweet />
         </div>
       )}
-      <div className="hidden sm:block border-b border-border">
-        {isLoggedIn && <CreateTweet />}
-      </div>
-      {(currentTab !== 'following' || isLoggedIn) && (
+      {following ? (
         <FeedList
-          tweets={tweets}
-          isLoading={feed.isLoading}
-          isFetchingNextPage={feed.isFetchingNextPage}
-          hasNextPage={feed.hasNextPage}
-          fetchNextPage={feed.fetchNextPage}
+          query={followingFeed}
+          empty={{ title: 'Welcome to your timeline', body: 'Follow some accounts and their posts and reposts will show up here.' }}
         />
+      ) : (
+        <FeedList query={globalFeed} empty={{ title: 'Nothing here yet', body: 'Be the first to post something.' }} />
       )}
     </div>
   );
@@ -83,7 +45,7 @@ function HomeContent() {
 
 export function Home() {
   return (
-    <Suspense fallback={<div className="p-4 text-center text-muted-foreground">Loading...</div>}>
+    <Suspense>
       <HomeContent />
     </Suspense>
   );

@@ -35,7 +35,7 @@ export function useUserProfileByUsername(username: string) {
 }
 
 /** A profile tab. Likes are private: only the owner can load their own. */
-export function useUserTimeline(userId: number | null, tab: ProfileTab = 'posts', pageSize = PAGE_SIZE) {
+export function useUserTimeline(userId: number | null, tab: ProfileTab = 'posts', { enabled = true, pageSize = PAGE_SIZE } = {}) {
   return useInfiniteQuery({
     queryKey: queryKeys.users.timeline(userId!, tab),
     queryFn: async ({ pageParam }: { pageParam: string | null }): Promise<PageResponse<TweetResponse>> => {
@@ -46,7 +46,7 @@ export function useUserTimeline(userId: number | null, tab: ProfileTab = 'posts'
     },
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => (lastPage.hasNext ? lastPage.nextCursor : undefined),
-    enabled: userId != null && userId > 0,
+    enabled: enabled && userId != null && userId > 0,
   });
 }
 

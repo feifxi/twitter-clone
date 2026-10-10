@@ -1,80 +1,39 @@
 'use client';
 
-import { useRef, useEffect } from 'react';
-import { Tweet, TweetSkeleton } from './Tweet';
-import type { TweetResponse } from '@/types';
+import type { InfiniteData, UseInfiniteQueryResult } from '@tanstack/react-query';
+import { EmptyState, ErrorState, type EmptyCopy } from '@/components/ListStates';
+import { Tweet, TweetSkeleton } from '@/components/Tweet';
+import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
+import type { PageResponse, TweetResponse } from '@/types';
 
 interface FeedListProps {
-  tweets: TweetResponse[];
-  isLoading: boolean;
-  isFetchingNextPage?: boolean;
-  hasNextPage?: boolean;
-  fetchNextPage?: () => void;
+  query: UseInfiniteQueryResult<InfiniteData<PageResponse<TweetResponse>>>;
+  empty: EmptyCopy;
+  /** Optional client-side filter over loaded tweets. */
+  filter?: (tweet: TweetResponse) => boolean;
 }
 
-export function FeedList({
-  tweets,
-  isLoading,
-  isFetchingNextPage,
-  hasNextPage,
-  fetchNextPage,
-}: FeedListProps) {
-  const sentinelRef = useRef<HTMLDivElement>(null);
+/** An infinitely scrolling list of tweets with loading, error and empty states. */
+export function FeedList({ query, empty, filter }: FeedListProps) {
+  const sentinel = useInfiniteScroll(query);
+  const all = query.data?.pages.flatMap((page) => page.items) ?? [];
+  const tweets = filter ? all.filter(filter) : all;
 
-  useEffect(() => {
-    if (!hasNextPage || !fetchNextPage || !sentinelRef.current) return;
-    const el = sentinelRef.current;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting) fetchNextPage();
-      },
-      { rootMargin: '200px' }
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [hasNextPage, fetchNextPage]);
-
-  if (isLoading) {
-    return (
-      <div className="flex flex-col">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <TweetSkeleton key={i} />
-        ))}
-      </div>
-    );
+  if (query.isPending) {
+    return Array.from({ length: 5 }, (_, i) => <TweetSkeleton key={i} />);
   }
-
-  if (tweets.length === 0) {
-    return (
-      <div className="py-12 text-center text-muted-foreground text-[15px]">
-        No tweets yet.
-      </div>
-    );
-  }
+  if (query.isError && tweets.length === 0) return <ErrorState onRetry={() => query.refetch()} />;
+  if (tweets.length === 0 && !query.hasNextPage) return <EmptyState {...empty} />;
 
   return (
-    <div className="flex flex-col">
+    <div>
       {tweets.map((tweet) => (
         // A tweet can appear twice: as posted and as someone's retweet.
         <Tweet key={`${tweet.retweetedBy?.id ?? 0}-${tweet.id}`} tweet={tweet} />
       ))}
-      <div ref={sentinelRef} />
-      {isFetchingNextPage && (
-        <div className="flex justify-center py-2">
-          <TweetSkeleton />
-        </div>
-      )}
-      {hasNextPage && !isFetchingNextPage && fetchNextPage && (
-        <div className="flex justify-center py-4 border-b border-border">
-          <button
-            type="button"
-            onClick={() => fetchNextPage()}
-            className="py-2 px-4 rounded-full text-[15px] font-medium text-primary hover:bg-primary/10 transition-colors"
-          >
-            Load more
-          </button>
-        </div>
-      )}
+      <div ref={sentinel} />
+      {query.isFetchingNextPage && <TweetSkeleton />}
+      {query.isFetchNextPageError && <ErrorState onRetry={() => query.fetchNextPage()} />}
     </div>
   );
 }

@@ -37,6 +37,7 @@ export const queryKeys = {
     all: ['search'] as const,
     tweets: (q: string) => ['search', 'tweets', q] as const,
     users: (q: string, size: number) => ['search', 'users', q, size] as const,
+    people: (q: string) => ['search', 'people', q] as const,
     hashtags: (q: string) => ['search', 'hashtags', q] as const,
   },
   discovery: {
