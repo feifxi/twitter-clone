@@ -522,6 +522,28 @@ paths:
       summary: Suggested Users
       tags:
       - Discovery
+  /events:
+    get:
+      description: 'One Server-Sent Events stream per signed-in tab. Event names:
+        `connected`, `notification` (NotificationResponse), `dm` (MessageResponse).
+        Comment lines (`: ping`) are heartbeats. Reconnect on close; the server suggests
+        a 3s retry.'
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: text/event-stream
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/httpapi.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Real-time Events (SSE)
+      tags:
+      - Realtime
   /feeds/following:
     get:
       description: Get a paginated list of tweets from users the current user follows.
@@ -741,26 +763,6 @@ paths:
       summary: Send Message to User
       tags:
       - Messages
-  /messages/ws:
-    get:
-      description: Establish a WebSocket connection to receive real-time direct messages.
-        Supports authentication via 'access_token' query param or 'Authorization'
-        header.
-      parameters:
-      - description: JWT Access Token (if not using Authorization header)
-        in: query
-        name: access_token
-        type: string
-      responses:
-        "101":
-          description: Switching Protocols
-          schema:
-            type: string
-      security:
-      - BearerAuth: []
-      summary: Stream Messages (WebSocket)
-      tags:
-      - Messages
   /notifications:
     get:
       description: Get a paginated list of social notifications (likes, follows, etc.)
@@ -805,26 +807,6 @@ paths:
       security:
       - BearerAuth: []
       summary: Mark All Read
-      tags:
-      - Notifications
-  /notifications/stream:
-    get:
-      description: Establish a Server-Sent Events (SSE) connection to receive near
-        real-time notifications for likes, replies, retweets, and new followers.
-      produces:
-      - text/event-stream
-      responses:
-        "200":
-          description: text/event-stream
-          schema:
-            type: string
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/httpapi.ErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: Stream Real-time Notifications (SSE)
       tags:
       - Notifications
   /notifications/unread-count:

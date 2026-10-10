@@ -6,7 +6,7 @@ import { MobileNav } from '@/components/MobileNav';
 
 import { usePathname } from 'next/navigation';
 import { useUnreadCount } from '@/hooks/useNotifications';
-import { useNotificationSSE } from '@/hooks/useNotificationSSE';
+import { useRealtimeEvents } from '@/hooks/useRealtimeEvents';
 
 export default function MainLayout({
   children,
@@ -19,8 +19,8 @@ export default function MainLayout({
   const isWideLayout = isMessagesPage || isChanombotPage;
   const { data: unreadCount } = useUnreadCount();
 
-  // Mount SSE once at layout scope to avoid duplicated streams/refetches.
-  useNotificationSSE();
+  // One SSE stream per tab, mounted at layout scope (notifications + direct messages).
+  useRealtimeEvents();
 
   return (
     <div

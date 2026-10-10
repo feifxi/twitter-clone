@@ -4,6 +4,7 @@ package message
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 
 	"github.com/chanombude/twitter-go-api/internal/apperr"
@@ -14,12 +15,20 @@ import (
 
 const maxContentLength = 2000
 
-type Service struct {
-	store db.Store
+// EventType is the realtime event name for a new direct message.
+const EventType = "dm"
+
+type publisher interface {
+	Publish(ctx context.Context, userID int64, eventType string, payload any) error
 }
 
-func New(store db.Store) *Service {
-	return &Service{store: store}
+type Service struct {
+	store     db.Store
+	publisher publisher
+}
+
+func New(store db.Store, publisher publisher) *Service {
+	return &Service{store: store, publisher: publisher}
 }
 
 func normalizeContent(content string) (string, error) {
@@ -182,17 +191,16 @@ func (s *Service) Messages(ctx context.Context, userID, conversationID int64, pa
 }
 
 // SendToUser sends to the direct conversation with recipientID, creating it on first contact.
-// It also returns the participant IDs so the caller can push the message to them.
-func (s *Service) SendToUser(ctx context.Context, senderID, recipientID int64, content string) (domain.Message, []int64, error) {
+func (s *Service) SendToUser(ctx context.Context, senderID, recipientID int64, content string) (domain.Message, error) {
 	if senderID == recipientID {
-		return domain.Message{}, nil, apperr.BadRequest("cannot message yourself")
+		return domain.Message{}, apperr.BadRequest("cannot message yourself")
 	}
 	normalized, err := normalizeContent(content)
 	if err != nil {
-		return domain.Message{}, nil, err
+		return domain.Message{}, err
 	}
 	if _, err := s.store.GetUser(ctx, db.GetUserParams{ID: recipientID}); err != nil {
-		return domain.Message{}, nil, db.NotFound(err, "user")
+		return domain.Message{}, db.NotFound(err, "user")
 	}
 
 	var created db.DirectMessage
@@ -205,24 +213,24 @@ func (s *Service) SendToUser(ctx context.Context, senderID, recipientID int64, c
 		return err
 	})
 	if err != nil {
-		return domain.Message{}, nil, err
+		return domain.Message{}, err
 	}
 	return s.delivered(ctx, created)
 }
 
 // SendToConversation sends to an existing conversation the sender belongs to.
-func (s *Service) SendToConversation(ctx context.Context, senderID, conversationID int64, content string) (domain.Message, []int64, error) {
+func (s *Service) SendToConversation(ctx context.Context, senderID, conversationID int64, content string) (domain.Message, error) {
 	normalized, err := normalizeContent(content)
 	if err != nil {
-		return domain.Message{}, nil, err
+		return domain.Message{}, err
 	}
 
 	allowed, err := s.store.IsConversationParticipant(ctx, db.IsConversationParticipantParams{ConversationID: conversationID, UserID: senderID})
 	if err != nil {
-		return domain.Message{}, nil, err
+		return domain.Message{}, err
 	}
 	if !allowed {
-		return domain.Message{}, nil, apperr.Forbidden("not allowed to send messages to this conversation")
+		return domain.Message{}, apperr.Forbidden("not allowed to send messages to this conversation")
 	}
 
 	var created db.DirectMessage
@@ -232,7 +240,7 @@ func (s *Service) SendToConversation(ctx context.Context, senderID, conversation
 		return err
 	})
 	if err != nil {
-		return domain.Message{}, nil, err
+		return domain.Message{}, err
 	}
 	return s.delivered(ctx, created)
 }
@@ -267,21 +275,30 @@ func insertMessage(ctx context.Context, q db.Querier, conversationID, senderID i
 	return msg, q.TouchConversation(ctx, conversationID)
 }
 
-// delivered builds the response message and lists who should receive it in real time.
-func (s *Service) delivered(ctx context.Context, msg db.DirectMessage) (domain.Message, []int64, error) {
-	participants, err := s.store.ListConversationParticipantIDs(ctx, msg.ConversationID)
-	if err != nil {
-		return domain.Message{}, nil, err
-	}
+// delivered builds the response message and pushes it to every participant's open streams
+// (the sender's other devices included). Push failures are logged: the message is stored.
+func (s *Service) delivered(ctx context.Context, msg db.DirectMessage) (domain.Message, error) {
 	sender, err := s.fetchSender(ctx, msg.SenderID)
 	if err != nil {
-		return domain.Message{}, nil, err
+		return domain.Message{}, err
 	}
-	return domain.Message{
+	out := domain.Message{
 		ID:             msg.ID,
 		ConversationID: msg.ConversationID,
 		Sender:         sender,
 		Content:        msg.Content,
 		CreatedAt:      msg.CreatedAt,
-	}, participants, nil
+	}
+
+	participants, err := s.store.ListConversationParticipantIDs(ctx, msg.ConversationID)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to list participants; message not pushed", "err", err, "message_id", msg.ID)
+		return out, nil
+	}
+	for _, userID := range participants {
+		if err := s.publisher.Publish(ctx, userID, EventType, out); err != nil {
+			slog.ErrorContext(ctx, "failed to publish message", "err", err, "message_id", msg.ID, "user_id", userID)
+		}
+	}
+	return out, nil
 }

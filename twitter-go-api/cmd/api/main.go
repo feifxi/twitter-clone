@@ -160,7 +160,7 @@ func newServer(ctx context.Context, cfg config.Config, store db.Store, rdb *redi
 		Search:        search.New(store),
 		Discovery:     discovery.New(store),
 		Notifications: notifications,
-		Messages:      message.New(store),
+		Messages:      message.New(store, hub),
 		Assistant: assistant.New(assistant.Config{
 			ChatModel:      cfg.GeminiChatModel,
 			EmbeddingModel: cfg.GeminiEmbeddingModel,

@@ -294,18 +294,18 @@ Response 200:
 { "success": true }
 ```
 
-### GET `/notifications/stream` (private, SSE)
-- Content-Type: `text/event-stream`
+## Real-time Events
+
+### GET `/events` (private, SSE)
+One stream per signed-in tab carries every real-time update. Events reach the user on whichever API instance their stream is connected to (Redis pub/sub).
+- Content-Type: `text/event-stream`; the server suggests `retry: 3000`.
 - Events:
-  1. `connected`
-  2. `ping`
-  3. `notification` (payload `NotificationResponse`)
+  1. `connected`: `{ "status": "ok" }`. Sent on every (re)connect; refetch anything you may have missed.
+  2. `notification`: `NotificationResponse`
+  3. `dm`: `MessageResponse`. Sent to every participant, including the sender's other tabs.
+- Comment lines (`: ping`) every 15s are heartbeats.
 
 ## Direct Messages
-
-### GET `/messages/ws` (optional auth, WebSocket)
-- Allows upgrading the connection to WebSocket for real-time messaging.
-- Authentication tokens should be passed in via handshake headers or query parameters if strictly required.
 
 ### GET `/messages/conversations` (private)
 Query: `cursor`, `size`

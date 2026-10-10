@@ -1,4 +1,4 @@
-// Package httpapi exposes the feature services over HTTP (REST, SSE, WebSocket)
+// Package httpapi exposes the feature services over HTTP (REST and SSE)
 // with Gin. Handlers only bind input, call a service and map the result to a DTO.
 package httpapi
 
@@ -6,7 +6,6 @@ import (
 	"context"
 	"net"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/chanombude/twitter-go-api/internal/realtime"
@@ -35,20 +34,16 @@ type Server struct {
 	db     pinger
 	redis  *redis.Client // optional: shared rate limits and readiness
 	router *gin.Engine
-
-	wsClients map[int64]map[*chatWSClient]struct{}
-	wsMu      sync.RWMutex
 }
 
 func New(cfg Config, svc Services, tokens token.Maker, hub *realtime.Hub, db pinger, rdb *redis.Client) *Server {
 	s := &Server{
-		cfg:       cfg,
-		svc:       svc,
-		tokens:    tokens,
-		hub:       hub,
-		db:        db,
-		redis:     rdb,
-		wsClients: make(map[int64]map[*chatWSClient]struct{}),
+		cfg:    cfg,
+		svc:    svc,
+		tokens: tokens,
+		hub:    hub,
+		db:     db,
+		redis:  rdb,
 	}
 	s.router = s.routes()
 	return s

@@ -288,6 +288,37 @@ const docTemplate = `{
                 }
             }
         },
+        "/events": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "One Server-Sent Events stream per signed-in tab. Event names: ` + "`" + `connected` + "`" + `, ` + "`" + `notification` + "`" + ` (NotificationResponse), ` + "`" + `dm` + "`" + ` (MessageResponse). Comment lines (` + "`" + `: ping` + "`" + `) are heartbeats. Reconnect on close; the server suggests a 3s retry.",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "Realtime"
+                ],
+                "summary": "Real-time Events (SSE)",
+                "responses": {
+                    "200": {
+                        "description": "text/event-stream",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/httpapi.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/feeds/following": {
             "get": {
                 "security": [
@@ -629,36 +660,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/messages/ws": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Establish a WebSocket connection to receive real-time direct messages. Supports authentication via 'access_token' query param or 'Authorization' header.",
-                "tags": [
-                    "Messages"
-                ],
-                "summary": "Stream Messages (WebSocket)",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "JWT Access Token (if not using Authorization header)",
-                        "name": "access_token",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "101": {
-                        "description": "Switching Protocols",
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                }
-            }
-        },
         "/notifications": {
             "get": {
                 "security": [
@@ -721,37 +722,6 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/httpapi.SuccessResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/notifications/stream": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Establish a Server-Sent Events (SSE) connection to receive near real-time notifications for likes, replies, retweets, and new followers.",
-                "produces": [
-                    "text/event-stream"
-                ],
-                "tags": [
-                    "Notifications"
-                ],
-                "summary": "Stream Real-time Notifications (SSE)",
-                "responses": {
-                    "200": {
-                        "description": "text/event-stream",
-                        "schema": {
-                            "type": "string"
                         }
                     },
                     "401": {

@@ -113,15 +113,13 @@ func (s *Server) sendMessageToUser(c *gin.Context) {
 		return
 	}
 
-	item, participants, err := s.svc.Messages.SendToUser(c.Request.Context(), senderID, reqID.ID, req.Content)
+	item, err := s.svc.Messages.SendToUser(c.Request.Context(), senderID, reqID.ID, req.Content)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 
-	resp := newMessageResponse(item)
-	s.sendDirectMessageWS(participants, resp)
-	c.JSON(http.StatusCreated, resp)
+	c.JSON(http.StatusCreated, newMessageResponse(item))
 }
 
 // sendMessageToConversation godoc
@@ -154,13 +152,11 @@ func (s *Server) sendMessageToConversation(c *gin.Context) {
 		return
 	}
 
-	item, participants, err := s.svc.Messages.SendToConversation(c.Request.Context(), senderID, reqID.ID, req.Content)
+	item, err := s.svc.Messages.SendToConversation(c.Request.Context(), senderID, reqID.ID, req.Content)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 
-	resp := newMessageResponse(item)
-	s.sendDirectMessageWS(participants, resp)
-	c.JSON(http.StatusCreated, resp)
+	c.JSON(http.StatusCreated, newMessageResponse(item))
 }

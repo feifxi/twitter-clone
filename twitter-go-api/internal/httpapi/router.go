@@ -98,6 +98,7 @@ func (s *Server) registerDomainRoutes(api *gin.RouterGroup) {
 	s.registerNotificationRoutes(api, requiredAuth)
 	s.registerMessageRoutes(api, optionalAuth, requiredAuth, strictWriteLimiter)
 	s.registerAssistantRoutes(api, requiredAuth)
+	api.GET("/events", requiredAuth, s.streamEvents)
 }
 
 func (s *Server) registerAuthRoutes(api *gin.RouterGroup, optionalAuth, requiredAuth, strictAuthLimiter gin.HandlerFunc) {
@@ -175,15 +176,11 @@ func (s *Server) registerNotificationRoutes(api *gin.RouterGroup, requiredAuth g
 	notificationsPrivate := api.Group("/notifications")
 	notificationsPrivate.Use(requiredAuth)
 	notificationsPrivate.GET("", s.listNotifications)
-	notificationsPrivate.GET("/stream", s.streamNotifications)
 	notificationsPrivate.GET("/unread-count", s.getUnreadNotificationCount)
 	notificationsPrivate.POST("/mark-read", s.markNotificationRead)
 }
 
 func (s *Server) registerMessageRoutes(api *gin.RouterGroup, optionalAuth, requiredAuth, strictWriteLimiter gin.HandlerFunc) {
-	messagesPublic := api.Group("/messages")
-	messagesPublic.GET("/ws", s.streamMessagesWS)
-
 	messagesPrivate := api.Group("/messages")
 	messagesPrivate.Use(requiredAuth)
 	messagesPrivate.GET("/conversations", s.listConversations)

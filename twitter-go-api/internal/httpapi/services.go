@@ -68,8 +68,8 @@ type NotificationService interface {
 type MessageService interface {
 	Conversations(ctx context.Context, userID int64, page, size int32) ([]domain.Conversation, error)
 	Messages(ctx context.Context, userID, conversationID int64, page, size int32) ([]domain.Message, error)
-	SendToUser(ctx context.Context, senderID, recipientID int64, content string) (domain.Message, []int64, error)
-	SendToConversation(ctx context.Context, senderID, conversationID int64, content string) (domain.Message, []int64, error)
+	SendToUser(ctx context.Context, senderID, recipientID int64, content string) (domain.Message, error)
+	SendToConversation(ctx context.Context, senderID, conversationID int64, content string) (domain.Message, error)
 }
 
 type AssistantService interface {

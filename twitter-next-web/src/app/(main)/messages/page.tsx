@@ -15,7 +15,6 @@ import {
   useSendMessageToUser,
 } from "@/hooks/useMessages";
 import { useUIStore } from "@/store/useUIStore";
-import { useChatWebSocket } from "@/hooks/useChatWebSocket";
 import { useAuth } from "@/hooks/useAuth";
 import type { MessageResponse, UserResponse } from "@/types";
 import { useQuery } from "@tanstack/react-query";
@@ -146,7 +145,6 @@ export default function MessagesPage() {
   };
 
   // 1. WebSocket Hook
-  useChatWebSocket();
 
   // 2. Private DMs Queries (Auth Only)
   const { data: conversationPages, isLoading: conversationsLoading } =

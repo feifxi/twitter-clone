@@ -13,8 +13,8 @@ Full-stack Twitter/X clone with a Next.js frontend, Go backend, and production-r
 - **Feeds** — "For You" global feed with **time-decay gravity algorithm** (weighing likes, retweets, and replies), following-only feed, and per-user profile feed
 - **Follow / Unfollow** — Follow users with follower & following lists
 - **Media Uploads** — S3 presigned-URL uploads served via CloudFront CDN
-- **Real-time Notifications** — Server-Sent Events (SSE) streaming with unread count
-- **Direct Messages** — Real-time conversations over WebSocket
+- **Real-time Updates** — one Server-Sent Events (SSE) stream for notifications and direct messages, fanned out across instances via Redis
+- **Direct Messages** — one-to-one conversations, delivered in real time over the same SSE stream
 - **Search** — Search users, tweets, and hashtags
 - **Trending & Discovery** — Trending hashtags and suggested users
 - **AI Assistant** — Context-aware chat powered by Gemini 2.5 Flash with personal timeline knowledge
