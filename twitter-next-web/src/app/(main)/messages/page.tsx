@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Search, MailPlus, Send } from "lucide-react";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
@@ -28,6 +27,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { UserAvatar } from '@/components/UserAvatar';
 
 function formatRelativeTime(value: string): string {
   const at = new Date(value).getTime();
@@ -367,12 +367,7 @@ export default function MessagesPage() {
                             className="flex items-center gap-3 p-2 hover:bg-muted rounded-lg cursor-pointer transition-colors"
                             onClick={() => handleStartConversation(u)}
                           >
-                            <Avatar className="w-10 h-10 shrink-0">
-                              <AvatarImage src={u.avatarUrl ?? undefined} />
-                              <AvatarFallback>
-                                {(u.displayName || u.username)[0]}
-                              </AvatarFallback>
-                            </Avatar>
+                            <UserAvatar user={u} />
                             <div className="flex flex-col flex-1 min-w-0">
                               <span className="font-bold text-[15px] truncate">
                                 {u.displayName || u.username}
@@ -469,12 +464,7 @@ export default function MessagesPage() {
                     }
                     className={`flex gap-3 px-4 py-3 cursor-pointer transition-colors hover:bg-muted/50 ${activeChat?.type === "private" && activeChat?.id === conv.id ? "border-r-2 border-r-primary bg-muted/30" : ""}`}
                   >
-                    <Avatar className="w-10 h-10 shrink-0">
-                      <AvatarImage src={conv.peer.avatarUrl ?? undefined} />
-                      <AvatarFallback>
-                        {(conv.peer.displayName || conv.peer.username)[0]}
-                      </AvatarFallback>
-                    </Avatar>
+                    <UserAvatar user={conv.peer} />
                     <div className="flex-1 min-w-0">
                       <div className="flex justify-between items-baseline gap-2">
                         <div className="truncate text-foreground font-bold text-[15px]">

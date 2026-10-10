@@ -6,7 +6,6 @@ import { usePathname } from 'next/navigation';
 import { Home, Search, Bell, Mail, Users, LogIn } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ComposeTweetModal } from '@/components/ComposeTweetModal';
 import { useUIStore } from '@/store/useUIStore';
 import {
@@ -17,6 +16,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { UserAvatar } from '@/components/UserAvatar';
 
 type MobileNavProps = {
   unreadCount?: number;
@@ -93,10 +93,7 @@ export function MobileNav({ unreadCount = 0 }: MobileNavProps) {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button type="button" className="p-2 relative flex items-center justify-center cursor-pointer outline-none">
-                <Avatar className="w-6 h-6 border border-border/50">
-                  <AvatarImage src={user.avatarUrl ?? undefined} alt={user.displayName || user.username} />
-                  <AvatarFallback className="text-[10px]">{(user.displayName || user.username)[0]}</AvatarFallback>
-                </Avatar>
+                <UserAvatar user={user} size="xs" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" side="top" className="w-[200px] mb-2 font-bold z-50">

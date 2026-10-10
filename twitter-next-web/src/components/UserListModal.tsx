@@ -1,11 +1,11 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { useUserFollowers, useUserFollowing } from '@/hooks/useProfile';
 import { FollowButton } from '@/components/FollowButton';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import Link from 'next/link';
 import { useInView } from 'react-intersection-observer';
 import { useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
+import { UserAvatar } from '@/components/UserAvatar';
 
 interface UserListModalProps {
   userId: number | null;
@@ -64,10 +64,7 @@ export function UserListModal({ userId, type, isOpen, onClose }: UserListModalPr
               {users.map((user) => (
                 <div key={user.id} className="flex items-center gap-3 px-4 py-3 hover:bg-card transition-colors">
                   <Link href={`/${user.username}`} onClick={onClose} className="shrink-0">
-                    <Avatar className="w-10 h-10">
-                      <AvatarImage src={user.avatarUrl ?? undefined} />
-                      <AvatarFallback>{(user.displayName || user.username)[0]}</AvatarFallback>
-                    </Avatar>
+                    <UserAvatar user={user} />
                   </Link>
                   
                   <div className="flex-1 min-w-0">

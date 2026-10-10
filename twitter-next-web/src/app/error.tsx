@@ -46,7 +46,7 @@ export default function ErrorBoundary({
         </div>
         
         {process.env.NODE_ENV === 'development' && (
-            <div className="mt-8 p-4 bg-red-500/10 border border-destructive/20 rounded-xl text-left overflow-auto max-h-[300px]">
+            <div className="mt-8 p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-left overflow-auto max-h-[300px]">
                 <p className="font-mono text-xs text-destructive wrap-break-word">
                     {error.message || 'Unknown error'}
                 </p>

@@ -7,10 +7,10 @@ import { Search } from 'lucide-react';
 import { useTrendingHashtags, useSuggestedUsers, useSearchUsers, useSearchHashtags } from '@/hooks/useDiscovery';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useDebounce } from '@/hooks/useDebounce';
 import { FollowButton } from '@/components/FollowButton';
 import type { HashtagResponse, UserResponse, PageResponse } from '@/types';
+import { UserAvatar } from '@/components/UserAvatar';
 
 export function Sidebar() {
   const router = useRouter();
@@ -107,10 +107,7 @@ export function Sidebar() {
                         className="flex items-center gap-3 px-4 py-3 hover:bg-card transition-colors"
                         onClick={() => setIsFocused(false)}
                       >
-                        <Avatar className="w-10 h-10">
-                          <AvatarImage src={u.avatarUrl ?? undefined} />
-                          <AvatarFallback>{(u.displayName || u.username)[0]}</AvatarFallback>
-                        </Avatar>
+                        <UserAvatar user={u} />
                         <div className="flex-1 min-w-0">
                           <div className="font-bold text-foreground truncate">{u.displayName}</div>
                           <div className="text-muted-foreground truncate">@{u.username}</div>
@@ -216,10 +213,7 @@ function SuggestedUsersList({ suggested, suggestedLoading, currentUser }: Sugges
                 className="flex items-center gap-3 px-4 py-3 hover:bg-secondary/30 transition-colors cursor-pointer"
               >
                 <Link href={`/${u.username}`} className="shrink-0">
-                  <Avatar className="w-10 h-10">
-                    <AvatarImage src={u.avatarUrl ?? undefined} />
-                    <AvatarFallback>{(u.displayName || u.username)[0]}</AvatarFallback>
-                  </Avatar>
+                  <UserAvatar user={u} />
                 </Link>
                 <div className="flex-1 min-w-0">
                   <Link

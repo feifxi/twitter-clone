@@ -2,12 +2,12 @@
 
 import { useSuggestedUsers } from '@/hooks/useDiscovery';
 import Link from 'next/link';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useAuth } from '@/hooks/useAuth';
 import { FollowButton } from '@/components/FollowButton';
 
 import { useRouter } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
+import { UserAvatar } from '@/components/UserAvatar';
 
 export default function ConnectPeoplePage() {
   const router = useRouter();
@@ -43,10 +43,7 @@ export default function ConnectPeoplePage() {
             users.map((u) => (
                 <div key={u.id} className="flex items-center gap-3 px-4 py-3 hover:bg-card transition-colors cursor-pointer border-b border-border">
                         <Link href={`/${u.username}`} className="shrink-0">
-                        <Avatar className="w-10 h-10">
-                            <AvatarImage src={u.avatarUrl ?? undefined} />
-                            <AvatarFallback>{(u.displayName || u.username)[0]}</AvatarFallback>
-                        </Avatar>
+                        <UserAvatar user={u} />
                     </Link>
                     <div className="flex-1 min-w-0">
                         <Link href={`/${u.username}`} className="font-bold text-foreground hover:underline block truncate">

@@ -3,12 +3,12 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useNotifications, useMarkAllRead } from '@/hooks/useNotifications';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ArrowLeft, Heart, Repeat2, User, MessageCircle } from 'lucide-react';
 import Link from 'next/link';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { useInView } from 'react-intersection-observer';
 import type { NotificationResponse } from '@/types';
+import { UserAvatar } from '@/components/UserAvatar';
 
 function NotificationItem({ notification }: { notification: NotificationResponse }) {
   const router = useRouter();
@@ -21,12 +21,12 @@ function NotificationItem({ notification }: { notification: NotificationResponse
   switch (type) {
     case 'LIKE':
         Icon = Heart;
-        iconColor = 'text-red-500';
+        iconColor = 'text-like';
         message = 'liked your post';
         break;
     case 'RETWEET':
         Icon = Repeat2;
-        iconColor = 'text-green-500';
+        iconColor = 'text-retweet';
         message = 'reposted your post';
         break;
     case 'FOLLOW':
@@ -68,10 +68,7 @@ function NotificationItem({ notification }: { notification: NotificationResponse
              {/* Avatar Row */}
              <div className="flex items-center">
                 <Link href={`/${actor.username}`} onClick={(e) => e.stopPropagation()}>
-                    <Avatar className="w-8 h-8 hover:opacity-90 transition-opacity">
-                        <AvatarImage src={actor.avatarUrl ?? undefined} />
-                        <AvatarFallback>{(actor.displayName || actor.username)[0]}</AvatarFallback>
-                    </Avatar>
+                    <UserAvatar user={actor} size="sm" />
                 </Link>
              </div>
              

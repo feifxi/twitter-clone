@@ -3,13 +3,13 @@
 import { useRef, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useCreateTweet } from '@/hooks/useTweet';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Image as ImageIcon, X } from 'lucide-react';
 import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { tweetRequestSchema, type TweetRequestInput } from '@/lib/validation';
 import type { TweetResponse } from '@/types';
+import { UserAvatar } from '@/components/UserAvatar';
 
 interface CreateTweetProps {
   placeholder?: string;
@@ -111,10 +111,7 @@ export function CreateTweet({
   return (
     <div className={`flex gap-3 px-4 py-3 border-b border-border ${className || ''}`}>
       <div className="shrink-0">
-        <Avatar className="w-10 h-10">
-          <AvatarImage src={user.avatarUrl ?? undefined} alt={user.displayName || user.username} />
-          <AvatarFallback>{(user.displayName || user.username)[0]}</AvatarFallback>
-        </Avatar>
+        <UserAvatar user={user} />
       </div>
       <form className="flex-1 min-w-0" onSubmit={onFormSubmit}>
         <div className="relative min-h-[52px]">

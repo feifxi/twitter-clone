@@ -1,296 +1,232 @@
 'use client';
 
 import { useState } from 'react';
-
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Heart, MessageCircle, Repeat2, Share, MoreHorizontal } from 'lucide-react';
-import type { TweetResponse } from '@/types';
-import { useToggleLike, useToggleRetweet } from '@/hooks/useTweetActions';
-import { ReplyModal } from '@/components/ReplyModal';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
-import { useAuth } from '@/hooks/useAuth';
-import { useUIStore } from '@/store/useUIStore';
-import { useDeleteTweet } from '@/hooks/useTweet';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { cn } from '@/lib/utils';
-import { formatDistanceToNowStrict } from 'date-fns';
-import { Trash2 } from 'lucide-react';
+import { Heart, MessageCircle, Repeat2, Share } from 'lucide-react';
 import { toast } from 'sonner';
-
-function formatDate(iso: string) {
-  try {
-      return formatDistanceToNowStrict(new Date(iso))
-        .replace(' seconds', 's')
-        .replace(' second', 's')
-        .replace(' minutes', 'm')
-        .replace(' minute', 'm')
-        .replace(' hours', 'h')
-        .replace(' hour', 'h')
-        .replace(' days', 'd')
-  } catch {
-      return '';
-  }
-}
+import { ConfirmModal } from '@/components/ConfirmModal';
+import { ImageLightbox } from '@/components/ImageLightbox';
+import { ReplyModal } from '@/components/ReplyModal';
+import { TweetActionButton } from '@/components/TweetActionButton';
+import { TweetActionsMenu } from '@/components/TweetActionsMenu';
+import { TweetBody } from '@/components/TweetBody';
+import { UserAvatar } from '@/components/UserAvatar';
+import { useAuth } from '@/hooks/useAuth';
+import { useDeleteTweet } from '@/hooks/useTweet';
+import { useToggleLike, useToggleRetweet } from '@/hooks/useTweetActions';
+import { displayNameOf, formatFullTime, formatRelativeTime } from '@/lib/format';
+import { cn } from '@/lib/utils';
+import { useUIStore } from '@/store/useUIStore';
+import type { TweetResponse } from '@/types';
 
 export function TweetSkeleton() {
   return (
-    <div className="flex gap-3 p-4 border-b border-border animate-pulse">
-      <div className="w-10 h-10 rounded-full bg-secondary shrink-0" />
-      <div className="flex-1 min-w-0 space-y-2">
-        <div className="h-4 w-32 bg-secondary rounded" />
-        <div className="h-16 bg-secondary/50 rounded" />
+    <div className="flex animate-pulse gap-3 border-b border-border px-4 py-3" aria-hidden="true">
+      <div className="size-10 shrink-0 rounded-full bg-muted" />
+      <div className="min-w-0 flex-1 space-y-2 py-1">
+        <div className="h-3.5 w-40 rounded bg-muted" />
+        <div className="h-3.5 w-full rounded bg-muted" />
+        <div className="h-3.5 w-2/3 rounded bg-muted" />
       </div>
+    </div>
+  );
+}
+
+const stop = (e: React.MouseEvent) => e.stopPropagation();
+
+function TweetMedia({ tweet, onOpenImage }: { tweet: TweetResponse; onOpenImage: (src: string) => void }) {
+  if (!tweet.mediaUrl) return null;
+  const src = tweet.mediaUrl;
+  return (
+    <div className="mt-3 overflow-hidden rounded-2xl border border-border">
+      {tweet.mediaType === 'VIDEO' ? (
+        <video src={src} controls playsInline preload="metadata" onClick={stop} className="max-h-[510px] w-full bg-black" />
+      ) : (
+        <button
+          type="button"
+          onClick={(e) => {
+            stop(e);
+            onOpenImage(src);
+          }}
+          className="block w-full cursor-zoom-in"
+          aria-label="Open image"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={src} alt="" loading="lazy" className="max-h-[510px] w-full object-cover" />
+        </button>
+      )}
     </div>
   );
 }
 
 interface TweetProps {
   tweet: TweetResponse;
-  disableClick?: boolean;
+  /** The tweet detail page: larger text, full timestamp, no click-through. */
+  variant?: 'feed' | 'detail';
 }
 
-export function Tweet({ tweet, disableClick }: TweetProps) {
+export function Tweet({ tweet, variant = 'feed' }: TweetProps) {
   const router = useRouter();
   const toggleLike = useToggleLike();
   const toggleRetweet = useToggleRetweet();
-  const deleteMutation = useDeleteTweet();
-  const [showReplyModal, setShowReplyModal] = useState(false);
-  const { user: currentUser, isLoggedIn } = useAuth();
+  const deleteTweet = useDeleteTweet();
+  const { user: me, isLoggedIn } = useAuth();
   const openSignInModal = useUIStore((s) => s.openSignInModal);
+  const [replyOpen, setReplyOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
 
-  const displayTweet = tweet;
-  const user = displayTweet.user;
-  const isRetweet = !!tweet.retweetedBy;
+  const { user: author } = tweet;
+  const isDetail = variant === 'detail';
+  const href = `/tweet/${tweet.id}`;
 
-  // Prevent bubbling for interactive elements
-  const stopProp = (e: React.MouseEvent) => {
-    e.stopPropagation();
-  };
-  
-    const handleCardClick = () => {
-    router.push(`/tweet/${displayTweet.id}`);
-  };
-
-  // Toggles update the cache right away, so these props are already optimistic.
-  const { isLiked, likeCount, isRetweeted, retweetCount } = displayTweet;
-
-  const handleLike = (e: React.MouseEvent) => {
-    stopProp(e);
-    if (!isLoggedIn) {
-      openSignInModal();
-      return;
-    }
-    toggleLike(displayTweet);
+  /** Runs an action that needs a session, or asks to sign in. */
+  const requireAuth = (action: () => void) => (e: React.MouseEvent) => {
+    stop(e);
+    if (!isLoggedIn) openSignInModal();
+    else action();
   };
 
-  const handleReply = (e: React.MouseEvent) => {
-    stopProp(e);
-    if (!isLoggedIn) {
-      openSignInModal();
-      return;
-    }
-    setShowReplyModal(true);
-  };
-
-  const handleRetweet = (e: React.MouseEvent) => {
-    stopProp(e);
-    if (!isLoggedIn) {
-      openSignInModal();
-      return;
-    }
-    toggleRetweet(displayTweet);
-  };
-
-  const handleShare = (e: React.MouseEvent) => {
-    stopProp(e);
-    const url = `${window.location.origin}/tweet/${displayTweet.id}`;
-    navigator.clipboard.writeText(url);
+  const copyLink = () => {
+    navigator.clipboard.writeText(`${window.location.origin}${href}`);
     toast.success('Copied to clipboard');
   };
 
-  return (
-    <article
-        className={cn(
-          "px-4 py-3 border-b border-border flex gap-3 relative",
-          !disableClick && "hover:bg-card/50 transition-colors cursor-pointer"
-        )}
-        onClick={!disableClick ? handleCardClick : undefined}
-    >
-        {/* Main Link Wrapper (absolute to cover everything except buttons) */}
-        {/* <Link href={`/tweet/${displayTweet.id}`} className="absolute inset-0 z-0" aria-hidden="true" /> */}
+  const actions = (
+    <div className={cn('flex items-center justify-between', isDetail ? 'border-y border-border px-1 py-1' : '-ml-2 mt-1 max-w-[425px]')}>
+      <TweetActionButton icon={<MessageCircle />} label="Reply" count={isDetail ? undefined : tweet.replyCount} onClick={requireAuth(() => setReplyOpen(true))} />
+      <TweetActionButton
+        icon={<Repeat2 />}
+        label={tweet.isRetweeted ? 'Undo repost' : 'Repost'}
+        tone="retweet"
+        count={isDetail ? undefined : tweet.retweetCount}
+        active={tweet.isRetweeted}
+        onClick={requireAuth(() => toggleRetweet(tweet))}
+      />
+      <TweetActionButton
+        icon={<Heart className={cn(tweet.isLiked && 'fill-current')} />}
+        label={tweet.isLiked ? 'Unlike' : 'Like'}
+        tone="like"
+        count={isDetail ? undefined : tweet.likeCount}
+        active={tweet.isLiked}
+        onClick={requireAuth(() => toggleLike(tweet))}
+      />
+      <TweetActionButton icon={<Share />} label="Copy link" onClick={(e) => (stop(e), copyLink())} />
+    </div>
+  );
 
-      {/* Left Column: Avatar */}
-      <div className="shrink-0 z-10">
-        <Link href={`/${user.username}`} onClick={stopProp}>
-            <Avatar className="w-10 h-10 border border-border/50 hover:opacity-90 transition-opacity">
-                <AvatarImage src={user.avatarUrl ?? undefined} alt={user.displayName || user.username} />
-                <AvatarFallback>{(user.displayName || user.username)[0]}</AvatarFallback>
-            </Avatar>
+  const header = (
+    <div className="flex items-start justify-between gap-2">
+      <div className={cn('flex min-w-0 text-[15px] leading-5', isDetail ? 'flex-col' : 'items-center gap-1')}>
+        <Link href={`/${author.username}`} onClick={stop} className="truncate font-bold hover:underline">
+          {displayNameOf(author)}
         </Link>
+        <span className="truncate text-muted-foreground">@{author.username}</span>
+        {!isDetail && (
+          <>
+            <span className="text-muted-foreground" aria-hidden="true">·</span>
+            <Link href={href} onClick={stop} className="shrink-0 text-muted-foreground hover:underline">
+              {/* Relative time differs between server render and hydration ("45s" vs "46s"). */}
+              <time dateTime={tweet.createdAt} title={formatFullTime(tweet.createdAt)} suppressHydrationWarning>
+                {formatRelativeTime(tweet.createdAt)}
+              </time>
+            </Link>
+          </>
+        )}
       </div>
+      <TweetActionsMenu isOwn={me?.id === author.id} onCopyLink={copyLink} onDelete={() => setConfirmDelete(true)} />
+    </div>
+  );
 
-      {/* Right Column: Content */}
-      <div className="flex-1 min-w-0 z-10">
-        {/* Context Header (Retweeted) */}
-        {isRetweet && (
-            <div className="flex items-center gap-2 text-muted-foreground text-[13px] font-bold mb-1 -ml-6">
-                <div className="w-8 flex justify-end">
-                    <Repeat2 className="w-4 h-4" />
-                </div>
-                <Link href={`/${tweet.retweetedBy!.username}`} className="hover:underline" onClick={stopProp}>
-                    {tweet.retweetedBy!.displayName || tweet.retweetedBy!.username} reposted
-                </Link>
+  return (
+    <>
+      <article
+        onClick={isDetail ? undefined : () => router.push(href)}
+        className={cn('border-b border-border px-4', isDetail ? 'pt-3' : 'cursor-pointer py-3 transition-colors hover:bg-foreground/[0.03]')}
+      >
+        {tweet.retweetedBy && (
+          <div className="mb-1 flex items-center gap-3 text-[13px] font-bold text-muted-foreground">
+            <div className="flex w-10 justify-end">
+              <Repeat2 className="size-4" />
             </div>
+            <Link href={`/${tweet.retweetedBy.username}`} onClick={stop} className="truncate hover:underline">
+              {me?.id === tweet.retweetedBy.id ? 'You' : displayNameOf(tweet.retweetedBy)} reposted
+            </Link>
+          </div>
         )}
 
-        {/* User Header */}
-        <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1 text-[15px] truncate overflow-hidden">
-                <Link href={`/${user.username}`} className="font-bold text-foreground hover:underline truncate" onClick={stopProp}>
-                    {user.displayName}
-                </Link>
-                <span className="text-muted-foreground truncate">@{user.username}</span>
-                <span className="text-muted-foreground">·</span>
-                <span className="text-muted-foreground hover:underline">{formatDate(displayTweet.createdAt)}</span>
+        {isDetail ? (
+          <>
+            <div className="flex items-center gap-3">
+              <UserAvatar user={author} link />
+              <div className="min-w-0 flex-1">{header}</div>
             </div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-full -mr-2" onClick={stopProp}>
-                    <MoreHorizontal className="w-4 h-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-[200px] bg-background border-border text-foreground">
-                 {currentUser?.id === user.id && (
-                  <DropdownMenuItem 
-                    onClick={(e) => {
-                      stopProp(e);
-                      deleteMutation.mutate(displayTweet);
-                    }}
-                    className="text-destructive focus:text-destructive focus:bg-destructive/10 cursor-pointer gap-2 font-bold"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    Delete
-                  </DropdownMenuItem>
-                 )}
-                 {/* Can add more generic options here like 'Not interested' etc for non-owners */}
-                  {currentUser?.id !== user.id && (
-                     <DropdownMenuItem 
-                      className="text-foreground focus:bg-card cursor-pointer font-bold"
-                      onClick={stopProp}
-                    >
-                      Not interested in this Post
-                    </DropdownMenuItem>
-                  )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-        </div>
-
-        {/* Reply Context */}
-        {displayTweet.replyToUsername && (
-             <div className="text-muted-foreground text-[15px] mb-1">
-                Replying to <Link href={`/${displayTweet.replyToUsername}`} className="text-primary hover:underline" onClick={stopProp}>@{displayTweet.replyToUsername}</Link>
-             </div>
-        )}
-
-        {/* Tweet Content */}
-        <div className="text-foreground text-[15px] whitespace-pre-wrap leading-6 break-all mb-2">
-            {(displayTweet.content || '').split(/(\s+)/).map((part, index) => {
-              if (part.startsWith('#') && part.length > 1) {
-                return (
-                  <Link 
-                    key={index} 
-                    href={`/search?q=${encodeURIComponent(part)}`}
-                    className="text-primary hover:underline cursor-pointer"
-                    onClick={stopProp}
-                  >
-                    {part}
-                  </Link>
-                );
-              }
-              return <span key={index}>{part}</span>;
-            })}
-        </div>
-
-        {/* Media */}
-        {displayTweet.mediaUrl && (
-            <div className="rounded-2xl border border-border overflow-hidden mt-2 mb-2 max-h-[500px]">
-                {displayTweet.mediaType === 'VIDEO' ? (
-                  <video
-                    src={displayTweet.mediaUrl}
-                    controls
-                    playsInline
-                    preload="metadata"
-                    onClick={stopProp}
-                    className="w-full max-h-[500px] bg-black"
-                  />
-                ) : (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={displayTweet.mediaUrl} alt="Tweet media" className="w-full max-h-[500px] object-cover text-transparent" />
-                )}
+            {tweet.replyToUsername && <ReplyingTo username={tweet.replyToUsername} />}
+            {tweet.content && <TweetBody content={tweet.content} className="mt-3 whitespace-pre-wrap break-words text-[17px] leading-6" />}
+            <TweetMedia tweet={tweet} onOpenImage={setLightboxSrc} />
+            <p className="my-4 text-[15px] text-muted-foreground">
+              {/* Formatted in the viewer's time zone, which the server doesn't know. */}
+            <time dateTime={tweet.createdAt} suppressHydrationWarning>{formatFullTime(tweet.createdAt)}</time>
+            </p>
+            {(tweet.retweetCount > 0 || tweet.likeCount > 0) && (
+              <div className="flex gap-5 border-t border-border py-4 text-[15px]">
+                {tweet.retweetCount > 0 && <Stat value={tweet.retweetCount} label="Reposts" />}
+                {tweet.likeCount > 0 && <Stat value={tweet.likeCount} label="Likes" />}
+              </div>
+            )}
+            {actions}
+          </>
+        ) : (
+          <div className="flex gap-3">
+            <UserAvatar user={author} link />
+            <div className="min-w-0 flex-1">
+              {header}
+              {tweet.replyToUsername && <ReplyingTo username={tweet.replyToUsername} />}
+              {tweet.content && <TweetBody content={tweet.content} className="whitespace-pre-wrap break-words text-[15px] leading-5" />}
+              <TweetMedia tweet={tweet} onOpenImage={setLightboxSrc} />
+              {actions}
             </div>
+          </div>
         )}
+      </article>
 
-        {/* Action Bar */}
-        <div className="flex items-center justify-between max-w-[425px] mt-1 -ml-2">
-            {/* Reply */}
-            <Button 
-                variant="ghost" 
-                size="sm" 
-                className="group flex items-center gap-1 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-full px-2 h-8 cursor-pointer" 
-                onClick={handleReply}
-            >
-                <MessageCircle className="w-[18px] h-[18px] group-hover:text-primary transition-colors" />
-                <span className="text-[13px] group-hover:text-primary transition-colors">{displayTweet.replyCount || ''}</span>
-            </Button>
-            
+      {/* Siblings, not children: React bubbles clicks from portals to their parent component, which would open the tweet. */}
+      <ReplyModal tweet={tweet} isOpen={replyOpen} onClose={() => setReplyOpen(false)} />
+      <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
+      <ConfirmModal
+        open={confirmDelete}
+        title="Delete post?"
+        description="This can't be undone and it will be removed from your profile, the timeline of any accounts that follow you, and from search results."
+        confirmLabel="Delete"
+        danger
+        pending={deleteTweet.isPending}
+        onConfirm={() => {
+          deleteTweet.mutate(tweet);
+          setConfirmDelete(false);
+          if (isDetail) router.back();
+        }}
+        onClose={() => setConfirmDelete(false)}
+      />
+    </>
+  );
+}
 
+function ReplyingTo({ username }: { username: string }) {
+  return (
+    <p className="text-[15px] text-muted-foreground">
+      Replying to{' '}
+      <Link href={`/${username}`} onClick={stop} className="text-primary hover:underline">
+        @{username}
+      </Link>
+    </p>
+  );
+}
 
-            {/* Retweet */}
-            <Button
-                variant="ghost"
-                size="sm"
-                className={cn(
-                    "group flex items-center gap-1 text-muted-foreground hover:bg-green-500/10 rounded-full px-2 h-8 cursor-pointer",
-                    isRetweeted ? "text-green-500" : "hover:text-green-500"
-                )}
-                onClick={handleRetweet}
-            >
-                <Repeat2 className="w-[18px] h-[18px] transition-colors" />
-                <span className="text-[13px] transition-colors">{retweetCount || ''}</span>
-            </Button>
-
-            {/* Like */}
-            <Button
-                 variant="ghost"
-                 size="sm"
-                 className={cn(
-                    "group flex items-center gap-1 text-muted-foreground hover:bg-pink-500/10 rounded-full px-2 h-8 cursor-pointer",
-                    isLiked ? "text-pink-600" : "hover:text-pink-600"
-                 )}
-                 onClick={handleLike}
-            >
-                <Heart className={cn("w-[18px] h-[18px] transition-colors", isLiked && "fill-current")} />
-                 <span className="text-[13px] transition-colors">{likeCount || ''}</span>
-            </Button>
-
-            {/* Share */}
-             <Button variant="ghost" size="sm" className="group flex items-center gap-1 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-full px-2 h-8 cursor-pointer" onClick={handleShare}>
-                <Share className="w-[18px] h-[18px] group-hover:text-primary transition-colors" />
-            </Button>
-        </div>
-        <ReplyModal 
-            tweet={displayTweet} 
-            isOpen={showReplyModal} 
-            onClose={() => setShowReplyModal(false)} 
-        />
-      </div>
-    </article>
+function Stat({ value, label }: { value: number; label: string }) {
+  return (
+    <span>
+      <span className="font-bold">{value.toLocaleString()}</span> <span className="text-muted-foreground">{label}</span>
+    </span>
   );
 }

@@ -8,9 +8,9 @@ import { useAuth } from '@/hooks/useAuth';
 import { EditProfileModal } from '@/components/EditProfileModal';
 import { UserListModal } from '@/components/UserListModal';
 import { ArrowLeft } from 'lucide-react';
-import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useState } from 'react';
+import { UserAvatar } from '@/components/UserAvatar';
 
 function ProfileContent({ username }: { username: string }) {
   const { data: user, isLoading: userLoading } = useUserProfileByUsername(username);
@@ -78,10 +78,7 @@ function ProfileContent({ username }: { username: string }) {
       {/* Profile Info Container */}
       <div className="px-4 pb-4">
         <div className="flex justify-between items-start -mt-18 mb-4 relative z-10">
-          <Avatar className="w-[133px] h-[133px] border-4 border-background bg-card shrink-0">
-            <AvatarImage src={user.avatarUrl ?? undefined} alt={user.displayName || user.username} className="object-cover" />
-            <AvatarFallback className="text-[40px] font-bold">{(user.displayName || user.username)[0]}</AvatarFallback>
-          </Avatar>
+          <UserAvatar user={user} size="xl" className="border-4 border-background" />
           
           <div className="mt-20">
             {isLoggedIn && !isOwnProfile && (

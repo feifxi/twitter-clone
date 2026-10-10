@@ -7,7 +7,6 @@ import { Home, User, MoreHorizontal, Bell, Mail, Search, Users, BotMessageSquare
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,6 +17,7 @@ import { XLogo } from '@/components/XLogo';
 import { ComposeTweetModal } from '@/components/ComposeTweetModal';
 import { useUIStore } from '@/store/useUIStore';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { UserAvatar } from '@/components/UserAvatar';
 
 type AppNavProps = {
   unreadCount?: number;
@@ -183,10 +183,7 @@ export function AppNav({ unreadCount = 0 }: AppNavProps) {
               className="flex items-center justify-center xl:justify-between w-fit xl:w-full h-auto p-3 rounded-full hover:bg-accent/50 mb-4 cursor-pointer"
             >
               <div className="flex items-center gap-3 truncate">
-                <Avatar className="w-10 h-10 border border-border/50">
-                  <AvatarImage src={user.avatarUrl ?? undefined} alt={user.displayName || user.username} />
-                  <AvatarFallback>{(user.displayName || user.username)[0]}</AvatarFallback>
-                </Avatar>
+                <UserAvatar user={user} />
                 <div className="hidden xl:flex flex-col items-start min-w-0">
                   <span className="font-bold text-[15px] truncate max-w-[140px] leading-5">
                     {user.displayName}
