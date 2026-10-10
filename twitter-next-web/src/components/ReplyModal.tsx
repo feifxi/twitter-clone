@@ -1,72 +1,66 @@
 'use client';
 
-import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { useRouter } from 'next/navigation';
-import { CreateTweet } from './CreateTweet';
-import type { TweetResponse } from '@/types';
 import { X } from 'lucide-react';
+import { CreateTweet } from '@/components/CreateTweet';
+import { TweetBody } from '@/components/TweetBody';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { UserAvatar } from '@/components/UserAvatar';
+import { displayNameOf, formatRelativeTime } from '@/lib/format';
+import type { TweetResponse } from '@/types';
 
 interface ReplyModalProps {
-  tweet: TweetResponse | null;
+  tweet: TweetResponse;
   isOpen: boolean;
   onClose: () => void;
 }
 
+/** Reply composer under a preview of the tweet, joined by a thread line. */
 export function ReplyModal({ tweet, isOpen, onClose }: ReplyModalProps) {
   const router = useRouter();
-  if (!tweet) return null;
+  const { user } = tweet;
 
   return (
-    <div onClick={(e) => e.stopPropagation()}>
-      <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent showCloseButton={false} className="sm:max-w-[600px] bg-background border-border p-0 gap-0 top-[5%] translate-y-0 sm:top-[10%]">
-          <DialogTitle className="sr-only">Reply to Tweet</DialogTitle>
-          <DialogDescription className="sr-only">Replying to @{tweet.user.username}</DialogDescription>
-          <div className="flex items-center h-[53px] px-4 shrink-0">
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-2 rounded-full hover:bg-card transition-colors -ml-2"
-            >
-               <X size={20} className="text-foreground cursor-pointer" />
-            </button>
-          </div>
-          
-          <div className="px-4 pb-4">
-              {/* Original Tweet Preview (simplified) */}
-              <div className="flex gap-3 relative">
-                  <div className="flex flex-col items-center">
-                      <UserAvatar user={tweet.user} />
-                      <div className="w-0.5 grow bg-card my-2" />
-                  </div>
-                  <div className="flex-1 min-w-0 pb-4">
-                       <div className="flex items-center gap-1 text-[15px]">
-                          <span className="font-bold text-foreground truncate">{tweet.user.displayName}</span>
-                          <span className="text-muted-foreground truncate">@{tweet.user.username}</span>
-                          <span className="text-muted-foreground shrink-0">· 1h</span>
-                      </div>
-                      <div className="text-foreground text-[15px] mt-1 whitespace-pre-wrap break-all">{tweet.content}</div>
-                       <div className="text-muted-foreground text-[15px] mt-2">
-                          Replying to <span className="text-primary truncate min-w-0 inline-block align-bottom max-w-full">@{tweet.user.username}</span>
-                      </div>
-                  </div>
-              </div>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent showCloseButton={false} className="top-[5%] translate-y-0 gap-0 rounded-2xl p-0 sm:top-[10%] sm:max-w-[600px]">
+        <DialogTitle className="sr-only">Reply</DialogTitle>
+        <DialogDescription className="sr-only">Replying to @{user.username}</DialogDescription>
+        <div className="flex h-[53px] items-center px-4">
+          <button type="button" onClick={onClose} aria-label="Close" className="-ml-2 cursor-pointer rounded-full p-2 transition-colors hover:bg-accent">
+            <X className="size-5" />
+          </button>
+        </div>
 
-              {/* Create Reply */}
-              <CreateTweet 
-                  isReply 
-                  replyToId={tweet.id} 
-                  onSuccess={() => {
-                    onClose();
-                    router.push(`/tweet/${tweet.id}`);
-                  }} 
-                  className="border-none px-0 py-0"
-                  placeholder="Post your reply"
-              />
+        <div className="flex gap-3 px-4">
+          <div className="flex flex-col items-center">
+            <UserAvatar user={user} />
+            <div className="my-1 w-0.5 grow bg-border" />
           </div>
-        </DialogContent>
-      </Dialog>
-    </div>
+          <div className="min-w-0 flex-1 pb-4">
+            <div className="flex items-center gap-1 text-[15px]">
+              <span className="truncate font-bold">{displayNameOf(user)}</span>
+              <span className="truncate text-muted-foreground">@{user.username}</span>
+              <span className="shrink-0 text-muted-foreground">· {formatRelativeTime(tweet.createdAt)}</span>
+            </div>
+            {tweet.content && <TweetBody content={tweet.content} className="mt-0.5 whitespace-pre-wrap break-words text-[15px] leading-5" />}
+            <p className="mt-3 text-[15px] text-muted-foreground">
+              Replying to <span className="text-primary">@{user.username}</span>
+            </p>
+          </div>
+        </div>
+
+        <CreateTweet
+          isReply
+          autoFocus
+          replyToId={tweet.id}
+          placeholder="Post your reply"
+          className="border-none pb-4 pt-1"
+          onSuccess={() => {
+            onClose();
+            router.push(`/tweet/${tweet.id}`);
+          }}
+        />
+      </DialogContent>
+    </Dialog>
   );
 }

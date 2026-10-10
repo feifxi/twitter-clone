@@ -91,7 +91,7 @@ export function useToggleFollow() {
 export function useUpdateProfile() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ displayName, bio, avatar, banner, removeAvatar, removeBanner }: UpdateProfileInput & { avatar?: File; banner?: File; removeAvatar?: boolean; removeBanner?: boolean }) => {
+    mutationFn: async ({ displayName, bio, location, website, avatar, banner, removeAvatar, removeBanner }: UpdateProfileInput & { avatar?: File; banner?: File; removeAvatar?: boolean; removeBanner?: boolean }) => {
       let avatarKey: string | undefined;
       let bannerKey: string | undefined;
 
@@ -110,6 +110,8 @@ export function useUpdateProfile() {
       const payload = {
         displayName,
         bio,
+        location,
+        website,
         avatarKey,
         bannerKey,
       };

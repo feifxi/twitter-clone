@@ -19,17 +19,15 @@ export function ComposeTweetModal({ isOpen, onClose }: ComposeTweetModalProps) {
           <button
             type="button"
             onClick={onClose}
-            className="p-2 rounded-full hover:bg-card transition-colors -ml-2"
+            aria-label="Close"
+            className="p-2 rounded-full hover:bg-accent transition-colors -ml-2 cursor-pointer"
           >
              <X size={20} className="text-foreground cursor-pointer" />
           </button>
         </div>
         
         <div className="pb-4">
-            <CreateTweet 
-                onSuccess={onClose} 
-                className="border-none px-4 py-2"
-            />
+            <CreateTweet autoFocus onSuccess={onClose} className="border-none px-4 py-2" />
         </div>
       </DialogContent>
     </Dialog>
