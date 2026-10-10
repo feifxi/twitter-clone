@@ -53,14 +53,14 @@ export function useInvalidateTweet() {
     queryClient.invalidateQueries({ queryKey: tweetQueryKey(tweetId) });
 }
 
-import { useAuthStore } from '@/store/useAuthStore';
+import { useAuth } from '@/hooks/useAuth';
 import { feedQueryKey } from './useFeed';
 import { userFeedQueryKey } from './useProfile';
 import type { InfiniteData } from '@tanstack/react-query';
 
 export function useCreateTweet() {
   const queryClient = useQueryClient();
-  const { user } = useAuthStore();
+  const { user } = useAuth();
 
   return useMutation({
     mutationFn: async ({ content, media, parentId }: TweetRequestInput & { media?: File }) => {

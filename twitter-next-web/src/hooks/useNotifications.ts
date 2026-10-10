@@ -1,7 +1,7 @@
 'use client';
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useAuthStore } from '@/store/useAuthStore';
+import { useAuth } from '@/hooks/useAuth';
 import { axiosInstance } from '@/api/axiosInstance';
 import type { PageResponse, NotificationResponse } from '@/types';
 
@@ -26,7 +26,7 @@ export function useNotifications(pageSize = 20) {
 }
 
 export function useUnreadCount() {
-    const { accessToken } = useAuthStore();
+    const { isLoggedIn } = useAuth();
     return useQuery({
         queryKey: unreadCountQueryKey,
         queryFn: async (): Promise<number> => {
@@ -37,7 +37,7 @@ export function useUnreadCount() {
         staleTime: 30000,
         refetchOnWindowFocus: false,
         refetchOnReconnect: false,
-        enabled: !!accessToken,
+        enabled: isLoggedIn,
     });
 }
 

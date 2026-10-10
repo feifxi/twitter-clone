@@ -5,7 +5,7 @@ import { axiosInstance } from '@/api/axiosInstance';
 import type { PageResponse, UserResponse, TweetResponse } from '@/types';
 import type { UpdateProfileInput } from '@/lib/validation';
 import { uploadFileWithPresignedUrl } from '@/api/upload';
-import { currentUserQueryKey } from './useCurrentUser';
+import { queryKeys } from '@/lib/query-keys';
 
 const userQueryKey = (id: number) => ['users', id] as const;
 export const userFeedQueryKey = (userId: number) => ['feeds', 'user', userId] as const;
@@ -187,7 +187,7 @@ export function useUpdateProfile() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: userQueryKey(data.id) });
       queryClient.invalidateQueries({ queryKey: ['users', 'byUsername', data.username] });
-      queryClient.invalidateQueries({ queryKey: currentUserQueryKey });
+      queryClient.invalidateQueries({ queryKey: queryKeys.auth.me });
     },
   });
 }

@@ -17,6 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/hooks/useAuth";
+import { fetchWithSession } from "@/api/axiosInstance";
 import { useUIStore } from "@/store/useUIStore";
 
 type Message = {
@@ -46,7 +47,7 @@ function parseSSEFrame(frame: string): { event: string; data: string | null } {
 }
 
 export default function ChanomBotPage() {
-  const { user, isLoggedIn, accessToken } = useAuth();
+  const { user, isLoggedIn } = useAuth();
   const { openSignInModal } = useUIStore();
   const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
   const [input, setInput] = useState("");
@@ -101,20 +102,11 @@ export default function ChanomBotPage() {
     setMessages((prev: Message[]) => [...prev, initialBotMsg]);
 
     try {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/assistant`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${accessToken}`,
-          },
-          body: JSON.stringify({
-            query: userContent,
-            history: history,
-          }),
-        },
-      );
+      const response = await fetchWithSession("/assistant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: userContent, history }),
+      });
 
       if (!response.ok) {
         throw new Error("Failed to fetch chat response");

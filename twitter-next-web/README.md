@@ -54,16 +54,21 @@ npx tsc --noEmit
 npm run lint
 ```
 
-## Notes
+## Auth
 
-- A `postinstall` script patches a `react-hook-form` type export issue in installed dependencies to keep type-checking stable in this project environment.
-- Notification UI supports SSE updates from backend notification stream.
+The Go API keeps the session in two **httpOnly cookies** (`access_token`, `refresh_token`); this app never sees or stores tokens.
+
+- **First render:** `src/proxy.ts` renews an expired access cookie before the page renders, and the root layout fetches the signed-in user with the request's cookies (`src/api/server.ts`). The user is known on the first paint, with no auth spinner.
+- **In the browser:** the user lives in TanStack Query (`queryKeys.auth.me`, read with `useAuth()`). `src/api/axiosInstance.ts` sends cookies (`withCredentials`), and on a `TOKEN_EXPIRED` response renews the session once (shared by concurrent requests) and retries.
+- **Realtime:** one native `EventSource` (with credentials) for notifications and DMs, `src/hooks/useRealtimeEvents.ts`.
+- **Local dev:** the web app (`localhost:3000`) and the API (`localhost:8080`) are the same site, and a `localhost` cookie reaches every port, so no extra setup is needed. In production both run on subdomains of one domain and the API sets `COOKIE_DOMAIN`.
 
 ## Main Directories
 
 - `src/app`: routes/layouts
+- `src/api`: API clients (browser: `axiosInstance.ts`; server render: `server.ts`)
 - `src/components`: UI components
 - `src/hooks`: data hooks and client logic
-- `src/store`: Zustand stores
+- `src/lib`: query keys, utilities, validation
+- `src/store`: Zustand stores (UI state only)
 - `src/types`: shared TypeScript contracts
-- `src/lib`: utilities/validation/helpers

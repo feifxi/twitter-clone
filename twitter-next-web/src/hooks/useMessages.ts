@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { axiosInstance } from '@/api/axiosInstance';
-import { useAuthStore } from '@/store/useAuthStore';
+import { useAuth } from '@/hooks/useAuth';
 import type { ConversationResponse, MessageResponse, PageResponse } from '@/types';
 
 export const conversationsQueryKey = ['messages', 'conversations'] as const;
@@ -8,7 +8,7 @@ export const conversationMessagesQueryKey = (conversationId: number) =>
   ['messages', 'conversation', conversationId] as const;
 
 export function useConversations(pageSize = 20) {
-  const { accessToken } = useAuthStore();
+  const { isLoggedIn } = useAuth();
   return useInfiniteQuery({
     queryKey: conversationsQueryKey,
     queryFn: async ({ pageParam }: { pageParam: string | null }): Promise<PageResponse<ConversationResponse>> => {
@@ -17,7 +17,7 @@ export function useConversations(pageSize = 20) {
       });
       return data;
     },
-    enabled: !!accessToken,
+    enabled: isLoggedIn,
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => (lastPage.hasNext ? lastPage.nextCursor : undefined),
     staleTime: 30000,
@@ -25,7 +25,7 @@ export function useConversations(pageSize = 20) {
 }
 
 export function useConversationMessages(conversationId: number | null, pageSize = 30) {
-  const { accessToken } = useAuthStore();
+  const { isLoggedIn } = useAuth();
   return useInfiniteQuery({
     queryKey: conversationId ? conversationMessagesQueryKey(conversationId) : ['messages', 'conversation', 'none'],
     queryFn: async ({ pageParam }: { pageParam: string | null }): Promise<PageResponse<MessageResponse>> => {
@@ -35,7 +35,7 @@ export function useConversationMessages(conversationId: number | null, pageSize 
       );
       return data;
     },
-    enabled: !!conversationId && !!accessToken,
+    enabled: !!conversationId && isLoggedIn,
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => (lastPage.hasNext ? lastPage.nextCursor : undefined),
     staleTime: 10000,

@@ -229,7 +229,8 @@ Good already: `default_tags`, the modern standalone `aws_vpc_security_group_*_ru
 - [x] **2g Embeddings:** `embedding_jobs` enqueued in the tweet's own transaction; in-process worker leases jobs (`FOR UPDATE SKIP LOCKED`, 5 min lease), retries with exponential backoff and gives up after 8 attempts; the assistant embeds questions through the same `embedding.Embedder`. SQS publisher removed; works locally (G21). The SQS/Lambda/NAT Terraform and `infra/lambda` are removed in Phase 5
 
 ### Phase 3: Frontend architecture
-- [ ] Cookie auth against the API (no tokens in JS); server fetch helper forwarding the cookie; `proxy.ts` redirect for signed-out routes that need auth; SSR prefetch + `HydrationBoundary`; `loading.tsx`
+- [x] Cookie auth against the API (no tokens in JS, W6): `proxy.ts` renews expired sessions before rendering; root layout seeds the current user from the server (no `AuthInitializer` spinner); `useAuth` reads it from TanStack Query; single-flight refresh on `TOKEN_EXPIRED` (new API code, also from optional-auth routes so signed-in users never get silent anonymous data); native `EventSource` with credentials (polyfill removed); per-tab `QueryClient` (W8)
+- [ ] SSR prefetch + `HydrationBoundary` for the main pages; `loading.tsx`
 - [ ] `query-keys.ts`, cache helpers, module-level debounced toggle, single-flight refresh; one SSE hook for notifications + DMs
 - [ ] W8/W9 cleanup (keep the brainrot/premium pages); split messages page
 

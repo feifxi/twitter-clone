@@ -6,7 +6,9 @@ Base URL: `/api/v1`
 - Sessions live in two **httpOnly cookies** set by the API: `access_token` (short-lived JWT) and `refresh_token` (rotating, single use). Page scripts never see the tokens.
 - Browsers send them automatically: call the API with credentials (`fetch(..., { credentials: "include" })`, axios `withCredentials: true`, `new EventSource(url, { withCredentials: true })`).
 - Cookies are `HttpOnly; SameSite=Lax; Path=/`, `Secure` in production, scoped to `COOKIE_DOMAIN` (e.g. `chanombude.me`, so both `twitter.` and `api.` receive them; in dev, `localhost` covers every port).
-- When a request returns `401`, call `POST /auth/refresh` once and retry. Share one in-flight refresh between concurrent requests: each refresh token works once.
+- `401` comes with one of two codes:
+  - `UNAUTHORIZED`: no credentials were sent. The user is signed out; show sign-in.
+  - `TOKEN_EXPIRED`: credentials were sent but are stale (expired access token, or only the refresh cookie is left). Call `POST /auth/refresh` and retry. Share one in-flight refresh between concurrent requests: each refresh token works once. Optional-auth endpoints return this too, so a signed-in user never silently gets anonymous data.
 - Unsafe requests (`POST`/`PUT`/`PATCH`/`DELETE`) from origins outside `ALLOWED_ORIGINS` are refused with `403` (CSRF protection).
 - Non-browser clients (curl, tests) may send `Authorization: Bearer <access token>` instead; the header wins over the cookie.
 
@@ -28,7 +30,7 @@ Base URL: `/api/v1`
 ## Common Error Shape
 ```json
 {
-  "code": "BAD_REQUEST|UNAUTHORIZED|FORBIDDEN|NOT_FOUND|CONFLICT|INTERNAL_ERROR|VALIDATION_ERROR|TOO_MANY_REQUESTS",
+  "code": "BAD_REQUEST|UNAUTHORIZED|TOKEN_EXPIRED|FORBIDDEN|NOT_FOUND|CONFLICT|INTERNAL_ERROR|VALIDATION_ERROR|TOO_MANY_REQUESTS",
   "message": "string",
   "details": [
     { "field": "string", "message": "string" }

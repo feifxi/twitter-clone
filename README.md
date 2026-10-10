@@ -8,7 +8,7 @@ Full-stack Twitter/X clone with a Next.js frontend, Go backend, and production-r
 
 ## Features
 
-- **Authentication** — Google OAuth with JWT access & refresh tokens
+- **Authentication** — Google sign-in; the session lives in httpOnly cookies (short-lived JWT + rotating refresh token), renewed before server rendering
 - **Tweets** — Create, delete, like, retweet, and threaded replies
 - **Feeds** — "For You" global feed with **time-decay gravity algorithm** (weighing likes, retweets, and replies), following-only feed, and per-user profile feed
 - **Follow / Unfollow** — Follow users with follower & following lists
