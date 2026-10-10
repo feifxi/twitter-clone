@@ -1,0 +1,7 @@
+# The deps stage installs Linux node_modules; never copy the host's over them.
+node_modules
+.next
+.env*
+*.tsbuildinfo
+coverage
+.git

@@ -35,7 +35,9 @@ jobs:
       - uses: actions/setup-go@v5
         if: ${{ !inputs.image_tag }}
         with:
-          go-version-file: twitter-go-api/go.mod
+          # Latest 1.26 patch (go.mod's "go 1.26.0" is a minimum, not the toolchain to test with).
+          go-version: "1.26"
+          check-latest: true
           cache-dependency-path: twitter-go-api/go.sum
 
       - name: Unit tests

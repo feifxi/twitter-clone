@@ -1,5 +1,6 @@
 'use client'; // Error components must be Client Components
 
+import Link from 'next/link';
 import { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { XLogo } from '@/components/XLogo';
@@ -36,12 +37,8 @@ export default function ErrorBoundary({
           >
             Try again
           </Button>
-          <Button 
-            variant="outline"
-            onClick={() => window.location.href = '/'}
-            className="rounded-full font-bold px-8 h-12 border-border hover:bg-card"
-          >
-            Go to Home
+          <Button asChild variant="outline" className="rounded-full font-bold px-8 h-12 border-border hover:bg-card">
+            <Link href="/">Go to Home</Link>
           </Button>
         </div>
         
