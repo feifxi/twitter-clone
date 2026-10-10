@@ -2,7 +2,8 @@
 
 # ── Domain ──────────────────────────────────────────
 domain          = "twitter.chanombude.me" # the web app; the API is served under /api
-acme_email      = "you@example.com"
+acme_email      = "you@example.com" # Let's Encrypt expiry notices
+alert_email     = "you@example.com" # alarms; confirm the subscription email AWS sends
 route53_zone_id = "" # set if Route 53 hosts chanombude.me; otherwise add the dns_records output by hand
 
 # Lets a local frontend upload media to this environment's bucket.

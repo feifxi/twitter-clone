@@ -70,8 +70,14 @@ Enable the pre-commit hook once per clone: `git config core.hooksPath .githooks`
 
 ## Infra conventions
 
-- Production is one EC2 host on one domain: Caddy routes `/api/*` to the API and the rest to Next.js
-  (`infra/ec2/compose.yml`). No Redis there; it is only needed to scale out to several instances.
+- Production is one EC2 host on one domain: nginx routes `/api/*` to the API and the rest to Next.js
+  (`infra/ec2/compose.yml`), certbot renews the certificate. No Redis there; it is only needed to
+  scale out to several instances.
+- A release = one commit SHA: both images plus that commit's `infra/ec2` files (S3). Change the
+  stack by editing `infra/ec2` (shipped by the next deploy); user data only bootstraps the host.
+  Every service needs a health check: `deploy.sh` waits for them and rolls back if they fail.
+- Alerts are code: AWS alarms in `infra/terraform/alerts.tf`, Grafana rules and the dashboard in
+  `infra/grafana`. New metrics worth watching get a panel and, if actionable, a rule.
 - Runtime config is SSM parameters under `/<project>/<env>/api/` (one per env var) rendered into
   `api.env` by `infra/ec2/deploy.sh`; secrets never go in user data or workflow logs.
 - Run `terraform fmt`, `validate` and `test` (mocked provider) for every Terraform change.

@@ -8,6 +8,19 @@ import (
 
 	"github.com/chanombude/twitter-go-api/internal/db"
 	"github.com/pgvector/pgvector-go"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+)
+
+var (
+	jobsProcessed = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "embedding_jobs_processed_total",
+		Help: "Embedding jobs run by the worker, by result (ok, retry).",
+	}, []string{"result"})
+	jobsQueued = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "embedding_jobs",
+		Help: "Embedding jobs in the queue, by state (pending, failed = gave up after MaxAttempts).",
+	}, []string{"state"})
 )
 
 type WorkerConfig struct {
@@ -55,6 +68,7 @@ func (w *Worker) Run(ctx context.Context) {
 				break
 			}
 		}
+		w.recordQueueDepth(ctx)
 		select {
 		case <-ctx.Done():
 			return
@@ -98,7 +112,18 @@ func (w *Worker) process(ctx context.Context, job db.ClaimEmbeddingJobsRow) {
 	w.complete(ctx, job.TweetID)
 }
 
+func (w *Worker) recordQueueDepth(ctx context.Context) {
+	counts, err := w.store.CountEmbeddingJobs(ctx, w.cfg.MaxAttempts)
+	if err != nil {
+		slog.ErrorContext(ctx, "embedding: count jobs", "err", err)
+		return
+	}
+	jobsQueued.WithLabelValues("pending").Set(float64(counts.Pending))
+	jobsQueued.WithLabelValues("failed").Set(float64(counts.Failed))
+}
+
 func (w *Worker) complete(ctx context.Context, tweetID int64) {
+	jobsProcessed.WithLabelValues("ok").Inc()
 	if err := w.store.CompleteEmbeddingJob(ctx, tweetID); err != nil {
 		// The lease will expire and the job will run again; upserting the embedding is idempotent.
 		slog.ErrorContext(ctx, "embedding: complete job", "err", err, "tweet_id", tweetID)
@@ -106,6 +131,7 @@ func (w *Worker) complete(ctx context.Context, tweetID int64) {
 }
 
 func (w *Worker) retry(ctx context.Context, job db.ClaimEmbeddingJobsRow, cause error) {
+	jobsProcessed.WithLabelValues("retry").Inc()
 	backoff := w.Backoff(job.Attempts)
 	msg := cause.Error()
 	slog.WarnContext(ctx, "embedding: job failed, will retry", "err", cause, "tweet_id", job.TweetID, "attempt", job.Attempts, "retry_in", backoff)

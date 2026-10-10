@@ -1,5 +1,5 @@
-# The app host: Caddy (TLS) in front of the Next.js web app and the Go API, plus the
-# monitoring agents, run with Docker Compose (see ../ec2). Shell access is Session
+# The app host: nginx (TLS) in front of the Next.js web app and the Go API, plus certbot
+# and the monitoring agents, run with Docker Compose (see ../ec2). Shell access is Session
 # Manager (aws ssm start-session), so no SSH port is open.
 
 resource "aws_iam_role" "app" {
@@ -50,6 +50,18 @@ resource "aws_iam_role_policy" "app" {
         Action   = ["ecr:GetAuthorizationToken"]
         Resource = "*"
       },
+      {
+        Sid      = "FetchReleases"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject", "s3:ListBucket"]
+        Resource = [aws_s3_bucket.deploy.arn, "${aws_s3_bucket.deploy.arn}/stack/*"]
+      },
+      {
+        Sid      = "RecordRelease"
+        Effect   = "Allow"
+        Action   = ["ssm:GetParameter", "ssm:PutParameter"]
+        Resource = aws_ssm_parameter.release.arn
+      },
     ]
   })
 }
@@ -77,16 +89,16 @@ resource "aws_instance" "app" {
     http_put_response_hop_limit = 2          # containers sit one hop behind the host
   }
 
-  # Changing the stack files rebuilds the instance. Caddy then requests a fresh
-  # certificate; Let's Encrypt allows 5 per domain per week, so batch such changes.
+  # Only the first-boot bootstrap lives in user data (the stack ships with each deploy),
+  # so this replaces the instance only when the bootstrap itself changes.
   user_data_replace_on_change = true
   user_data = templatefile("${path.module}/../ec2/cloud-init.yaml.tftpl", {
-    compose             = filebase64("${path.module}/../ec2/compose.yml")
-    caddyfile           = filebase64("${path.module}/../ec2/Caddyfile")
-    alloy               = filebase64("${path.module}/../ec2/config.alloy")
-    deploy_script       = filebase64("${path.module}/../ec2/deploy.sh")
+    twitter_deploy      = filebase64("${path.module}/../ec2/twitter-deploy")
     compose_version     = var.docker_compose_version
+    compose_sha256      = var.docker_compose_sha256
     region              = var.aws_region
+    deploy_bucket       = aws_s3_bucket.deploy.id
+    release_param       = local.release_param
     api_ssm_path        = local.api_ssm_path
     monitoring_ssm_path = local.monitoring_ssm_path
     monitoring          = local.monitoring_enabled
@@ -96,8 +108,8 @@ resource "aws_instance" "app" {
     acme_email          = var.acme_email
   })
 
-  # The first deploy reads these at boot.
-  depends_on = [aws_ssm_parameter.api, aws_ssm_parameter.monitoring]
+  # First boot reads these.
+  depends_on = [aws_ssm_parameter.api, aws_ssm_parameter.monitoring, aws_ssm_parameter.release]
 
   tags = { Name = "${local.name}-app" }
 
@@ -111,4 +123,20 @@ resource "aws_eip" "app" {
   instance = aws_instance.app.id
   domain   = "vpc"
   tags     = { Name = "${local.name}-app" }
+}
+
+# Weekly OS patches (Amazon Linux doesn't update itself), rebooting if a patch needs it.
+# Containers come back on their own (restart: unless-stopped).
+resource "aws_ssm_association" "patch" {
+  name                = "AWS-RunPatchBaseline"
+  association_name    = "${local.name}-weekly-patching"
+  schedule_expression = var.patch_schedule
+  parameters = {
+    Operation    = "Install"
+    RebootOption = "RebootIfNeeded"
+  }
+  targets {
+    key    = "InstanceIds"
+    values = [aws_instance.app.id]
+  }
 }

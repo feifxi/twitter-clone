@@ -27,7 +27,7 @@ A full-stack Twitter/X clone: a Next.js frontend and a Go API (with an optional 
 |---|---|
 | Frontend | Next.js (App Router), TypeScript, Tailwind CSS, TanStack Query, Zustand |
 | Backend | Go, Gin, PostgreSQL + sqlc + pgvector, Redis (optional); optional Spring Boot API |
-| Infrastructure | AWS (EC2 + Docker Compose + Caddy, RDS, S3, CloudFront, ECR, SSM), Terraform, GitHub Actions |
+| Infrastructure | AWS (EC2 + Docker Compose + nginx, RDS, S3, CloudFront, ECR, SSM, CloudWatch), Let's Encrypt (certbot), Terraform, GitHub Actions |
 | Observability | Grafana Cloud (Loki, Prometheus), Grafana Alloy, Node Exporter |
 
 ## Architecture
@@ -41,11 +41,13 @@ flowchart TB
   s3[("S3 media<br/>private, OAC")]
 
   subgraph ec2["EC2 · public subnet · Docker Compose"]
-    caddy["Caddy · twitter.&lt;domain&gt;<br/>TLS, routing"]
+    nginx["nginx · twitter.&lt;domain&gt;<br/>TLS, routing"]
+    certbot["certbot<br/>Let's Encrypt"]
     web["Next.js<br/>server rendering"]
     api["Go API<br/>+ embedding worker"]
-    caddy -- "/*" --> web
-    caddy -- "/api/*" --> api
+    nginx -- "/*" --> web
+    nginx -- "/api/*" --> api
+    certbot -. "certificate" .-> nginx
     web -- "server render,<br/>internal network" --> api
   end
 
@@ -54,7 +56,7 @@ flowchart TB
   end
   ext["Google OAuth · Gemini"]
 
-  user -- "pages, REST, SSE<br/>httpOnly cookies" --> caddy
+  user -- "pages, REST, SSE<br/>httpOnly cookies" --> nginx
   user -- "media GET" --> cf --> s3
   user -. "presigned PUT" .-> s3
   api -- SQL --> rds
@@ -67,15 +69,18 @@ How code ships:
 flowchart LR
   push(["git push main"]) --> ci["CI<br/>tests, lint, terraform"]
   ci -- "passed" --> gha["Deploy workflow<br/>build web + API images"]
-  gha -- "OIDC role,<br/>push :sha" --> ecr[("ECR")]
-  gha -- "SSM Run Command<br/>deploy.sh &lt;sha&gt;" --> ec2["EC2"]
-  ec2 -- "render api.env" --> ssm[("SSM Parameter Store")]
-  ec2 -- "pull images,<br/>compose up" --> ecr
+  gha -- "push :sha" --> ecr[("ECR")]
+  gha -- "infra/ec2 files" --> s3[("S3 releases")]
+  gha -- "SSM Run Command<br/>twitter-deploy &lt;sha&gt;" --> ec2["EC2"]
+  ec2 -- "sync stack, pull images" --> s3
+  ec2 --> ecr
+  ec2 -- "render env files,<br/>record release" --> ssm[("SSM Parameter Store")]
   gha -- "GET /readyz" --> ec2
-  ec2 -- "Alloy: metrics + logs" --> grafana["Grafana Cloud"]
 ```
 
-- **One host, one domain:** Caddy terminates TLS (automatic Let's Encrypt certificates) and routes `/api/*` to the API and everything else to Next.js. The web app and the API share an origin, so there is no CORS and the session cookies are plain first-party cookies.
+- **One host, one domain:** nginx terminates TLS and routes `/api/*` to the API and everything else to Next.js. The web app and the API share an origin, so there is no CORS and the session cookies are plain first-party cookies. A certbot container issues and renews the Let's Encrypt certificate; nginx reloads itself when it changes.
+- **A release is one commit:** both images tagged with its SHA plus its `infra/ec2` files. Changing `compose.yml` or the nginx config is an ordinary deploy, not a new instance.
+- **Deploys check themselves:** every container has a health check; if the new release doesn't come up healthy within 3 minutes, the instance rolls back to the previous one and the workflow fails. A replaced instance redeploys the last good release on its own at first boot.
 - **Sessions in httpOnly cookies:** the browser sends them on every request and the Next.js server forwards them when it renders a page; JavaScript never sees a token.
 - **Async work without queues:** tweet embeddings are jobs in a Postgres table (`embedding_jobs`), enqueued in the same transaction as the tweet and processed by a worker inside the API (`FOR UPDATE SKIP LOCKED`). No SQS, Lambda or NAT.
 - **No public database:** RDS lives in private subnets with no internet route; only the app host's security group can reach it. Backups are kept for 7 days and the instance is protected from deletion.
@@ -83,7 +88,16 @@ flowchart LR
 
 ## Observability
 
-We use **Grafana Cloud** for a "Single Pane of Glass" monitoring experience. The EC2 instance runs **Grafana Alloy** alongside **Node Exporter** to provide a unified view of hardware health, Go application performance, and real-time logs.
+Everything is code and every alert arrives by email.
+
+| What | How |
+|---|---|
+| **Metrics** | Grafana Alloy on the instance sends to Grafana Cloud: the API's metrics (by route), host metrics (Node Exporter), the embedding queue, and site-wide request rate, status codes and latency derived from nginx's JSON access logs |
+| **Logs** | Every container's logs go to Grafana Cloud Loki, labelled by service; nginx and the API share a request ID per request |
+| **Dashboard + alerts** | [`infra/grafana`](infra/grafana) (Terraform): the "Twitter overview" dashboard and alert rules for error rate, slow responses, API down / no metrics, disk, memory and the embedding queue |
+| **Uptime** | A Route 53 health check calls `https://twitter.<domain>/readyz` from several regions; a CloudWatch alarm emails you after 2 minutes of failures |
+| **Self-healing** | CloudWatch reboots the instance if its OS stops responding and moves it to healthy hardware if AWS's host fails; containers restart on their own; OS patches install weekly (SSM Patch Manager) |
+| **Database** | CloudWatch alarms for low storage, high CPU and low memory on RDS |
 
 ![Grafana Dashboard](docs/assets/grafana-dashboard.png)
 
@@ -204,17 +218,19 @@ cd infra/terraform && terraform fmt -check -recursive .. && terraform init -back
 
 | Service | Purpose |
 |---|---|
-| **EC2** (t3.small + Elastic IP) | Docker Compose stack: Caddy (TLS + routing), Next.js, Go API, Grafana Alloy, Node Exporter |
+| **EC2** (t3.small + Elastic IP) | Docker Compose stack: nginx (TLS + routing), certbot, Next.js, Go API, Grafana Alloy, Node Exporter |
 | **RDS** | PostgreSQL 16 + pgvector, encrypted, private subnets, 7-day backups, deletion protection |
 | **S3 + CloudFront** | Media: presigned uploads to a private bucket, served through CloudFront (OAC) |
 | **ECR** | Web and API images, tagged by commit SHA (immutable) |
-| **SSM** | Parameter Store for runtime config and secrets; Session Manager for shell access and DB tunnels (no SSH port) |
+| **S3 (releases)** | Each commit's `infra/ec2` files, fetched by the instance at deploy time |
+| **SSM** | Parameter Store for runtime config, secrets and the current release; Session Manager for shell access and DB tunnels (no SSH port); Patch Manager for weekly OS updates |
+| **CloudWatch + SNS** | Uptime check (Route 53 health check), instance auto-recovery and reboot, RDS alarms; alerts by email |
 | **IAM OIDC** | GitHub Actions deploys with short-lived credentials (no stored AWS keys) |
 | **Route 53** (optional) | DNS for `twitter.<domain>`; any DNS provider works |
 
 Roughly $35–45/month: EC2 t3.small, RDS db.t4g.micro and the public IPv4 address make up nearly all of it.
 
-Terraform lives in [`infra/terraform`](infra/terraform) (one file per concern: `network.tf`, `ec2.tf`, `rds.tf`, `storage.tf`, `ssm.tf`, `ecr.tf`, `github.tf`, `dns.tf`) and the files that run on the host in [`infra/ec2`](infra/ec2).
+Terraform lives in [`infra/terraform`](infra/terraform) (one file per concern: `network.tf`, `ec2.tf`, `rds.tf`, `storage.tf`, `deploy.tf`, `alerts.tf`, `ssm.tf`, `ecr.tf`, `github.tf`, `dns.tf`), the Grafana dashboard and alerts in [`infra/grafana`](infra/grafana), and the files that run on the host in [`infra/ec2`](infra/ec2).
 
 ## AWS Setup
 
@@ -251,7 +267,9 @@ terraform apply                               # ~10 min (RDS is the slow part)
 
 ### 4. DNS
 
-Without `route53_zone_id`, add the record from `terraform output dns_records` at your DNS provider: an `A` record for `twitter.<domain>` → the Elastic IP. Caddy obtains the certificate as soon as it resolves.
+Without `route53_zone_id`, add the record from `terraform output dns_records` at your DNS provider: an `A` record for `twitter.<domain>` → the Elastic IP. certbot keeps retrying every 15 minutes and gets the certificate once the record resolves; until then nginx serves a temporary self-signed one.
+
+Also confirm the two "AWS Notification - Subscription Confirmation" emails (one per region) so alerts can reach you.
 
 ### 5. GitHub Actions variables
 
@@ -263,11 +281,23 @@ In **Settings → Secrets and variables → Actions → Variables**, add:
 | `AWS_DEPLOY_ROLE_ARN` | `terraform output github_deploy_role_arn` |
 | `ECR_API_REPOSITORY` | `terraform output ecr_api_repository` |
 | `ECR_WEB_REPOSITORY` | `terraform output ecr_web_repository` |
+| `DEPLOY_BUCKET` | `terraform output deploy_bucket` |
 | `EC2_INSTANCE_ID` | `terraform output ec2_instance_id` |
 | `SITE_DOMAIN` | e.g. `twitter.chanombude.me` |
 | `GOOGLE_CLIENT_ID` | your OAuth client ID (compiled into the web app) |
 
-None of these are secrets. Then run the **Deploy** workflow once (Actions → Run workflow) to ship the first images.
+None of these are secrets. Then run the **Deploy** workflow once (Actions → Run workflow) to ship the first release.
+
+### 6. Grafana dashboard and alerts (optional)
+
+Create a free [Grafana Cloud](https://grafana.com/) stack, put its Prometheus/Loki push details in `terraform.tfvars` (the `grafana_cloud_*` variables) and `terraform apply` so Alloy starts shipping. Then, with a service account token (Administration → Service accounts, role Editor):
+
+```bash
+cd infra/grafana
+cp terraform.tfvars.example terraform.tfvars   # stack URL, token, data source name, alert email
+terraform init -backend-config=../terraform/backend.hcl -backend-config="key=grafana.tfstate"
+terraform apply
+```
 
 ### Tear down
 
@@ -284,12 +314,15 @@ Terraform checks run in CI without AWS credentials: `terraform fmt -check`, `val
 [`deploy.yml`](.github/workflows/deploy.yml) runs when CI passes on `main`:
 
 1. **Build & push** the web and API images to ECR, both tagged with the commit SHA
-2. **Deploy**: SSM Run Command executes [`/opt/twitter/deploy.sh <sha>`](infra/ec2/deploy.sh) on the instance, which renders `api.env` from SSM Parameter Store, pulls both images and runs `docker compose up -d`
-3. **Verify**: polls `https://twitter.<domain>/readyz` and the home page
+2. **Upload** that commit's `infra/ec2` files to the releases bucket
+3. **Deploy**: SSM Run Command runs [`twitter-deploy <sha>`](infra/ec2/twitter-deploy) on the instance. It fetches the stack files, and the commit's [`deploy.sh`](infra/ec2/deploy.sh) renders the env files from SSM Parameter Store, pulls both images, runs `docker compose up --wait` and records the release. If the health checks fail, it redeploys the previous release and the workflow fails
+4. **Verify**: polls `https://twitter.<domain>/readyz` and the home page
 
-**Roll back:** Actions → Deploy → Run workflow with `image_tag` set to an earlier commit SHA (skips the build).
+**Roll back by hand:** Actions → Deploy → Run workflow with `image_tag` set to an earlier commit SHA (skips the build, reuses that release's files).
 
-**Change a setting:** edit `terraform.tfvars`, `terraform apply` (updates SSM), then re-run the deploy (or `sudo /opt/twitter/deploy.sh <sha>` on the host) so the containers pick it up.
+**Change a setting:** edit `terraform.tfvars`, `terraform apply` (updates SSM), then re-run the deploy (or `sudo twitter-deploy <sha>` on the host) so the containers pick it up.
+
+**Certificates:** nothing to do. certbot checks twice a day and renews 30 days before expiry; nginx reloads within a minute.
 
 ## AWS Access
 
@@ -306,9 +339,9 @@ Or in the console: **EC2 → Instances → Connect → Session Manager**.
 On the host:
 
 ```bash
-cd /opt/twitter
+cd /opt/twitter/stack                         # the current release's files
 sudo docker compose ps
-sudo docker compose logs -f api web caddy
+sudo docker compose logs -f api web nginx
 sudo tail -f /var/log/cloud-init-output.log   # first-boot setup progress (~2-3 min)
 ```
 
@@ -334,7 +367,8 @@ Then connect your DB tool to `127.0.0.1:5433`, database `twitter_db`, with the c
 ├── infra/
 │   ├── bootstrap/       # One-time: S3 bucket for Terraform state
 │   ├── terraform/       # AWS infrastructure (+ tests/ with a mocked-provider plan)
-│   └── ec2/             # What runs on the host: compose.yml, Caddyfile, Alloy config, deploy.sh
+│   ├── grafana/         # Grafana Cloud dashboard and alert rules (Terraform)
+│   └── ec2/             # What runs on the host: compose.yml, nginx config, certbot, Alloy config, deploy scripts
 ├── docs/                # Modernization plan, review notes, diagrams
 ├── .github/workflows/   # CI (tests, lint, Terraform checks) and deploy pipelines
 └── docker-compose.yml   # Local development (Postgres + pgvector, Redis)

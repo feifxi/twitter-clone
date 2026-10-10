@@ -42,3 +42,10 @@ INSERT INTO tweet_embeddings (tweet_id, content, embedding)
 VALUES ($1, $2, $3)
 ON CONFLICT (tweet_id) DO UPDATE
 SET content = EXCLUDED.content, embedding = EXCLUDED.embedding;
+
+-- name: CountEmbeddingJobs :one
+-- Queue depth for metrics: jobs still to run, and jobs that gave up after max_attempts.
+SELECT
+  count(*) FILTER (WHERE attempts < sqlc.arg('max_attempts')::int)::bigint  AS pending,
+  count(*) FILTER (WHERE attempts >= sqlc.arg('max_attempts')::int)::bigint AS failed
+FROM embedding_jobs;

@@ -17,6 +17,7 @@ type MockStore struct {
 	ClaimEmbeddingJobsFn             func(p0 context.Context, p1 db.ClaimEmbeddingJobsParams) ([]db.ClaimEmbeddingJobsRow, error)
 	CompleteEmbeddingJobFn           func(p0 context.Context, p1 int64) error
 	ConsumeRefreshTokenFn            func(p0 context.Context, p1 string) (db.RefreshToken, error)
+	CountEmbeddingJobsFn             func(p0 context.Context, p1 int32) (db.CountEmbeddingJobsRow, error)
 	CreateConversationFn             func(p0 context.Context) (db.Conversation, error)
 	CreateDirectMessageFn            func(p0 context.Context, p1 db.CreateDirectMessageParams) (db.DirectMessage, error)
 	CreateNotificationFn             func(p0 context.Context, p1 db.CreateNotificationParams) (db.Notification, error)
@@ -123,6 +124,13 @@ func (m *MockStore) ConsumeRefreshToken(p0 context.Context, p1 string) (db.Refre
 		return *new(db.RefreshToken), nil
 	}
 	return m.ConsumeRefreshTokenFn(p0, p1)
+}
+
+func (m *MockStore) CountEmbeddingJobs(p0 context.Context, p1 int32) (db.CountEmbeddingJobsRow, error) {
+	if m.CountEmbeddingJobsFn == nil {
+		return *new(db.CountEmbeddingJobsRow), nil
+	}
+	return m.CountEmbeddingJobsFn(p0, p1)
 }
 
 func (m *MockStore) CreateConversation(p0 context.Context) (db.Conversation, error) {

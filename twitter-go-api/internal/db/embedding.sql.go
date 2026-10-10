@@ -71,6 +71,26 @@ func (q *Queries) CompleteEmbeddingJob(ctx context.Context, tweetID int64) error
 	return err
 }
 
+const countEmbeddingJobs = `-- name: CountEmbeddingJobs :one
+SELECT
+  count(*) FILTER (WHERE attempts < $1::int)::bigint  AS pending,
+  count(*) FILTER (WHERE attempts >= $1::int)::bigint AS failed
+FROM embedding_jobs
+`
+
+type CountEmbeddingJobsRow struct {
+	Pending int64 `json:"pending"`
+	Failed  int64 `json:"failed"`
+}
+
+// Queue depth for metrics: jobs still to run, and jobs that gave up after max_attempts.
+func (q *Queries) CountEmbeddingJobs(ctx context.Context, maxAttempts int32) (CountEmbeddingJobsRow, error) {
+	row := q.db.QueryRow(ctx, countEmbeddingJobs, maxAttempts)
+	var i CountEmbeddingJobsRow
+	err := row.Scan(&i.Pending, &i.Failed)
+	return i, err
+}
+
 const enqueueEmbeddingJob = `-- name: EnqueueEmbeddingJob :exec
 INSERT INTO embedding_jobs (tweet_id) VALUES ($1)
 ON CONFLICT DO NOTHING

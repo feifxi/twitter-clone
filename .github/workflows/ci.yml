@@ -106,10 +106,43 @@ jobs:
         with:
           terraform_version: "1.14.6"
       - run: terraform fmt -check -recursive
-      - name: Validate and plan against a mocked AWS provider
+      - name: Validate and plan against mocked providers (AWS, Grafana)
         run: |
-          for dir in bootstrap terraform; do
+          for dir in bootstrap terraform grafana; do
             terraform -chdir="$dir" init -backend=false -input=false
             terraform -chdir="$dir" validate
           done
           terraform -chdir=terraform test
+          terraform -chdir=grafana test
+
+  ec2-stack:
+    name: EC2 stack (nginx, scripts, Compose, Alloy)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: infra/ec2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shell scripts
+        run: shellcheck -x deploy.sh twitter-deploy certbot.sh nginx/reload-on-cert-change.sh
+      - name: nginx config
+        run: |
+          tls=$(mktemp -d)
+          openssl req -x509 -nodes -newkey rsa:2048 -days 1 -subj /CN=test \
+            -keyout "$tls/privkey.pem" -out "$tls/fullchain.pem" 2>/dev/null
+          docker run --rm -e SITE_DOMAIN=twitter.example.com \
+            -v "$PWD/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro" \
+            -v "$tls:/etc/nginx/tls:ro" nginx:1.28-alpine \
+            sh -c '/docker-entrypoint.sh nginx -v && nginx -t'
+      - name: Compose file
+        run: |
+          mkdir -p "$STATE_DIR" && touch "$STATE_DIR/api.env" "$STATE_DIR/monitoring.env"
+          docker compose --profile monitoring config --quiet
+        env:
+          API_IMAGE: api:test
+          WEB_IMAGE: web:test
+          SITE_DOMAIN: twitter.example.com
+          ACME_EMAIL: ops@example.com
+          STATE_DIR: ${{ runner.temp }}/state
+      - name: Alloy config
+        run: docker run --rm -v "$PWD/config.alloy:/config.alloy:ro" grafana/alloy:v1.14.0 fmt /config.alloy > /dev/null

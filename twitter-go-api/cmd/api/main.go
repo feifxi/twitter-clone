@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -57,6 +58,10 @@ import (
 const shutdownTimeout = 10 * time.Second
 
 func main() {
+	// The image is distroless (no shell or curl), so the container health check runs the binary itself.
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		os.Exit(healthcheck())
+	}
 	if err := run(); err != nil {
 		slog.Error("API exited with error", "err", err)
 		os.Exit(1)
@@ -116,6 +121,27 @@ func run() error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 	return httpServer.Shutdown(shutdownCtx)
+}
+
+// healthcheck asks the running server's /readyz (database reachable) and returns the exit code.
+func healthcheck() int {
+	addr := os.Getenv("HTTP_SERVER_ADDRESS")
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil || port == "" {
+		port = "8080"
+	}
+	client := http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get("http://127.0.0.1:" + port + "/readyz")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "healthcheck:", err)
+		return 1
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		fmt.Fprintln(os.Stderr, "healthcheck: status", resp.StatusCode)
+		return 1
+	}
+	return 0
 }
 
 // newServer wires the feature services into the HTTP layer.

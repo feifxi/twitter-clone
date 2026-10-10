@@ -54,19 +54,10 @@ resource "aws_security_group" "app" {
 resource "aws_vpc_security_group_ingress_rule" "app_http" {
   for_each          = toset(["80", "443"])
   security_group_id = aws_security_group.app.id
-  description       = "Caddy (HTTP redirects + ACME, HTTPS)"
+  description       = "nginx (HTTP redirects + ACME challenges, HTTPS)"
   ip_protocol       = "tcp"
   from_port         = tonumber(each.value)
   to_port           = tonumber(each.value)
-  cidr_ipv4         = "0.0.0.0/0"
-}
-
-resource "aws_vpc_security_group_ingress_rule" "app_http3" {
-  security_group_id = aws_security_group.app.id
-  description       = "Caddy HTTP/3"
-  ip_protocol       = "udp"
-  from_port         = 443
-  to_port           = 443
   cidr_ipv4         = "0.0.0.0/0"
 }
 

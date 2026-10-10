@@ -286,3 +286,14 @@ Decided 2026-10-11: drop Amplify; one domain (`twitter.chanombude.me`) and one E
 - [x] Terraform: Amplify and `gh_token` removed; one `domain` variable; ECR repositories for both images; EC2 Instance Connect Endpoint replaced by Session Manager (no SSH rule); t3.small + 2 GB swap; RDS 7-day backups, deletion protection, final snapshot; mocked plan tests updated
 - [x] Deploy workflow runs after CI passes on `main`, builds both images with the same SHA and checks `/readyz` + the home page. Fixed a latent bug: the job's `environment:` changed the OIDC subject so the branch-scoped AWS trust policy would have refused it
 - [x] Verified locally: the production `compose.yml` + `Caddyfile` with the built images on `https://localhost`, all browser suites (33 checks) passing through Caddy, SSE streaming through the proxy
+
+### Phase 9: nginx, self-checking deploys, alerting ✅
+Decided 2026-10-11: switch Caddy → nginx (more common in jobs), automate as much as possible.
+- [x] nginx 1.28 (re-resolves upstream containers after deploys, Mozilla intermediate TLS, HTTP/2, HSTS, gzip, unbuffered SSE, replaces `X-Forwarded-For`, passes `X-Request-ID`, JSON access logs). certbot container issues and renews the Let's Encrypt certificate (webroot); nginx starts on a placeholder and reloads itself when the files change
+- [x] Releases: CI uploads `infra/ec2` per commit to an S3 bucket; `twitter-deploy <sha>` (installed by cloud-init) syncs it and runs that commit's `deploy.sh`. User data is only the bootstrap, so stack changes no longer replace the instance
+- [x] Health checks for every service (`api healthcheck` subcommand for the distroless image, web `/healthz`), `docker compose up --wait`, automatic rollback to the previous release, deploy lock (`flock`), last good release recorded in SSM and restored by a replacement instance at first boot
+- [x] Host: Compose download verified against a pinned SHA-256, Docker log rotation in `daemon.json`, image pruning, weekly SSM Patch Manager
+- [x] Alerting by email: Route 53 health check + CloudWatch alarm (site down), EC2 auto-recover/reboot alarms, EC2 CPU, RDS storage/CPU/memory (`alerts.tf`); Grafana rules (error rate, latency, API down/no metrics, disk, memory, embedding queue) and the dashboard as code (`infra/grafana`)
+- [x] Observability: logs from every container labelled by service, edge metrics derived from nginx logs in Alloy, embedding queue metrics in the Go API
+- [x] CI: shellcheck, `nginx -t`, `docker compose config`, Alloy fmt, Grafana module validate + mocked test
+- [x] Rehearsed locally end to end (local registry as ECR, fake `aws`, Pebble as Let's Encrypt, Prometheus/Loki/Grafana): first deploy, certificate issue + renewal + reload, all browser suites through nginx, broken release → automatic rollback, deploy lock on Amazon Linux 2023, Grafana module applied to a real Grafana, alert drill with the API stopped

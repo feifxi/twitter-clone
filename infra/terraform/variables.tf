@@ -36,6 +36,15 @@ variable "acme_email" {
   type        = string
 }
 
+variable "alert_email" {
+  description = "Where alerts go (site down, database and instance alarms). Confirm the subscription email AWS sends."
+  type        = string
+  validation {
+    condition     = can(regex("^[^@\\s]+@[^@\\s]+$", var.alert_email))
+    error_message = "alert_email must be an email address."
+  }
+}
+
 variable "route53_zone_id" {
   description = "Route 53 hosted zone that contains domain. Empty = manage DNS yourself (see the dns_records output)."
   type        = string
@@ -50,7 +59,7 @@ variable "dev_origins" {
 
 # ── Compute ─────────────────────────────────────────
 variable "ec2_instance_type" {
-  description = "Runs Caddy, Next.js, the API and the monitoring agents; 2 GB is comfortable"
+  description = "Runs nginx, Next.js, the API and the monitoring agents; 2 GB is comfortable"
   type        = string
   default     = "t3.small"
 }
@@ -59,6 +68,18 @@ variable "docker_compose_version" {
   description = "Docker Compose plugin release installed on the host"
   type        = string
   default     = "v2.39.1"
+}
+
+variable "docker_compose_sha256" {
+  description = "SHA-256 of docker-compose-linux-x86_64 for docker_compose_version (from the release's .sha256 file)"
+  type        = string
+  default     = "a5ea28722d5da628b59226626f7d6c33c89a7ed19e39f750645925242044c9d2"
+}
+
+variable "patch_schedule" {
+  description = "When OS patches are installed (UTC). Default: Sunday 20:00 UTC = Monday 03:00 in Bangkok"
+  type        = string
+  default     = "cron(0 20 ? * SUN *)"
 }
 
 variable "ecr_images_to_keep" {

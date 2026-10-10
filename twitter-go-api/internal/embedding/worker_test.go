@@ -9,6 +9,7 @@ import (
 	"github.com/chanombude/twitter-go-api/internal/db"
 	"github.com/chanombude/twitter-go-api/internal/db/dbtest"
 	"github.com/chanombude/twitter-go-api/internal/embedding"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 )
 
@@ -88,4 +89,33 @@ func TestProcessBatch(t *testing.T) {
 		require.Equal(t, 30.0, retried.BackoffSeconds)
 		require.Equal(t, "quota exceeded", *retried.LastError)
 	})
+}
+
+func TestRunReportsQueueDepth(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	store := &dbtest.MockStore{
+		ClaimEmbeddingJobsFn: func(context.Context, db.ClaimEmbeddingJobsParams) ([]db.ClaimEmbeddingJobsRow, error) {
+			return nil, nil
+		},
+		CountEmbeddingJobsFn: func(_ context.Context, maxAttempts int32) (db.CountEmbeddingJobsRow, error) {
+			require.Equal(t, embedding.DefaultWorkerConfig().MaxAttempts, maxAttempts)
+			cancel() // one pass is enough
+			return db.CountEmbeddingJobsRow{Pending: 5, Failed: 2}, nil
+		},
+	}
+
+	embedding.NewWorker(store, fakeEmbedder{}, embedding.DefaultWorkerConfig()).Run(ctx)
+
+	families, err := prometheus.DefaultGatherer.Gather()
+	require.NoError(t, err)
+	got := map[string]float64{}
+	for _, f := range families {
+		if f.GetName() == "embedding_jobs" {
+			for _, m := range f.GetMetric() {
+				got[m.GetLabel()[0].GetValue()] = m.GetGauge().GetValue()
+			}
+		}
+	}
+	require.Equal(t, map[string]float64{"pending": 5, "failed": 2}, got)
 }

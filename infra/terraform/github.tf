@@ -56,6 +56,12 @@ resource "aws_iam_role_policy" "github_deploy" {
         Resource = "*"
       },
       {
+        Sid      = "UploadStack"
+        Effect   = "Allow"
+        Action   = ["s3:PutObject", "s3:ListBucket"]
+        Resource = [aws_s3_bucket.deploy.arn, "${aws_s3_bucket.deploy.arn}/stack/*"]
+      },
+      {
         Sid    = "RunDeployScript"
         Effect = "Allow"
         Action = "ssm:SendCommand"

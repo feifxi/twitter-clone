@@ -61,7 +61,7 @@ The Go API keeps the session in two **httpOnly cookies** (`access_token`, `refre
 - **First render:** `src/proxy.ts` renews an expired access cookie before the page renders, and the root layout fetches the signed-in user with the request's cookies (`src/api/server.ts`). The user is known on the first paint, with no auth spinner.
 - **In the browser:** the user lives in TanStack Query (`queryKeys.auth.me`, read with `useAuth()`). `src/api/axiosInstance.ts` sends cookies (`withCredentials`), and on a `TOKEN_EXPIRED` response renews the session once (shared by concurrent requests) and retries.
 - **Realtime:** one native `EventSource` (with credentials) for notifications and DMs, `src/hooks/useRealtimeEvents.ts`.
-- **Local dev:** the web app (`localhost:3000`) and the API (`localhost:8080`) are the same site, and a `localhost` cookie reaches every port, so no extra setup is needed. In production Caddy serves both on one domain: the browser calls the relative `/api/v1`, and the Next.js server calls the API directly over the Docker network (`API_INTERNAL_URL`).
+- **Local dev:** the web app (`localhost:3000`) and the API (`localhost:8080`) are the same site, and a `localhost` cookie reaches every port, so no extra setup is needed. In production nginx serves both on one domain: the browser calls the relative `/api/v1`, and the Next.js server calls the API directly over the Docker network (`API_INTERNAL_URL`).
 
 ## Data fetching
 

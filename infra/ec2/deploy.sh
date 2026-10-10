@@ -1,22 +1,21 @@
 #!/usr/bin/env bash
-# Deploys the stack on this instance: renders env files from SSM Parameter Store,
-# pulls the web and API images from ECR and (re)starts the containers.
+# Deploys one release (both images share the commit SHA tag): renders the env files
+# from SSM Parameter Store, starts the stack and waits for every health check. If the
+# release doesn't come up healthy, it rolls back to the previous one and fails.
 #
-#   deploy.sh [IMAGE_TAG]    # defaults to the last deployed tag
-#
-# Run by cloud-init on first boot and by the GitHub Actions deploy job (via SSM).
+# Started by twitter-deploy, which has synced this commit's stack files next to it.
 set -euo pipefail
 
-APP_DIR=/opt/twitter
-cd "$APP_DIR"
-# REGION, API_SSM_PATH, MONITORING_SSM_PATH, ECR_API_URL, ECR_WEB_URL, SITE_DOMAIN, ACME_EMAIL, MONITORING
-source ./deploy.env
+APP_DIR=${APP_DIR:-/opt/twitter}
+# REGION, DEPLOY_BUCKET, RELEASE_PARAM, API_SSM_PATH, MONITORING_SSM_PATH, MONITORING,
+# ECR_API_URL, ECR_WEB_URL, SITE_DOMAIN, ACME_EMAIL
+# shellcheck source=/dev/null # written by cloud-init
+source "$APP_DIR/deploy.env"
+tag=${1:?usage: deploy.sh <commit-sha>}
 
-tag="${1:-$(cat .image-tag 2>/dev/null || true)}"
-if [[ -z "$tag" ]]; then
-  echo "No image tag yet: push an image and deploy with deploy.sh <tag>." >&2
-  exit 0
-fi
+export STATE_DIR="$APP_DIR/state"
+mkdir -p "$STATE_DIR"/{tls,letsencrypt,acme}
+cd "$(dirname "$0")"
 
 # Writes KEY='value' lines for every parameter under a path (the last path segment is the key).
 render_env() {
@@ -27,22 +26,45 @@ render_env() {
     done
 }
 
-umask 077 # env files hold secrets
-render_env "$API_SSM_PATH" > api.env.tmp && mv api.env.tmp api.env
-if [[ "$MONITORING" == "true" ]]; then
-  render_env "$MONITORING_SSM_PATH" > monitoring.env.tmp && mv monitoring.env.tmp monitoring.env
-  export COMPOSE_PROFILES=monitoring
-else
-  : > monitoring.env
-fi
+(
+  umask 077 # env files and keys hold secrets
+  render_env "$API_SSM_PATH" > "$STATE_DIR/api.env.tmp" && mv "$STATE_DIR/api.env.tmp" "$STATE_DIR/api.env"
+  if [[ "$MONITORING" == "true" ]]; then
+    render_env "$MONITORING_SSM_PATH" > "$STATE_DIR/monitoring.env.tmp" && mv "$STATE_DIR/monitoring.env.tmp" "$STATE_DIR/monitoring.env"
+  else
+    : > "$STATE_DIR/monitoring.env"
+  fi
+
+  # nginx can't start without a certificate. Until certbot has the real one, serve a
+  # short-lived self-signed placeholder (only on a brand-new instance).
+  if [[ ! -s "$STATE_DIR/tls/fullchain.pem" ]]; then
+    openssl req -x509 -nodes -newkey rsa:2048 -days 7 -subj "/CN=$SITE_DOMAIN" \
+      -keyout "$STATE_DIR/tls/privkey.pem" -out "$STATE_DIR/tls/fullchain.pem" 2>/dev/null
+  fi
+)
+[[ "$MONITORING" == "true" ]] && export COMPOSE_PROFILES=monitoring
 
 aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "${ECR_API_URL%%/*}"
 
-# Both images are tagged with the same commit SHA, so the web app and the API always match.
 export API_IMAGE="$ECR_API_URL:$tag" WEB_IMAGE="$ECR_WEB_URL:$tag" SITE_DOMAIN ACME_EMAIL
-docker compose pull --quiet
-docker compose up -d --remove-orphans
-echo "$tag" > .image-tag
-docker image prune -f >/dev/null
+previous=$(cat "$STATE_DIR/release" 2>/dev/null || true)
 
-echo "Deployed $tag ($API_IMAGE, $WEB_IMAGE)"
+docker compose pull --quiet
+if docker compose up -d --remove-orphans --wait --wait-timeout 180; then
+  echo "$tag" > "$STATE_DIR/release"
+  # Remembered outside the instance too: a replacement instance deploys it at first boot.
+  aws ssm put-parameter --region "$REGION" --name "$RELEASE_PARAM" --value "$tag" --type String --overwrite >/dev/null
+  # Keep the disk from filling up; rollbacks pull from ECR anyway.
+  docker image prune -af --filter "until=168h" >/dev/null
+  echo "Deployed $tag"
+  exit 0
+fi
+
+echo "Release $tag did not become healthy:" >&2
+docker compose ps -a >&2
+docker compose logs --tail 40 api web nginx >&2 || true
+if [[ -n "$previous" && "$previous" != "$tag" && -z "${ROLLING_BACK:-}" ]]; then
+  echo "Rolling back to $previous" >&2
+  ROLLING_BACK=1 "$TWITTER_DEPLOY" "$previous" || echo "Rollback to $previous failed too" >&2
+fi
+exit 1

@@ -23,7 +23,7 @@ COPY . .
 # ENV NEXT_TELEMETRY_DISABLED 1
 
 # Declare build arguments. NEXT_PUBLIC_* values are baked into the browser bundle.
-# The default suits production, where Caddy serves the API under /api on the same domain.
+# The default suits production, where nginx serves the API under /api on the same domain.
 ARG NEXT_PUBLIC_API_URL=/api/v1
 ARG NEXT_PUBLIC_GOOGLE_CLIENT_ID
 

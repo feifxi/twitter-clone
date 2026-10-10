@@ -43,3 +43,8 @@ output "dns_records" {
   description = "Record to create when Route 53 doesn't manage the domain"
   value       = local.manage_dns ? "Managed in Route 53." : "${var.domain} A ${aws_eip.app.public_ip}"
 }
+
+output "deploy_bucket" {
+  description = "GitHub Actions variable DEPLOY_BUCKET"
+  value       = aws_s3_bucket.deploy.id
+}

@@ -17,6 +17,8 @@ type Querier interface {
 	// Deletes and returns the token in one statement, so a refresh token works at
 	// most once even when two requests race with it.
 	ConsumeRefreshToken(ctx context.Context, tokenHash string) (RefreshToken, error)
+	// Queue depth for metrics: jobs still to run, and jobs that gave up after max_attempts.
+	CountEmbeddingJobs(ctx context.Context, maxAttempts int32) (CountEmbeddingJobsRow, error)
 	CreateConversation(ctx context.Context) (Conversation, error)
 	CreateDirectMessage(ctx context.Context, arg CreateDirectMessageParams) (DirectMessage, error)
 	// Returns no row when deduped by idx_notifications_dedupe.

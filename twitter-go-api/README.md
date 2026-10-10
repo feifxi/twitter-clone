@@ -135,7 +135,7 @@ After editing `internal/db/queries`, run `make sqlc` to regenerate both the quer
 
 ## Production Operations
 
-The API runs on EC2 behind Caddy, which terminates TLS; port 8080 is never published. See the root README for the AWS setup.
+The API runs on EC2 behind nginx, which terminates TLS; port 8080 is never published. See the root README for the AWS setup.
 - Liveness: `GET /healthz` (process up). Readiness: `GET /readyz` (database and Redis reachable).
-- Health endpoints have no rate limit; `/metrics` is only reachable on the Docker network (Caddy returns 404 for it).
+- Health endpoints have no rate limit; `/metrics` is only reachable on the Docker network (nginx returns 404 for it).
 - Every response carries `X-Request-ID`; error bodies include `requestId` and every log line for that request carries `request_id`.
