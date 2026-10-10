@@ -1,7 +1,9 @@
 package com.fei.twitter.config;
 
 import java.net.URI;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import org.springframework.boot.EnvironmentPostProcessor;
 import org.springframework.boot.SpringApplication;
@@ -19,6 +21,7 @@ import org.springframework.core.env.MapPropertySource;
  *   <li>{@code REDIS_URL} → Spring Data Redis URL
  *   <li>{@code LOG_LEVEL=debug|info|warn|error} → root log level
  *   <li>{@code ENVIRONMENT=production} → JSON (structured) logs
+ *   <li>no {@code GEMINI_API_KEY} → Spring AI chat and embedding models off
  * </ul>
  *
  * Runs after config data (app.env) has been loaded, so it sees values from either source.
@@ -51,14 +54,27 @@ public class GoStyleEnvironment implements EnvironmentPostProcessor, Ordered {
             props.put("logging.level.root", logLevel.equalsIgnoreCase("warn") ? "WARN" : logLevel.toUpperCase());
         }
 
+        // Spring AI: image generation is never used; without a Gemini key the chat and embedding
+        // models stay off too (the assistant reports itself unavailable). The connection
+        // auto-configurations ignore spring.ai.model.*, so they're excluded (one list: a later
+        // property source would replace it, not merge).
+        List<String> exclude = new ArrayList<>(List.of(
+                "org.springframework.ai.model.google.genai.autoconfigure.image.GoogleGenAiImageConnectionAutoConfiguration",
+                "org.springframework.ai.model.google.genai.autoconfigure.image.GoogleGenAiImageAutoConfiguration"));
+        String gemini = env.getProperty("GEMINI_API_KEY");
+        if (gemini == null || gemini.isBlank()) {
+            props.put("spring.ai.model.chat", "none");
+            props.put("spring.ai.model.embedding.text", "none");
+            exclude.add("org.springframework.ai.model.google.genai.autoconfigure.embedding.GoogleGenAiEmbeddingConnectionAutoConfiguration");
+        }
+        props.put("spring.autoconfigure.exclude", String.join(",", exclude));
+
         // Production logs are JSON lines (like the Go API's slog JSON handler).
         if ("production".equalsIgnoreCase(env.getProperty("ENVIRONMENT"))) {
             props.put("logging.structured.format.console", "logstash");
         }
 
-        if (!props.isEmpty()) {
-            env.getPropertySources().addFirst(new MapPropertySource("goStyleEnvironment", props));
-        }
+        env.getPropertySources().addFirst(new MapPropertySource("goStyleEnvironment", props));
     }
 
     /** postgresql://user:pass@host:port/db?query → spring.datasource.* (query parameters such as sslmode carry over). */

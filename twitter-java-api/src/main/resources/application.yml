@@ -19,6 +19,21 @@ spring:
     redis:
       repositories:
         enabled: false
+  ai:
+    # Gemini through Spring AI. Without GEMINI_API_KEY, GoStyleEnvironment switches the
+    # models off (spring.ai.model.*=none) and the assistant reports itself unavailable.
+    google:
+      genai:
+        api-key: ${GEMINI_API_KEY:}
+        chat:
+          options:
+            model: ${GEMINI_CHAT_MODEL:gemini-2.5-flash}
+        embedding:
+          api-key: ${GEMINI_API_KEY:}
+          text:
+            options:
+              model: ${GEMINI_EMBEDDING_MODEL:gemini-embedding-2-preview}
+              dimensions: 768
   mvc:
     problemdetails:
       enabled: false
