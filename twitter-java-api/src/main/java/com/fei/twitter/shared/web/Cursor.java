@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.Instant;
 import java.util.Base64;
+import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
@@ -20,7 +21,10 @@ public record Cursor(
         @JsonProperty("a") Instant anchor,
         @JsonProperty("o") int offset) {
 
-    private static final JsonMapper JSON = JsonMapper.builder().build();
+    // Omitted fields decode to their defaults (Jackson 3 rejects missing primitives by default).
+    private static final JsonMapper JSON = JsonMapper.builder()
+            .disable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
+            .build();
 
     public static Cursor ofTime(Instant time, long id) {
         return new Cursor(time, id, 0, 0, null, 0);
