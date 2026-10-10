@@ -196,7 +196,7 @@ Good already: `default_tags`, the modern standalone `aws_vpc_security_group_*_ru
 2026-10-10, round 2:
 - Go API: **package-by-feature** layout (see "Project structure"), done in Phase 2.
 - AWS: **replace API Gateway with Caddy TLS on EC2**; **replace SQS + Lambda + NAT with a Postgres job queue** in Go; **harden** RDS, state and CI.
-- Domain: `api.chanombude.me` (Go API on EC2) and `twitter.chanombude.me` (Amplify).
+- Domain: `api.chanombude.me` (Go API on EC2) and `twitter.chanombude.me` (Amplify). *Superseded in Phase 8: one domain, `twitter.chanombude.me`, for both.*
 - Auth design, refined by having a domain: the **Go API sets httpOnly cookies** (`Domain=.chanombude.me`, `SameSite=Lax`, `Secure`). The browser calls `api.*` directly with `credentials: "include"` (SSE included, so no Next proxy hop). Next server components read the cookie and forward it as `Authorization: Bearer`. CSRF: `SameSite=Lax`, a strict CORS allowlist, and an `Origin` check on unsafe methods. Locally, `localhost:3000` and `localhost:8080` are same-site, so this works unchanged.
 
 ## Phases
@@ -277,3 +277,12 @@ Accepted (documented, not worth the complexity here):
 - [x] Parity proven: 34/34 identical responses from both APIs on one database (every page of every list, anonymous and signed in, errors included); the web browser suites run against the Java API
 - [x] Lombok, Azure storage and the Azure deploy workflow removed; Docker image (layered, non-root, JRE 25); CI job
 - Differences by design: anonymous requests to unknown routes answer 401 (Spring Security is secure-by-default) instead of 404
+
+### Phase 8: Single-host production setup ✅
+Decided 2026-10-11: drop Amplify; one domain (`twitter.chanombude.me`) and one EC2 host for the web app and the API.
+- [x] Caddy routes `/api/*` (and `/healthz`, `/readyz`) to the API and everything else to Next.js; `/metrics` is never public. One origin: no CORS, no `COOKIE_DOMAIN`, host-only cookies
+- [x] Next.js runs in the Compose stack; the browser calls the relative `/api/v1`, server rendering calls `http://api:8080` over the Docker network (`API_INTERNAL_URL`) and forwards the visitor's IP for rate limiting
+- [x] No Redis on a single host (the APIs fall back to in-memory rate limits and SSE fan-out); README explains when to add ElastiCache
+- [x] Terraform: Amplify and `gh_token` removed; one `domain` variable; ECR repositories for both images; EC2 Instance Connect Endpoint replaced by Session Manager (no SSH rule); t3.small + 2 GB swap; RDS 7-day backups, deletion protection, final snapshot; mocked plan tests updated
+- [x] Deploy workflow runs after CI passes on `main`, builds both images with the same SHA and checks `/readyz` + the home page. Fixed a latent bug: the job's `environment:` changed the OIDC subject so the branch-scoped AWS trust policy would have refused it
+- [x] Verified locally: the production `compose.yml` + `Caddyfile` with the built images on `https://localhost`, all browser suites (33 checks) passing through Caddy, SSE streaming through the proxy

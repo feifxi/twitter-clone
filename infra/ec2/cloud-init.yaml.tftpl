@@ -26,11 +26,14 @@ write_files:
       API_SSM_PATH=${api_ssm_path}
       MONITORING_SSM_PATH=${monitoring_ssm_path}
       MONITORING=${monitoring}
-      ECR_REPOSITORY_URL=${ecr_repository_url}
-      API_DOMAIN=${api_domain}
+      ECR_API_URL=${ecr_api_url}
+      ECR_WEB_URL=${ecr_web_url}
+      SITE_DOMAIN=${site_domain}
       ACME_EMAIL=${acme_email}
 
 runcmd:
+  # 2 GB swap: a safety net against out-of-memory kills on a small instance.
+  - fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile && echo '/swapfile none swap sw 0 0' >> /etc/fstab
   - systemctl enable --now docker
   - mkdir -p /usr/local/lib/docker/cli-plugins
   - curl -fsSL -o /usr/local/lib/docker/cli-plugins/docker-compose "https://github.com/docker/compose/releases/download/${compose_version}/docker-compose-linux-$(uname -m)"

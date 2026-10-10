@@ -1,11 +1,9 @@
 # Copy to terraform.tfvars (gitignored) and fill in.
 
-# ── Domains ─────────────────────────────────────────
-root_domain     = "chanombude.me"
-web_domain      = "twitter.chanombude.me"
-api_domain      = "api.chanombude.me"
+# ── Domain ──────────────────────────────────────────
+domain          = "twitter.chanombude.me" # the web app; the API is served under /api
 acme_email      = "you@example.com"
-route53_zone_id = "" # set if Route 53 hosts root_domain; otherwise add the dns_records output by hand
+route53_zone_id = "" # set if Route 53 hosts chanombude.me; otherwise add the dns_records output by hand
 
 # Lets a local frontend upload media to this environment's bucket.
 dev_origins = ["http://localhost:3000"]
@@ -24,7 +22,6 @@ gemini_api_key = "" # https://aistudio.google.com/
 # ── GitHub ──────────────────────────────────────────
 gh_repo_url = "https://github.com/feifxi/twitter-monolith"
 gh_branch   = "main"
-gh_token    = "github_pat_..." # fine-grained PAT, read access to the repo (used by Amplify)
 # create_github_oidc_provider = false  # if the account already has one
 
 # ── Grafana Cloud (optional) ────────────────────────

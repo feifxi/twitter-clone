@@ -1,5 +1,9 @@
-# Production stack on the EC2 instance. Rendered values come from deploy.sh:
-#   API_IMAGE, API_DOMAIN, ACME_EMAIL (environment) and api.env / monitoring.env (from SSM).
+# Production stack on the EC2 instance: one domain, Caddy in front of the web app and the API.
+# Rendered values come from deploy.sh: API_IMAGE, WEB_IMAGE, SITE_DOMAIN, ACME_EMAIL
+# (environment) and api.env / monitoring.env (from SSM).
+#
+# Single instance, so no Redis: rate limits and live updates work in memory. To run several
+# instances behind a load balancer, add a shared Redis (e.g. ElastiCache) and set REDIS_URL.
 name: twitter
 
 services:
@@ -9,28 +13,31 @@ services:
     restart: unless-stopped
     ports: ["80:80", "443:443", "443:443/udp"]
     environment:
-      API_DOMAIN: ${API_DOMAIN}
+      SITE_DOMAIN: ${SITE_DOMAIN}
       ACME_EMAIL: ${ACME_EMAIL}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data # certificates: keep across restarts to avoid Let's Encrypt rate limits
       - caddy_config:/config
+    depends_on: [web, api]
+
+  # Next.js (server rendering). It calls the API inside this network, not through Caddy.
+  web:
+    image: ${WEB_IMAGE}
+    restart: unless-stopped
+    environment:
+      API_INTERNAL_URL: http://api:8080/api/v1
+      HOSTNAME: 0.0.0.0
     depends_on: [api]
+    logging: &logging
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
 
   api:
     image: ${API_IMAGE}
     restart: unless-stopped
     env_file: api.env
-    depends_on: [redis]
-    logging:
-      driver: json-file
-      options: { max-size: "10m", max-file: "3" }
-
-  # Rate limits and realtime fan-out; nothing durable, so no persistence.
-  redis:
-    image: redis:7.4-alpine
-    restart: unless-stopped
-    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru"]
+    logging: *logging
 
   node-exporter:
     profiles: [monitoring]

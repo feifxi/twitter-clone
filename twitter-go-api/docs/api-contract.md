@@ -5,7 +5,7 @@ Base URL: `/api/v1`
 ## Auth & Session
 - Sessions live in two **httpOnly cookies** set by the API: `access_token` (short-lived JWT) and `refresh_token` (rotating, single use). Page scripts never see the tokens.
 - Browsers send them automatically: call the API with credentials (`fetch(..., { credentials: "include" })`, axios `withCredentials: true`, `new EventSource(url, { withCredentials: true })`).
-- Cookies are `HttpOnly; SameSite=Lax; Path=/`, `Secure` in production, scoped to `COOKIE_DOMAIN` (e.g. `chanombude.me`, so both `twitter.` and `api.` receive them; in dev, `localhost` covers every port).
+- Cookies are `HttpOnly; SameSite=Lax; Path=/`, `Secure` in production, host-only by default (production serves the web app and the API on one domain; in dev, `localhost` covers every port). `COOKIE_DOMAIN` scopes them to a parent domain if the two are ever split across subdomains.
 - `401` comes with one of two codes:
   - `UNAUTHORIZED`: no credentials were sent. The user is signed out; show sign-in.
   - `TOKEN_EXPIRED`: credentials were sent but are stale (expired access token, or only the refresh cookie is left). Call `POST /auth/refresh` and retry. Share one in-flight refresh between concurrent requests: each refresh token works once. Optional-auth endpoints return this too, so a signed-in user never silently gets anonymous data.

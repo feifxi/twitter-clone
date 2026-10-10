@@ -1,10 +1,12 @@
 import 'server-only';
 import { cache } from 'react';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import type { QueryClient, QueryKey } from '@tanstack/react-query';
 import type { CurrentUserResponse, PageResponse, TweetResponse, UserResponse } from '@/types';
 
-const baseURL = process.env.NEXT_PUBLIC_API_URL;
+// On the server, call the API directly (in production: over the Docker network,
+// API_INTERNAL_URL=http://api:8080/api/v1); browsers use NEXT_PUBLIC_API_URL ("/api/v1").
+const baseURL = process.env.API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_API_URL;
 
 export const SESSION_COOKIES = ['access_token', 'refresh_token'] as const;
 
@@ -18,8 +20,11 @@ async function sessionCookieHeader(): Promise<string> {
 }
 
 async function get(path: string, cookie: string): Promise<Response> {
+  // Pass the visitor's IP along (Caddy sets it), so the API rate-limits per visitor
+  // rather than treating every server-rendered request as coming from this server.
+  const forwardedFor = (await headers()).get('x-forwarded-for');
   return fetch(`${baseURL}${path}`, {
-    headers: cookie ? { cookie } : undefined,
+    headers: { ...(cookie ? { cookie } : {}), ...(forwardedFor ? { 'x-forwarded-for': forwardedFor } : {}) },
     cache: 'no-store',
   });
 }

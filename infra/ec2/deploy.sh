@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Deploys the API stack on this instance: renders env files from SSM Parameter
-# Store, pulls the image from ECR and (re)starts the containers.
+# Deploys the stack on this instance: renders env files from SSM Parameter Store,
+# pulls the web and API images from ECR and (re)starts the containers.
 #
 #   deploy.sh [IMAGE_TAG]    # defaults to the last deployed tag
 #
@@ -9,7 +9,7 @@ set -euo pipefail
 
 APP_DIR=/opt/twitter
 cd "$APP_DIR"
-# REGION, API_SSM_PATH, MONITORING_SSM_PATH, ECR_REPOSITORY_URL, API_DOMAIN, ACME_EMAIL, MONITORING
+# REGION, API_SSM_PATH, MONITORING_SSM_PATH, ECR_API_URL, ECR_WEB_URL, SITE_DOMAIN, ACME_EMAIL, MONITORING
 source ./deploy.env
 
 tag="${1:-$(cat .image-tag 2>/dev/null || true)}"
@@ -36,12 +36,13 @@ else
   : > monitoring.env
 fi
 
-aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "${ECR_REPOSITORY_URL%%/*}"
+aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "${ECR_API_URL%%/*}"
 
-export API_IMAGE="$ECR_REPOSITORY_URL:$tag" API_DOMAIN ACME_EMAIL
+# Both images are tagged with the same commit SHA, so the web app and the API always match.
+export API_IMAGE="$ECR_API_URL:$tag" WEB_IMAGE="$ECR_WEB_URL:$tag" SITE_DOMAIN ACME_EMAIL
 docker compose pull --quiet
 docker compose up -d --remove-orphans
 echo "$tag" > .image-tag
 docker image prune -f >/dev/null
 
-echo "Deployed $API_IMAGE"
+echo "Deployed $tag ($API_IMAGE, $WEB_IMAGE)"

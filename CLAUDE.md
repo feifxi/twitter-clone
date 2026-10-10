@@ -70,6 +70,8 @@ Enable the pre-commit hook once per clone: `git config core.hooksPath .githooks`
 
 ## Infra conventions
 
+- Production is one EC2 host on one domain: Caddy routes `/api/*` to the API and the rest to Next.js
+  (`infra/ec2/compose.yml`). No Redis there; it is only needed to scale out to several instances.
 - Runtime config is SSM parameters under `/<project>/<env>/api/` (one per env var) rendered into
   `api.env` by `infra/ec2/deploy.sh`; secrets never go in user data or workflow logs.
 - Run `terraform fmt`, `validate` and `test` (mocked provider) for every Terraform change.

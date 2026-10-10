@@ -43,25 +43,17 @@ resource "aws_route_table_association" "public" {
   route_table_id = aws_route_table.public.id
 }
 
-# EC2 Instance Connect Endpoint: SSH (and RDS tunnels) without public SSH or key pairs.
-resource "aws_ec2_instance_connect_endpoint" "main" {
-  subnet_id          = aws_subnet.public.id
-  security_group_ids = [aws_security_group.eice.id]
-  preserve_client_ip = false
-  tags               = { Name = "${local.name}-eice" }
-}
-
 # ── Security groups ─────────────────────────────────
 
-resource "aws_security_group" "api" {
-  name        = "${local.name}-api"
-  description = "API host: HTTPS from anywhere, SSH only via EICE"
+resource "aws_security_group" "app" {
+  name        = "${local.name}-app"
+  description = "App host: HTTP(S) from anywhere; no SSH (shell via Session Manager)"
   vpc_id      = aws_vpc.main.id
 }
 
-resource "aws_vpc_security_group_ingress_rule" "api_http" {
+resource "aws_vpc_security_group_ingress_rule" "app_http" {
   for_each          = toset(["80", "443"])
-  security_group_id = aws_security_group.api.id
+  security_group_id = aws_security_group.app.id
   description       = "Caddy (HTTP redirects + ACME, HTTPS)"
   ip_protocol       = "tcp"
   from_port         = tonumber(each.value)
@@ -69,8 +61,8 @@ resource "aws_vpc_security_group_ingress_rule" "api_http" {
   cidr_ipv4         = "0.0.0.0/0"
 }
 
-resource "aws_vpc_security_group_ingress_rule" "api_http3" {
-  security_group_id = aws_security_group.api.id
+resource "aws_vpc_security_group_ingress_rule" "app_http3" {
+  security_group_id = aws_security_group.app.id
   description       = "Caddy HTTP/3"
   ip_protocol       = "udp"
   from_port         = 443
@@ -78,48 +70,24 @@ resource "aws_vpc_security_group_ingress_rule" "api_http3" {
   cidr_ipv4         = "0.0.0.0/0"
 }
 
-resource "aws_vpc_security_group_ingress_rule" "api_ssh_from_eice" {
-  security_group_id            = aws_security_group.api.id
-  description                  = "SSH via EC2 Instance Connect Endpoint"
-  ip_protocol                  = "tcp"
-  from_port                    = 22
-  to_port                      = 22
-  referenced_security_group_id = aws_security_group.eice.id
-}
-
-resource "aws_vpc_security_group_egress_rule" "api_all" {
-  security_group_id = aws_security_group.api.id
+resource "aws_vpc_security_group_egress_rule" "app_all" {
+  security_group_id = aws_security_group.app.id
   description       = "Outbound: ECR, SSM, Gemini, Google, Let's Encrypt, RDS"
   ip_protocol       = "-1"
   cidr_ipv4         = "0.0.0.0/0"
 }
 
-resource "aws_security_group" "eice" {
-  name        = "${local.name}-eice"
-  description = "EC2 Instance Connect Endpoint"
-  vpc_id      = aws_vpc.main.id
-}
-
-resource "aws_vpc_security_group_egress_rule" "eice_ssh" {
-  security_group_id            = aws_security_group.eice.id
-  description                  = "SSH to the API host"
-  ip_protocol                  = "tcp"
-  from_port                    = 22
-  to_port                      = 22
-  referenced_security_group_id = aws_security_group.api.id
-}
-
 resource "aws_security_group" "rds" {
   name        = "${local.name}-rds"
-  description = "Postgres from the API host only (admin tunnels go through it over SSH)"
+  description = "Postgres from the app host only (admin access: Session Manager port forwarding)"
   vpc_id      = aws_vpc.main.id
 }
 
-resource "aws_vpc_security_group_ingress_rule" "rds_from_api" {
+resource "aws_vpc_security_group_ingress_rule" "rds_from_app" {
   security_group_id            = aws_security_group.rds.id
-  description                  = "Postgres from the API host"
+  description                  = "Postgres from the app host"
   ip_protocol                  = "tcp"
   from_port                    = 5432
   to_port                      = 5432
-  referenced_security_group_id = aws_security_group.api.id
+  referenced_security_group_id = aws_security_group.app.id
 }

@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-const baseURL = process.env.NEXT_PUBLIC_API_URL;
+// On the server, call the API directly (in production: over the Docker network,
+// API_INTERNAL_URL=http://api:8080/api/v1); browsers use NEXT_PUBLIC_API_URL ("/api/v1").
+const baseURL = process.env.API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_API_URL;
 
 /**
  * Renews an expired session before the page renders. The browser drops the
@@ -19,7 +21,11 @@ export async function proxy(request: NextRequest) {
   try {
     refreshed = await fetch(`${baseURL}/auth/refresh`, {
       method: 'POST',
-      headers: { cookie: `refresh_token=${refreshToken}` },
+      headers: {
+        cookie: `refresh_token=${refreshToken}`,
+        // The visitor's IP (from Caddy), so rate limits apply per visitor.
+        ...(request.headers.get('x-forwarded-for') ? { 'x-forwarded-for': request.headers.get('x-forwarded-for')! } : {}),
+      },
       cache: 'no-store',
     });
   } catch {

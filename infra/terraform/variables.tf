@@ -21,27 +21,13 @@ variable "vpc_cidr" {
   default = "10.0.0.0/16"
 }
 
-# ── Domains ─────────────────────────────────────────
-variable "root_domain" {
-  description = "Registrable domain shared by the web app and API, e.g. chanombude.me"
-  type        = string
-}
-
-variable "web_domain" {
-  description = "Web app hostname (Amplify), e.g. twitter.chanombude.me"
+# ── Domain ──────────────────────────────────────────
+variable "domain" {
+  description = "Public hostname of the app, e.g. twitter.chanombude.me (the web app, with the API under /api)"
   type        = string
   validation {
-    condition     = endswith(var.web_domain, ".${var.root_domain}")
-    error_message = "web_domain must be a subdomain of root_domain."
-  }
-}
-
-variable "api_domain" {
-  description = "API hostname served by Caddy on EC2, e.g. api.chanombude.me"
-  type        = string
-  validation {
-    condition     = endswith(var.api_domain, ".${var.root_domain}")
-    error_message = "api_domain must be a subdomain of root_domain (the session cookie is scoped to it)."
+    condition     = can(regex("^([a-z0-9-]+\\.)+[a-z]{2,}$", var.domain))
+    error_message = "domain must be a lowercase hostname like twitter.example.com."
   }
 }
 
@@ -51,7 +37,7 @@ variable "acme_email" {
 }
 
 variable "route53_zone_id" {
-  description = "Route 53 hosted zone of root_domain. Empty = manage DNS yourself (see the dns_records output)."
+  description = "Route 53 hosted zone that contains domain. Empty = manage DNS yourself (see the dns_records output)."
   type        = string
   default     = ""
 }
@@ -64,8 +50,9 @@ variable "dev_origins" {
 
 # ── Compute ─────────────────────────────────────────
 variable "ec2_instance_type" {
-  type    = string
-  default = "t3.micro"
+  description = "Runs Caddy, Next.js, the API and the monitoring agents; 2 GB is comfortable"
+  type        = string
+  default     = "t3.small"
 }
 
 variable "docker_compose_version" {
@@ -193,15 +180,9 @@ variable "gh_repo_url" {
 }
 
 variable "gh_branch" {
-  description = "Branch Amplify builds and GitHub Actions may deploy from"
+  description = "Branch GitHub Actions may deploy from"
   type        = string
   default     = "main"
-}
-
-variable "gh_token" {
-  description = "GitHub token Amplify uses to read the repository"
-  type        = string
-  sensitive   = true
 }
 
 variable "create_github_oidc_provider" {

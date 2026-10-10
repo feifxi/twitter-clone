@@ -21,11 +21,13 @@ resource "aws_db_instance" "main" {
   vpc_security_group_ids = [aws_security_group.rds.id]
   publicly_accessible    = false
 
-  # Learning-project trade-offs: single AZ, short backups, easy teardown.
+  # Single AZ keeps the cost down; backups and deletion protection keep the data safe.
+  # To tear down on purpose: set deletion_protection = false and apply first.
   multi_az                   = false
-  backup_retention_period    = 1
-  skip_final_snapshot        = true
-  deletion_protection        = false
+  backup_retention_period    = 7 # point-in-time restore to any second of the last week
+  deletion_protection        = true
+  skip_final_snapshot        = false
+  final_snapshot_identifier  = "${local.name}-db-final"
   auto_minor_version_upgrade = true
   apply_immediately          = true
 

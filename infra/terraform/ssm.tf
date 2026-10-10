@@ -5,19 +5,19 @@ locals {
   # Values derived from other resources: never empty, often unknown until apply.
   api_env_from_resources = {
     DATABASE_URL      = "postgresql://${var.db_username}:${var.db_password}@${aws_db_instance.main.endpoint}/${var.db_name}?sslmode=require"
-    ALLOWED_ORIGINS   = join(",", [local.web_origin, local.amplify_url])
     S3_BUCKET_NAME    = aws_s3_bucket.media.id
     CLOUDFRONT_DOMAIN = aws_cloudfront_distribution.media.domain_name
   }
 
   # Values from variables: known at plan time, possibly empty.
   api_env_from_variables = {
-    ENVIRONMENT            = "production"
-    LOG_LEVEL              = var.log_level
-    HTTP_SERVER_ADDRESS    = "0.0.0.0:8080"
-    DB_MAX_CONNS           = tostring(var.db_max_conns)
-    REDIS_URL              = "redis://redis:6379"
-    COOKIE_DOMAIN          = var.root_domain
+    ENVIRONMENT         = "production"
+    ALLOWED_ORIGINS     = local.site_origin
+    LOG_LEVEL           = var.log_level
+    HTTP_SERVER_ADDRESS = "0.0.0.0:8080"
+    DB_MAX_CONNS        = tostring(var.db_max_conns)
+    # No REDIS_URL: one instance keeps rate limits and live updates in memory.
+    # No COOKIE_DOMAIN: the session cookies belong to the one host.
     TOKEN_SYMMETRIC_KEY    = var.token_symmetric_key
     ACCESS_TOKEN_TTL       = var.access_token_ttl
     REFRESH_TOKEN_TTL      = var.refresh_token_ttl

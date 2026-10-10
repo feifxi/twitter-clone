@@ -41,13 +41,13 @@ resource "aws_iam_role_policy" "github_deploy" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "PushApiImage"
+        Sid    = "PushImages"
         Effect = "Allow"
         Action = [
           "ecr:BatchCheckLayerAvailability", "ecr:CompleteLayerUpload", "ecr:InitiateLayerUpload",
           "ecr:PutImage", "ecr:UploadLayerPart", "ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer",
         ]
-        Resource = aws_ecr_repository.api.arn
+        Resource = [for repo in aws_ecr_repository.app : repo.arn]
       },
       {
         Sid      = "EcrLogin"
@@ -60,7 +60,7 @@ resource "aws_iam_role_policy" "github_deploy" {
         Effect = "Allow"
         Action = "ssm:SendCommand"
         Resource = [
-          aws_instance.api.arn,
+          aws_instance.app.arn,
           "arn:aws:ssm:${var.aws_region}::document/AWS-RunShellScript",
         ]
       },

@@ -1,28 +1,25 @@
-output "api_url" {
-  value = local.api_base_url
+output "site_url" {
+  value = local.site_origin
 }
 
-output "web_url" {
-  value = local.web_origin
-}
-
-output "amplify_default_url" {
-  value = local.amplify_url
-}
-
-output "api_public_ip" {
-  description = "Elastic IP of the API host (api_domain's A record)"
-  value       = aws_eip.api.public_ip
+output "public_ip" {
+  description = "Elastic IP of the app host (the domain's A record)"
+  value       = aws_eip.app.public_ip
 }
 
 output "ec2_instance_id" {
-  description = "GitHub Actions variable EC2_INSTANCE_ID; also used for SSH via EICE"
-  value       = aws_instance.api.id
+  description = "GitHub Actions variable EC2_INSTANCE_ID; shell: aws ssm start-session --target <id>"
+  value       = aws_instance.app.id
 }
 
-output "ecr_repository_url" {
-  description = "GitHub Actions variable ECR_REPOSITORY"
-  value       = aws_ecr_repository.api.repository_url
+output "ecr_api_repository" {
+  description = "GitHub Actions variable ECR_API_REPOSITORY"
+  value       = aws_ecr_repository.app["api"].repository_url
+}
+
+output "ecr_web_repository" {
+  description = "GitHub Actions variable ECR_WEB_REPOSITORY"
+  value       = aws_ecr_repository.app["web"].repository_url
 }
 
 output "github_deploy_role_arn" {
@@ -43,10 +40,6 @@ output "cloudfront_domain" {
 }
 
 output "dns_records" {
-  description = "Records to create when Route 53 doesn't manage the domain"
-  value = local.manage_dns ? "Managed in Route 53." : join("\n", compact(concat(
-    ["${var.api_domain} A ${aws_eip.api.public_ip}"],
-    [aws_amplify_domain_association.web.certificate_verification_dns_record],
-    [for sd in aws_amplify_domain_association.web.sub_domain : sd.dns_record],
-  )))
+  description = "Record to create when Route 53 doesn't manage the domain"
+  value       = local.manage_dns ? "Managed in Route 53." : "${var.domain} A ${aws_eip.app.public_ip}"
 }

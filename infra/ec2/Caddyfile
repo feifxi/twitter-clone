@@ -2,11 +2,23 @@
 	email {$ACME_EMAIL}
 }
 
-{$API_DOMAIN} {
+# One origin for the web app and the API: no CORS, and the session cookies are plain
+# first-party cookies of this host.
+{$SITE_DOMAIN} {
+	encode zstd gzip
+
 	# Prometheus scrapes /metrics over the Docker network; it is never public.
 	@metrics path /metrics
 	respond @metrics 404
 
-	# Caddy flushes text/event-stream responses immediately, so SSE works as-is.
-	reverse_proxy api:8080
+	# The API and its health probes (the deploy job checks /readyz).
+	@api path /api/* /healthz /readyz
+	handle @api {
+		# Caddy flushes text/event-stream responses immediately, so SSE works as-is.
+		reverse_proxy api:8080
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
 }

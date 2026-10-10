@@ -1,8 +1,9 @@
-# The API host: Caddy (TLS) → Go API, plus Redis and the monitoring agents,
-# run with Docker Compose (see ../ec2).
+# The app host: Caddy (TLS) in front of the Next.js web app and the Go API, plus the
+# monitoring agents, run with Docker Compose (see ../ec2). Shell access is Session
+# Manager (aws ssm start-session), so no SSH port is open.
 
-resource "aws_iam_role" "api" {
-  name = "${local.name}-api"
+resource "aws_iam_role" "app" {
+  name = "${local.name}-app"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -14,14 +15,14 @@ resource "aws_iam_role" "api" {
 }
 
 # SSM agent: Run Command (CI deploys) and Session Manager.
-resource "aws_iam_role_policy_attachment" "api_ssm_core" {
-  role       = aws_iam_role.api.name
+resource "aws_iam_role_policy_attachment" "app_ssm_core" {
+  role       = aws_iam_role.app.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
-resource "aws_iam_role_policy" "api" {
-  name = "${local.name}-api"
-  role = aws_iam_role.api.id
+resource "aws_iam_role_policy" "app" {
+  name = "${local.name}-app"
+  role = aws_iam_role.app.id
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -38,10 +39,10 @@ resource "aws_iam_role_policy" "api" {
         Resource = "${aws_s3_bucket.media.arn}/*"
       },
       {
-        Sid      = "PullApiImage"
+        Sid      = "PullImages"
         Effect   = "Allow"
         Action   = ["ecr:BatchCheckLayerAvailability", "ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"]
-        Resource = aws_ecr_repository.api.arn
+        Resource = [for repo in aws_ecr_repository.app : repo.arn]
       },
       {
         Sid      = "EcrLogin"
@@ -53,17 +54,17 @@ resource "aws_iam_role_policy" "api" {
   })
 }
 
-resource "aws_iam_instance_profile" "api" {
-  name = "${local.name}-api"
-  role = aws_iam_role.api.name
+resource "aws_iam_instance_profile" "app" {
+  name = "${local.name}-app"
+  role = aws_iam_role.app.name
 }
 
-resource "aws_instance" "api" {
+resource "aws_instance" "app" {
   ami                    = data.aws_ssm_parameter.al2023_ami.value
   instance_type          = var.ec2_instance_type
   subnet_id              = aws_subnet.public.id
-  vpc_security_group_ids = [aws_security_group.api.id]
-  iam_instance_profile   = aws_iam_instance_profile.api.name
+  vpc_security_group_ids = [aws_security_group.app.id]
+  iam_instance_profile   = aws_iam_instance_profile.app.name
 
   root_block_device {
     volume_size = 30
@@ -89,24 +90,25 @@ resource "aws_instance" "api" {
     api_ssm_path        = local.api_ssm_path
     monitoring_ssm_path = local.monitoring_ssm_path
     monitoring          = local.monitoring_enabled
-    ecr_repository_url  = aws_ecr_repository.api.repository_url
-    api_domain          = var.api_domain
+    ecr_api_url         = aws_ecr_repository.app["api"].repository_url
+    ecr_web_url         = aws_ecr_repository.app["web"].repository_url
+    site_domain         = var.domain
     acme_email          = var.acme_email
   })
 
   # The first deploy reads these at boot.
   depends_on = [aws_ssm_parameter.api, aws_ssm_parameter.monitoring]
 
-  tags = { Name = "${local.name}-api" }
+  tags = { Name = "${local.name}-app" }
 
   lifecycle {
     ignore_changes = [ami] # don't rebuild just because a newer AMI was published
   }
 }
 
-# Stable public IP for the api.<domain> DNS record.
-resource "aws_eip" "api" {
-  instance = aws_instance.api.id
+# Stable public IP for the domain's DNS record.
+resource "aws_eip" "app" {
+  instance = aws_instance.app.id
   domain   = "vpc"
-  tags     = { Name = "${local.name}-api" }
+  tags     = { Name = "${local.name}-app" }
 }

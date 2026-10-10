@@ -36,15 +36,12 @@ mock_provider "aws" {
 }
 
 variables {
-  root_domain         = "example.com"
-  web_domain          = "twitter.example.com"
-  api_domain          = "api.example.com"
+  domain              = "twitter.example.com"
   acme_email          = "ops@example.com"
   db_username         = "admin_user"
   db_password         = "abcdefghijklmnop1234"
   token_symmetric_key = "0123456789abcdef0123456789abcdef0123"
   google_client_id    = "client.apps.googleusercontent.com"
-  gh_token            = "github_pat_mock"
 }
 
 run "plans_with_minimal_settings" {
@@ -59,11 +56,23 @@ run "plans_with_minimal_settings" {
     error_message = "Empty settings must not be stored (SSM rejects empty values)."
   }
   assert {
-    condition     = aws_db_instance.main.storage_encrypted && aws_db_instance.main.backup_retention_period >= 1
-    error_message = "RDS must be encrypted and backed up."
+    condition     = aws_db_instance.main.storage_encrypted && aws_db_instance.main.backup_retention_period >= 7 && aws_db_instance.main.deletion_protection
+    error_message = "RDS must be encrypted, backed up for a week and protected from deletion."
   }
   assert {
-    condition     = length(aws_route53_record.api) == 0
+    condition     = nonsensitive(aws_ssm_parameter.api["ALLOWED_ORIGINS"].value) == "https://twitter.example.com"
+    error_message = "The API must allow exactly the site's own origin."
+  }
+  assert {
+    condition     = !contains(keys(aws_ssm_parameter.api), "REDIS_URL") && !contains(keys(aws_ssm_parameter.api), "COOKIE_DOMAIN")
+    error_message = "A single host needs neither Redis nor a shared cookie domain."
+  }
+  assert {
+    condition     = toset(keys(aws_ecr_repository.app)) == toset(["api", "web"])
+    error_message = "Both images need a repository."
+  }
+  assert {
+    condition     = length(aws_route53_record.app) == 0
     error_message = "No Route 53 records without a hosted zone."
   }
 }
@@ -87,8 +96,8 @@ run "plans_with_everything_enabled" {
     error_message = "Monitoring parameters must be created with a Grafana token."
   }
   assert {
-    condition     = length(aws_route53_record.api) == 1
-    error_message = "The API record must be managed when a hosted zone is set."
+    condition     = length(aws_route53_record.app) == 1 && aws_route53_record.app[0].name == "twitter.example.com"
+    error_message = "The domain's record must be managed when a hosted zone is set."
   }
 }
 
@@ -100,10 +109,10 @@ run "rejects_weak_database_password" {
   expect_failures = [var.db_password]
 }
 
-run "rejects_api_domain_outside_root_domain" {
+run "rejects_a_url_as_domain" {
   command = plan
   variables {
-    api_domain = "api.other.org"
+    domain = "https://twitter.example.com"
   }
-  expect_failures = [var.api_domain]
+  expect_failures = [var.domain]
 }

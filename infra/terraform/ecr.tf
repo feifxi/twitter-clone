@@ -1,5 +1,7 @@
-resource "aws_ecr_repository" "api" {
-  name = "${local.name}-api"
+# One repository per image; deploys tag both with the same commit SHA.
+resource "aws_ecr_repository" "app" {
+  for_each = toset(["api", "web"])
+  name     = "${local.name}-${each.key}"
   # Tags are commit SHAs: a deployed tag always means the same image (and rollback = redeploy an old SHA).
   image_tag_mutability = "IMMUTABLE"
   force_delete         = true
@@ -9,8 +11,9 @@ resource "aws_ecr_repository" "api" {
   }
 }
 
-resource "aws_ecr_lifecycle_policy" "api" {
-  repository = aws_ecr_repository.api.name
+resource "aws_ecr_lifecycle_policy" "app" {
+  for_each   = aws_ecr_repository.app
+  repository = each.value.name
   policy = jsonencode({
     rules = [{
       rulePriority = 1
