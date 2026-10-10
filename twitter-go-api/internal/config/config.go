@@ -50,7 +50,6 @@ type Config struct {
 	GeminiChatModel      string `env:"GEMINI_CHAT_MODEL" envDefault:"gemini-2.5-flash"`
 	GeminiEmbeddingModel string `env:"GEMINI_EMBEDDING_MODEL" envDefault:"gemini-embedding-2-preview"`
 	EnableRAG            bool   `env:"ENABLE_RAG" envDefault:"true"`
-	SQSEmbeddingQueueURL string `env:"SQS_EMBEDDING_QUEUE_URL"`
 }
 
 // Load reads app.env (if present) and the environment, then validates the result.

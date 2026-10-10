@@ -18,7 +18,6 @@ const (
 	assistantMaxHistory     = 30
 	ragResultLimit          = 5
 	ragMaxCosineDistance    = 0.5
-	ragEmbeddingDimensions  = 768
 	assistantSystemPreamble = `You are the helpful, professional, and polite AI assistant for "Chanom Twitter", a social media platform and Twitter clone.
 Your goal is to provide accurate, concise, and friendly information to users of Chanom Twitter.
 You have access to the user's recent [Chat History] and [Timeline Context] from their feed.
@@ -28,9 +27,8 @@ CRITICAL: Your memory is limited to the provided history. If asked about older c
 )
 
 type Config struct {
-	ChatModel      string
-	EmbeddingModel string
-	EnableRAG      bool
+	ChatModel string
+	EnableRAG bool
 }
 
 type Role string
@@ -50,15 +48,20 @@ type Input struct {
 	History []HistoryItem
 }
 
+type queryEmbedder interface {
+	Embed(ctx context.Context, text string) ([]float32, error)
+}
+
 type Service struct {
-	cfg   Config
-	store db.Store
-	genai *genai.Client
+	cfg      Config
+	store    db.Store
+	genai    *genai.Client
+	embedder queryEmbedder
 }
 
 // New accepts a nil client; the assistant then reports itself as not configured.
-func New(cfg Config, store db.Store, client *genai.Client) *Service {
-	return &Service{cfg: cfg, store: store, genai: client}
+func New(cfg Config, store db.Store, client *genai.Client, embedder queryEmbedder) *Service {
+	return &Service{cfg: cfg, store: store, genai: client, embedder: embedder}
 }
 
 // NewGeminiClient returns nil when no API key is configured; the assistant then reports itself unavailable.
@@ -107,17 +110,13 @@ func (s *Service) timelineContext(ctx context.Context, query string) string {
 		return "Timeline context is currently disabled."
 	}
 
-	dim := int32(ragEmbeddingDimensions)
-	embedRes, err := s.genai.Models.EmbedContent(ctx, s.cfg.EmbeddingModel,
-		[]*genai.Content{{Parts: []*genai.Part{{Text: query}}}},
-		&genai.EmbedContentConfig{TaskType: "RETRIEVAL_QUERY", OutputDimensionality: &dim},
-	)
-	if err != nil || len(embedRes.Embeddings) == 0 {
+	values, err := s.embedder.Embed(ctx, query)
+	if err != nil {
 		slog.ErrorContext(ctx, "failed to vectorize query for RAG, falling back to base chat", "err", err)
 		return "Timeline context unavailable (vectorization failed)."
 	}
 
-	queryVector := pgvector.NewVector(embedRes.Embeddings[0].Values)
+	queryVector := pgvector.NewVector(values)
 	rows, err := s.store.ListRelatedTweetsByEmbedding(ctx, db.ListRelatedTweetsByEmbeddingParams{
 		QueryEmbedding: &queryVector,
 		MaxDistance:    ragMaxCosineDistance,

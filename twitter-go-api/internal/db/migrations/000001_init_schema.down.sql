@@ -1,4 +1,5 @@
 DROP FUNCTION IF EXISTS tweet_score;
+DROP TABLE IF EXISTS embedding_jobs;
 DROP TABLE IF EXISTS tweet_embeddings;
 DROP TABLE IF EXISTS direct_messages;
 DROP TABLE IF EXISTS conversation_participants;

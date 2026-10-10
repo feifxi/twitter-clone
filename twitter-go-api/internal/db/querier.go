@@ -10,6 +10,10 @@ import (
 
 type Querier interface {
 	AddConversationParticipant(ctx context.Context, arg AddConversationParticipantParams) error
+	// Leases due jobs: run_after moves past the lease so a crashed worker's jobs
+	// become due again (at-least-once). SKIP LOCKED lets several workers share the queue.
+	ClaimEmbeddingJobs(ctx context.Context, arg ClaimEmbeddingJobsParams) ([]ClaimEmbeddingJobsRow, error)
+	CompleteEmbeddingJob(ctx context.Context, tweetID int64) error
 	// Deletes and returns the token in one statement, so a refresh token works at
 	// most once even when two requests race with it.
 	ConsumeRefreshToken(ctx context.Context, tokenHash string) (RefreshToken, error)
@@ -34,6 +38,7 @@ type Querier interface {
 	DeleteRetweet(ctx context.Context, arg DeleteRetweetParams) (bool, error)
 	DeleteTweetByOwner(ctx context.Context, arg DeleteTweetByOwnerParams) (Tweet, error)
 	DeleteUnusedHashtag(ctx context.Context, id int64) error
+	EnqueueEmbeddingJob(ctx context.Context, tweetID int64) error
 	FindDirectConversation(ctx context.Context, arg FindDirectConversationParams) (Conversation, error)
 	// Returns false when the follow already existed (counts are only bumped once).
 	FollowUser(ctx context.Context, arg FollowUserParams) (bool, error)
@@ -85,6 +90,7 @@ type Querier interface {
 	ListUserMedia(ctx context.Context, arg ListUserMediaParams) ([]ListUserMediaRow, error)
 	ListUserReplies(ctx context.Context, arg ListUserRepliesParams) ([]ListUserRepliesRow, error)
 	MarkAllNotificationsRead(ctx context.Context, recipientID int64) error
+	RetryEmbeddingJob(ctx context.Context, arg RetryEmbeddingJobParams) error
 	SearchHashtagsByPrefix(ctx context.Context, arg SearchHashtagsByPrefixParams) ([]Hashtag, error)
 	SearchTweetsByHashtag(ctx context.Context, arg SearchTweetsByHashtagParams) ([]SearchTweetsByHashtagRow, error)
 	// Relevance-ranked, so it pages by offset: a keyset cursor over ts_rank buys nothing here.
@@ -98,6 +104,7 @@ type Querier interface {
 	UnlikeTweet(ctx context.Context, arg UnlikeTweetParams) (bool, error)
 	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error)
 	UpsertHashtag(ctx context.Context, text string) (Hashtag, error)
+	UpsertTweetEmbedding(ctx context.Context, arg UpsertTweetEmbeddingParams) error
 }
 
 var _ Querier = (*Queries)(nil)

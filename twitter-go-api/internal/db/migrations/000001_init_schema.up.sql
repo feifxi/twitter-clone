@@ -159,6 +159,18 @@ CREATE TABLE tweet_embeddings (
 
 CREATE INDEX idx_tweet_embeddings_embedding ON tweet_embeddings USING hnsw (embedding vector_cosine_ops);
 
+-- Tweets waiting to be embedded for RAG. Enqueued in the same transaction as the
+-- tweet (no lost events); workers lease rows with FOR UPDATE SKIP LOCKED.
+CREATE TABLE embedding_jobs (
+    tweet_id   BIGINT      PRIMARY KEY REFERENCES tweets(id) ON DELETE CASCADE,
+    attempts   INT         NOT NULL DEFAULT 0,
+    run_after  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_error TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_embedding_jobs_due ON embedding_jobs(run_after);
+
 -- "For You" ranking: engagement with time decay, evaluated at a fixed anchor time
 -- so a page's ordering doesn't drift while the user scrolls.
 CREATE FUNCTION tweet_score(likes INT, retweets INT, replies INT, created_at TIMESTAMPTZ, anchor TIMESTAMPTZ)

@@ -21,23 +21,24 @@ type objectStore interface {
 	DeleteObject(ctx context.Context, objectKey string) error
 }
 
-type embeddingPublisher interface {
-	PublishEmbeddingEvent(ctx context.Context, tweetID int64, content string) error
-}
-
 type notifier interface {
 	Dispatch(n db.Notification)
 }
 
-type Service struct {
-	store      db.Store
-	storage    objectStore
-	embeddings embeddingPublisher
-	notifier   notifier
+type Config struct {
+	// EmbedTweets queues new tweets for RAG embedding (see package embedding).
+	EmbedTweets bool
 }
 
-func New(store db.Store, storage objectStore, embeddings embeddingPublisher, notifier notifier) *Service {
-	return &Service{store: store, storage: storage, embeddings: embeddings, notifier: notifier}
+type Service struct {
+	cfg      Config
+	store    db.Store
+	storage  objectStore
+	notifier notifier
+}
+
+func New(cfg Config, store db.Store, storage objectStore, notifier notifier) *Service {
+	return &Service{cfg: cfg, store: store, storage: storage, notifier: notifier}
 }
 
 type CreateInput struct {
@@ -94,6 +95,13 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (domain.Tweet, err
 			}
 		}
 
+		if content != nil && s.cfg.EmbedTweets {
+			// Same transaction as the tweet: the job exists if and only if the tweet does.
+			if err := q.EnqueueEmbeddingJob(ctx, created.ID); err != nil {
+				return err
+			}
+		}
+
 		if content != nil {
 			for _, tag := range extractHashtags(*content) {
 				h, err := q.UpsertHashtag(ctx, tag)
@@ -114,18 +122,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (domain.Tweet, err
 		return domain.Tweet{}, err
 	}
 
-	if content != nil {
-		go s.publishEmbedding(created.ID, *content)
-	}
-
 	return s.Get(ctx, created.ID, &in.UserID)
-}
-
-// publishEmbedding runs detached from the request so it neither delays nor is cancelled with the response.
-func (s *Service) publishEmbedding(tweetID int64, content string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	_ = s.embeddings.PublishEmbeddingEvent(ctx, tweetID, content)
 }
 
 func (s *Service) Delete(ctx context.Context, userID, tweetID int64) error {

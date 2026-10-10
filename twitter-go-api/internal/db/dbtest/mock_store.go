@@ -14,6 +14,8 @@ var _ db.Store = (*MockStore)(nil)
 // zero values when the hook is nil. Transactions run inline on the same mock.
 type MockStore struct {
 	AddConversationParticipantFn     func(p0 context.Context, p1 db.AddConversationParticipantParams) error
+	ClaimEmbeddingJobsFn             func(p0 context.Context, p1 db.ClaimEmbeddingJobsParams) ([]db.ClaimEmbeddingJobsRow, error)
+	CompleteEmbeddingJobFn           func(p0 context.Context, p1 int64) error
 	ConsumeRefreshTokenFn            func(p0 context.Context, p1 string) (db.RefreshToken, error)
 	CreateConversationFn             func(p0 context.Context) (db.Conversation, error)
 	CreateDirectMessageFn            func(p0 context.Context, p1 db.CreateDirectMessageParams) (db.DirectMessage, error)
@@ -30,6 +32,7 @@ type MockStore struct {
 	DeleteRetweetFn                  func(p0 context.Context, p1 db.DeleteRetweetParams) (bool, error)
 	DeleteTweetByOwnerFn             func(p0 context.Context, p1 db.DeleteTweetByOwnerParams) (db.Tweet, error)
 	DeleteUnusedHashtagFn            func(p0 context.Context, p1 int64) error
+	EnqueueEmbeddingJobFn            func(p0 context.Context, p1 int64) error
 	FindDirectConversationFn         func(p0 context.Context, p1 db.FindDirectConversationParams) (db.Conversation, error)
 	FollowUserFn                     func(p0 context.Context, p1 db.FollowUserParams) (bool, error)
 	GetTopHashtagsAllTimeFn          func(p0 context.Context, p1 int32) ([]db.Hashtag, error)
@@ -63,6 +66,7 @@ type MockStore struct {
 	ListUserMediaFn                  func(p0 context.Context, p1 db.ListUserMediaParams) ([]db.ListUserMediaRow, error)
 	ListUserRepliesFn                func(p0 context.Context, p1 db.ListUserRepliesParams) ([]db.ListUserRepliesRow, error)
 	MarkAllNotificationsReadFn       func(p0 context.Context, p1 int64) error
+	RetryEmbeddingJobFn              func(p0 context.Context, p1 db.RetryEmbeddingJobParams) error
 	SearchHashtagsByPrefixFn         func(p0 context.Context, p1 db.SearchHashtagsByPrefixParams) ([]db.Hashtag, error)
 	SearchTweetsByHashtagFn          func(p0 context.Context, p1 db.SearchTweetsByHashtagParams) ([]db.SearchTweetsByHashtagRow, error)
 	SearchTweetsFullTextFn           func(p0 context.Context, p1 db.SearchTweetsFullTextParams) ([]db.SearchTweetsFullTextRow, error)
@@ -73,6 +77,7 @@ type MockStore struct {
 	UnlikeTweetFn                    func(p0 context.Context, p1 db.UnlikeTweetParams) (bool, error)
 	UpdateUserProfileFn              func(p0 context.Context, p1 db.UpdateUserProfileParams) (db.User, error)
 	UpsertHashtagFn                  func(p0 context.Context, p1 string) (db.Hashtag, error)
+	UpsertTweetEmbeddingFn           func(p0 context.Context, p1 db.UpsertTweetEmbeddingParams) error
 }
 
 func (m *MockStore) ExecTx(_ context.Context, fn func(db.Querier) error) error {
@@ -96,6 +101,20 @@ func (m *MockStore) AddConversationParticipant(p0 context.Context, p1 db.AddConv
 		return nil
 	}
 	return m.AddConversationParticipantFn(p0, p1)
+}
+
+func (m *MockStore) ClaimEmbeddingJobs(p0 context.Context, p1 db.ClaimEmbeddingJobsParams) ([]db.ClaimEmbeddingJobsRow, error) {
+	if m.ClaimEmbeddingJobsFn == nil {
+		return *new([]db.ClaimEmbeddingJobsRow), nil
+	}
+	return m.ClaimEmbeddingJobsFn(p0, p1)
+}
+
+func (m *MockStore) CompleteEmbeddingJob(p0 context.Context, p1 int64) error {
+	if m.CompleteEmbeddingJobFn == nil {
+		return nil
+	}
+	return m.CompleteEmbeddingJobFn(p0, p1)
 }
 
 func (m *MockStore) ConsumeRefreshToken(p0 context.Context, p1 string) (db.RefreshToken, error) {
@@ -208,6 +227,13 @@ func (m *MockStore) DeleteUnusedHashtag(p0 context.Context, p1 int64) error {
 		return nil
 	}
 	return m.DeleteUnusedHashtagFn(p0, p1)
+}
+
+func (m *MockStore) EnqueueEmbeddingJob(p0 context.Context, p1 int64) error {
+	if m.EnqueueEmbeddingJobFn == nil {
+		return nil
+	}
+	return m.EnqueueEmbeddingJobFn(p0, p1)
 }
 
 func (m *MockStore) FindDirectConversation(p0 context.Context, p1 db.FindDirectConversationParams) (db.Conversation, error) {
@@ -441,6 +467,13 @@ func (m *MockStore) MarkAllNotificationsRead(p0 context.Context, p1 int64) error
 	return m.MarkAllNotificationsReadFn(p0, p1)
 }
 
+func (m *MockStore) RetryEmbeddingJob(p0 context.Context, p1 db.RetryEmbeddingJobParams) error {
+	if m.RetryEmbeddingJobFn == nil {
+		return nil
+	}
+	return m.RetryEmbeddingJobFn(p0, p1)
+}
+
 func (m *MockStore) SearchHashtagsByPrefix(p0 context.Context, p1 db.SearchHashtagsByPrefixParams) ([]db.Hashtag, error) {
 	if m.SearchHashtagsByPrefixFn == nil {
 		return *new([]db.Hashtag), nil
@@ -509,4 +542,11 @@ func (m *MockStore) UpsertHashtag(p0 context.Context, p1 string) (db.Hashtag, er
 		return *new(db.Hashtag), nil
 	}
 	return m.UpsertHashtagFn(p0, p1)
+}
+
+func (m *MockStore) UpsertTweetEmbedding(p0 context.Context, p1 db.UpsertTweetEmbeddingParams) error {
+	if m.UpsertTweetEmbeddingFn == nil {
+		return nil
+	}
+	return m.UpsertTweetEmbeddingFn(p0, p1)
 }

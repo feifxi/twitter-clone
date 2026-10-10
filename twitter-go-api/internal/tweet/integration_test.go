@@ -16,7 +16,7 @@ func TestRetweet_IsIdempotentAndKeepsCountsRight(t *testing.T) {
 	ctx := context.Background()
 	author, fan := dbtest.NewUser(t, store), dbtest.NewUser(t, store)
 	tw := dbtest.NewTweet(t, store, author.ID, "retweet me")
-	svc := tweet.New(store, &storagetest.Fake{}, &mockEmbeddingPublisher{}, noopNotifier{})
+	svc := tweet.New(tweet.Config{}, store, &storagetest.Fake{}, noopNotifier{})
 
 	for range 2 {
 		got, err := svc.Retweet(ctx, fan.ID, tw.ID)
@@ -38,7 +38,7 @@ func TestDelete_RemovesThreadAndUnusedHashtags(t *testing.T) {
 	store := dbtest.OpenTestDB(t)
 	ctx := context.Background()
 	author := dbtest.NewUser(t, store)
-	svc := tweet.New(store, &storagetest.Fake{}, &mockEmbeddingPublisher{}, noopNotifier{})
+	svc := tweet.New(tweet.Config{}, store, &storagetest.Fake{}, noopNotifier{})
 	tag := "deltest" + author.Username[2:8]
 
 	root, err := svc.Create(ctx, tweet.CreateInput{UserID: author.ID, Content: dbtest.Ptr("root #" + tag)})

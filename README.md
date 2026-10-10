@@ -18,7 +18,7 @@ Full-stack Twitter/X clone with a Next.js frontend, Go backend, and production-r
 - **Search** — Search users, tweets, and hashtags
 - **Trending & Discovery** — Trending hashtags and suggested users
 - **AI Assistant** — Context-aware chat powered by Gemini 2.5 Flash with personal timeline knowledge
-- **RAG (Retrieval-Augmented Generation)** — Automatic tweet vectorization via Gemini Embedding 2.0 and pgvector search for accurate context retrieval
+- **RAG (Retrieval-Augmented Generation)** — new tweets are queued in Postgres (same transaction as the tweet) and embedded in the background with Gemini; the assistant retrieves related tweets with pgvector
 - **Observability** — Real-time metrics (Prometheus) and log aggregation (Loki) via Grafana Cloud
 
 ## Tech Stack

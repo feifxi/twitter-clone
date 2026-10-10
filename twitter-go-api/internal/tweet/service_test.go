@@ -17,14 +17,8 @@ type noopNotifier struct{}
 
 func (noopNotifier) Dispatch(db.Notification) {}
 
-type mockEmbeddingPublisher struct{}
-
-func (m *mockEmbeddingPublisher) PublishEmbeddingEvent(ctx context.Context, tweetID int64, content string) error {
-	return nil
-}
-
 func TestService_CreateTweet_Validation(t *testing.T) {
-	uc := tweet.New(&dbtest.MockStore{}, &storagetest.Fake{}, &mockEmbeddingPublisher{}, noopNotifier{})
+	uc := tweet.New(tweet.Config{}, &dbtest.MockStore{}, &storagetest.Fake{}, noopNotifier{})
 
 	t.Run("empty_tweet", func(t *testing.T) {
 		_, err := uc.Create(context.Background(), tweet.CreateInput{
@@ -71,7 +65,7 @@ func TestService_CreateTweet_Validation(t *testing.T) {
 				return []db.GetUsersByIDsRow{{User: db.User{ID: 1}}}, nil
 			},
 		}
-		uc := tweet.New(store, &storagetest.Fake{}, &mockEmbeddingPublisher{}, noopNotifier{})
+		uc := tweet.New(tweet.Config{}, store, &storagetest.Fake{}, noopNotifier{})
 
 		_, err := uc.Create(context.Background(), tweet.CreateInput{UserID: 1, MediaKey: dbtest.Ptr("tweets/1/clip.mp4")})
 		require.NoError(t, err)
@@ -107,7 +101,7 @@ func TestService_CreateTweet_Validation(t *testing.T) {
 			},
 		}
 
-		ucSuccess := tweet.New(successStore, &storagetest.Fake{}, &mockEmbeddingPublisher{}, noopNotifier{})
+		ucSuccess := tweet.New(tweet.Config{}, successStore, &storagetest.Fake{}, noopNotifier{})
 
 		tweet, err := ucSuccess.Create(context.Background(), tweet.CreateInput{
 			UserID:  1,
@@ -134,7 +128,7 @@ func TestService_DeleteTweet(t *testing.T) {
 			},
 		}
 
-		uc := tweet.New(wrongStore, &storagetest.Fake{}, &mockEmbeddingPublisher{}, noopNotifier{})
+		uc := tweet.New(tweet.Config{}, wrongStore, &storagetest.Fake{}, noopNotifier{})
 
 		err := uc.Delete(context.Background(), 1, 10) // User 1 tries to delete
 		if err == nil {
@@ -173,7 +167,7 @@ func TestService_DeleteTweet(t *testing.T) {
 		}
 
 		storage := &storagetest.Fake{}
-		uc := tweet.New(successStore, storage, &mockEmbeddingPublisher{}, noopNotifier{})
+		uc := tweet.New(tweet.Config{}, successStore, storage, noopNotifier{})
 
 		err := uc.Delete(context.Background(), 1, 10)
 		if err != nil {
@@ -208,7 +202,7 @@ func TestService_Retweet(t *testing.T) {
 				},
 			}
 
-			item, err := tweet.New(store, &storagetest.Fake{}, &mockEmbeddingPublisher{}, noopNotifier{}).Retweet(context.Background(), 2, 10)
+			item, err := tweet.New(tweet.Config{}, store, &storagetest.Fake{}, noopNotifier{}).Retweet(context.Background(), 2, 10)
 
 			require.NoError(t, err)
 			require.Equal(t, int64(10), item.ID, "returns the retweeted tweet itself")
@@ -231,7 +225,7 @@ func TestService_LikeUnlike(t *testing.T) {
 				return true, nil
 			},
 		}
-		uc := tweet.New(store, nil, nil, noopNotifier{})
+		uc := tweet.New(tweet.Config{}, store, nil, noopNotifier{})
 		err := uc.Like(ctx, userID, tweetID)
 		require.NoError(t, err)
 		require.True(t, called)
@@ -245,7 +239,7 @@ func TestService_LikeUnlike(t *testing.T) {
 				return true, nil
 			},
 		}
-		uc := tweet.New(store, nil, nil, noopNotifier{})
+		uc := tweet.New(tweet.Config{}, store, nil, noopNotifier{})
 		err := uc.Unlike(ctx, userID, tweetID)
 		require.NoError(t, err)
 		require.True(t, called)
@@ -265,7 +259,7 @@ func TestService_UndoRetweet(t *testing.T) {
 				return true, nil
 			},
 		}
-		uc := tweet.New(store, nil, nil, noopNotifier{})
+		uc := tweet.New(tweet.Config{}, store, nil, noopNotifier{})
 		err := uc.UndoRetweet(ctx, userID, tweetID)
 		require.NoError(t, err)
 		require.True(t, called)

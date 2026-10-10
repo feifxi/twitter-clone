@@ -130,18 +130,18 @@ func newServer(ctx context.Context, cfg config.Config, store db.Store, rdb *redi
 		return nil, fmt.Errorf("create storage: %w", err)
 	}
 
-	queueURL := cfg.SQSEmbeddingQueueURL
-	if !cfg.EnableRAG {
-		queueURL = ""
-	}
-	embeddings, err := embedding.NewPublisher(ctx, queueURL, cfg.S3Region)
-	if err != nil {
-		return nil, fmt.Errorf("create embedding publisher: %w", err)
-	}
-
 	gemini, err := assistant.NewGeminiClient(ctx, cfg.GeminiAPIKey)
 	if err != nil {
 		return nil, fmt.Errorf("create gemini client: %w", err)
+	}
+
+	// RAG needs Gemini both to embed tweets (background worker) and to embed questions.
+	rag := cfg.EnableRAG && gemini != nil
+	if rag {
+		docs := embedding.NewGemini(gemini, cfg.GeminiEmbeddingModel, embedding.TaskDocument)
+		go embedding.NewWorker(store, docs, embedding.DefaultWorkerConfig()).Run(ctx)
+	} else {
+		slog.Warn("RAG disabled: tweets are not embedded (set ENABLE_RAG and GEMINI_API_KEY to enable)")
 	}
 
 	hub := realtime.NewHub(rdb)
@@ -155,17 +155,16 @@ func newServer(ctx context.Context, cfg config.Config, store db.Store, rdb *redi
 			RefreshTokenTTL: cfg.RefreshTokenTTL,
 		}, store, tokens, auth.GoogleIDTokenVerifier{}),
 		Users:         user.New(store, s3, notifications),
-		Tweets:        tweet.New(store, s3, embeddings, notifications),
+		Tweets:        tweet.New(tweet.Config{EmbedTweets: rag}, store, s3, notifications),
 		Feeds:         feed.New(store),
 		Search:        search.New(store),
 		Discovery:     discovery.New(store),
 		Notifications: notifications,
 		Messages:      message.New(store, hub),
 		Assistant: assistant.New(assistant.Config{
-			ChatModel:      cfg.GeminiChatModel,
-			EmbeddingModel: cfg.GeminiEmbeddingModel,
-			EnableRAG:      cfg.EnableRAG,
-		}, store, gemini),
+			ChatModel: cfg.GeminiChatModel,
+			EnableRAG: rag,
+		}, store, gemini, embedding.NewGemini(gemini, cfg.GeminiEmbeddingModel, embedding.TaskQuery)),
 		Media: media.New(s3, media.Limits{
 			MaxTweetMediaBytes: cfg.MaxMediaBytes,
 			MaxAvatarBytes:     cfg.MaxAvatarBytes,

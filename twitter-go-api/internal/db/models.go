@@ -31,6 +31,14 @@ type DirectMessage struct {
 	CreatedAt      time.Time `json:"created_at"`
 }
 
+type EmbeddingJob struct {
+	TweetID   int64     `json:"tweet_id"`
+	Attempts  int32     `json:"attempts"`
+	RunAfter  time.Time `json:"run_after"`
+	LastError *string   `json:"last_error"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type Follow struct {
 	FollowerID  int64     `json:"follower_id"`
 	FollowingID int64     `json:"following_id"`
