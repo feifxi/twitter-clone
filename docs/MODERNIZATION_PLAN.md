@@ -1,12 +1,14 @@
 # Modernization Plan
 
-Goal: keep the project a clean, standard, *learnable* monolith. Fix real bugs and security holes first, then raise the architecture and UI to the level of the (soon to be retired) `twitter-microservices` repo, porting only what fits a monolith.
+Goal: keep the project a clean, standard, *learnable* monolith. Fix real bugs and security holes first, then raise the architecture and UI to the level of the (now retired) `twitter-microservices` repo, porting only what fits a monolith.
+
+**Status: all phases (0–10) done.** The current architecture is described in the [README](../README.md); this file records where the project started, what was decided and what each phase changed. The findings below describe the code *as it was* on 2026-10-10; the phase log says how each was resolved.
 
 Legend: 🐞 bug · 🔒 security · 🧱 architecture/quality · ✨ feature/UI · 🧹 cleanup
 
 ---
 
-## Findings — monolith
+## Original findings (2026-10-10, all resolved)
 
 ### Go API
 
@@ -61,7 +63,7 @@ Already good, so leave as is: sqlc + pgx, `ExecTxAfterCommit` (notify only after
 
 ---
 
-## Review 2: conventions, structure, AWS, Terraform, frontend (2026-10-10)
+## Review 2: conventions, structure, AWS, Terraform, frontend (2026-10-10, resolved)
 
 ### Go naming & idioms (Effective Go, Go Code Review Comments, Uber Go Style Guide)
 
@@ -84,29 +86,11 @@ Already idiomatic: `ErrX` sentinel naming, `errors.Is`/`errors.As`, `%w` wrappin
 
 ### Project structure
 
-Current layout is the common "layered" one (`server → usecase → db/service`). It's fine, but the names fight Go conventions (N3), `service` actually means *AWS adapters*, and `usecase` is a grab bag. Target (package-by-feature, the layout the Go team and most Go shops use for monoliths):
-
-```
-twitter-go-api/
-├── cmd/api/main.go            # wiring only: run() error
-├── internal/
-│   ├── config/                # env → typed Config (no viper)
-│   ├── db/                    # sqlc output + Store/ExecTx, migrations/ (embedded), queries/
-│   ├── auth/ user/ tweet/ feed/ search/ notification/ message/ assistant/ media/
-│   │   └── service.go         # business logic; returns concrete types; domain errors
-│   ├── realtime/              # SSE hub + Redis pub/sub fan-out
-│   ├── storage/               # S3 presign/delete (was service/storage.go)
-│   ├── embedding/             # Gemini embeddings + job worker
-│   ├── apperr/
-│   └── api/               # router, handlers, DTOs (types.go), middleware/
-└── docs/                      # swagger (generated) + api-contract.md
-```
-
-Dependency rule: `api → feature packages → db/storage/realtime`, with shared read models in `domain`. Domain packages never import `api` or gin.
+The layered layout (`server → usecase → db/service`) fought Go conventions (N3) and `usecase` was a grab bag. It became package-by-feature in Phase 2; the current map is the "Where things live" table in [`twitter-go-api/README.md`](../twitter-go-api/README.md).
 
 ### AWS architecture
 
-The current setup works and has good choices: OAC-protected S3 behind CloudFront, IMDSv2, EC2 Instance Connect Endpoint (no SSH keys), RDS in private subnets, SSM SecureString config, Grafana Cloud free tier. The problems:
+The setup at the time had good choices: OAC-protected S3 behind CloudFront, IMDSv2, EC2 Instance Connect Endpoint (no SSH keys), RDS in private subnets, SSM SecureString config, Grafana Cloud free tier. The problems:
 
 | # | Kind | Finding |
 |---|---|---|
@@ -117,20 +101,7 @@ The current setup works and has good choices: OAC-protected S3 behind CloudFront
 | A5 | 🐞 | Prod has **no Redis**: `redis_address` defaults to `""` and the EC2 compose doesn't run it, so prod silently differs from local. That's harmless on one instance, but undocumented. |
 | A6 | 🔒 | Terraform state is local and contains every secret. CI uses long-lived IAM keys, and the deploy step writes `GHCR_PAT` into the SSM command text. |
 
-**Proposed target: simpler, cheaper (~$40 → ~$25/mo), and more secure.**
-
-```
-Browser ──► Amplify (Next.js SSR) ─┐
-   │                               │ server-side fetch with cookie → bearer
-   └──► api.<domain> ──► EC2 [Caddy (auto-TLS) → Go API + embedding worker, Redis, Alloy] ──► RDS (private)
-                                    └──► Gemini (EC2 is in a public subnet; no NAT needed)
-Media: browser ──PUT──► S3 (presigned) ──► CloudFront (OAC) ──► browser
-```
-
-- **Drop API Gateway.** Caddy on EC2 terminates TLS (Let's Encrypt). The security group opens only 80/443, and SSE/streams have no 30s cap. This fixes A1 and A2 and deletes `GatewayGuard` and the gateway secret.
-- **Drop SQS, Lambda, the DLQ and the NAT instance.** Run embeddings in the Go process as a Postgres-backed job queue (`embedding_jobs` + `FOR UPDATE SKIP LOCKED` + retry/backoff). Same async lesson, works identically in local dev (fixes G21), with no Python and no plaintext secrets. Fixes A3.
-- RDS: encryption on, `gp3`, 1-day backups. Redis as a container in the EC2 compose. Remote S3 state with `use_lockfile`; GitHub OIDC for CI.
-- Intentional trade-offs for a learning project: single AZ, a single EC2, no load balancer.
+Resolved in Phase 5 (API Gateway, SQS, Lambda and NAT replaced by TLS on EC2 and a Postgres job queue), then reshaped in Phases 8–9 into today's single host behind nginx. Intentional trade-offs for a learning project: single AZ, a single EC2, no load balancer.
 
 ### Terraform code quality
 
@@ -147,64 +118,39 @@ Good already: `default_tags`, the modern standalone `aws_vpc_security_group_*_ru
 | T7 | EC2 `user_data` nests heredocs in heredocs and installs docker compose from `releases/latest` (unpinned). Prefer a `templatefile` cloud-init with pinned versions. |
 | T8 | AWS provider `~> 5.0` (v6 is current). CloudFront uses legacy `forwarded_values` (use the managed `CachingOptimized` cache policy) and the default `PriceClass_All` (use `PriceClass_200` for Asia, or `100`). |
 
-### Frontend: microservices vs. monolith, verdict per area
+### Frontend: microservices vs. monolith
 
-**Port from microservices (clearly better):**
-- **Design tokens:** exact X palette (`#1D9BF0`, `#536471`, `#2F3336`…), semantic `--like` / `--retweet` / `--banner` tokens, and a z-index scale. The monolith hardcodes `text-red-500` / `text-pink-600` / `text-green-500` and inconsistent dark greys.
-- **Component design:** `Avatar` (deterministic colored-initials fallback), `TweetActionButton` (one source for hover/active colors and counts), `TweetActionsMenu`, `UserRow` with `default|compact` variants and skeleton, `ConfirmModal` (delete/logout), `ImageLightbox`, `Tabs` primitive, `BackButton`. The monolith repeats this markup inline (three copies of the nav-item JSX in `AppNav`; avatar fallback everywhere; hand-built tab bars on four pages).
-- **States:** every list has skeleton, error + retry, and empty copy. The monolith shows `"Loading..."` text and no error states.
-- **URL-driven UI:** profile tabs as routes (`/[username]/replies|media|likes`); followers/following as pages instead of modals; explore query synced to `?q=`.
-- **Composer:** char-count ring, emoji picker, expand on focus, client-side size check, preview URL revoke on unmount.
-- **Edit profile:** floating-label fields, counters shown on focus, location + website, dirty-check on the Save button.
-- **Tweet detail:** a distinct large layout (23px body, full timestamp, stats row).
-- **Notifications:** per-item mark-read plus a "Mark all as read" button. The monolith marks everything read on page mount, so the unread highlight disappears instantly.
-- **A11y:** `aria-label`s on icon buttons. The monolith uses `<div onClick>` for back buttons.
-- **Data layer:** `query-keys.ts`, `debounced-toggle.ts`, `applyTweetUpdate` / `removeTweetEverywhere`, single-flight refresh, SSR prefetch with `HydrationBoundary`, `loading.tsx` per route.
-
-**Keep from the monolith (it's better or more complete here):**
-- Mobile bottom nav (the microservices app has none below `sm`), public browsing for logged-out users with a sign-in modal (microservices walls everything behind login), and `/{username}` URLs (microservices uses opaque `/profile/{uuid}`).
-- Working DMs and ChanomBot (microservices messages and bookmarks are placeholders), the theme toggle, notification context previews (reply plus original tweet), and video support.
-- Radix-based shadcn primitives and `sonner` toasts. Porting the *designs* doesn't require switching to Base UI; swapping primitive libraries is churn with no user-visible gain.
-- ESLint (`eslint-config-next` covers React Hooks + Next rules). Biome is optional.
-
-**Don't copy:** fake affordances (Bookmark and analytics buttons that do nothing, dead footer links), the "Not available in this build" bookmarks page, and `normalize.ts` snake→camel mapping (the monolith API is already camelCase).
+- **Ported** (clearly better there): X palette tokens and z-index scale, shared components (avatar fallback, action buttons, confirm modal, lightbox, tabs), skeleton/error/empty states for every list, URL-driven tabs and pages, the composer and edit-profile designs, the tweet detail layout, and the data layer (query keys, debounced toggles, cache helpers, single-flight refresh, server prefetch).
+- **Kept from the monolith** (better or more complete): mobile bottom nav, public browsing with a sign-in modal, `/{username}` URLs, working DMs and ChanomBot, theme toggle, notification previews, video support, Radix/shadcn primitives with `sonner`, ESLint.
+- **Not copied:** fake affordances (bookmarks, analytics, dead links) and snake→camel mapping (this API is already camelCase).
 
 ---
 
-## Microservices repo: what to port vs. leave
+## Microservices repo: what was ported vs. left
 
-**Port (fits a monolith):**
-- Next.js **BFF auth**: httpOnly cookies set by route handlers, `proxy.ts` for silent refresh, and a server-side fetch helper, plus **SSR prefetch with `HydrationBoundary`** and `loading.tsx` skeletons.
-- `lib/query-keys.ts` (single source of truth plus matchers), `lib/debounced-toggle.ts` (module-level, state-diffing), single `applyTweetUpdate` / `removeTweetEverywhere` cache helpers, and an axios single-flight refresh.
-- UI: `Avatar` (deterministic color fallback), `TweetActionButton`, `ConfirmModal`, `ImageLightbox`, composer with char-count ring and emoji picker, profile layout with URL-driven tabs (Posts / Replies / Media grid / Likes), location/website/joined meta, onboarding (choose username), `formatCount` / `displayNameOf` / `renderTweetBody`, Twitter-exact oklch theme tokens (`--like`, `--retweet`) and z-index scale, `useInfiniteScroll`.
-- Go: `slog` logger, a `healthz` helper with per-dependency status, the `pgxutil.MapErr` idea (map DB errors at the boundary), `signal.NotifyContext`, `types.go` convention, keyset pagination, separate `retweets` table and feed items with `kind`.
-- Tooling: PR CI workflow, GitHub OIDC for AWS, `CLAUDE.md` conventions (adapted), Biome (optional), Playwright smoke test (optional).
+**Ported:** cookie sessions with silent refresh and server prefetch, the frontend data layer and UI components (see above), `slog`, per-dependency health checks, mapping DB errors at the boundary, `signal.NotifyContext`, keyset pagination, a separate `retweets` table with `{ kind, tweet, retweet }` feed items, `nextCursor: null`, PR CI, GitHub OIDC for AWS, `CLAUDE.md` conventions.
 
-**Leave behind (distributed-only complexity):** Kafka/outbox, gRPC, circuit breakers, Kong, Keycloak, OpenSearch, EKS, hybrid fan-out, Redis snapshot denormalization, OTel tracing.
-
-**Verdict on deleting it:** fine to delete locally. Recommend **archiving the GitHub repo** (read-only) instead of deleting it: zero maintenance, and the transactional-outbox, DLQ and fan-out code stays available as a reference if you revisit distributed systems.
+**Left behind (distributed-only complexity):** Kafka/outbox, gRPC, circuit breakers, Kong, Keycloak, OpenSearch, EKS, hybrid fan-out, Redis snapshot denormalization, OTel tracing, string IDs.
 
 ---
 
-## Decisions
-2026-10-10, round 1:
-- Java API: **keep**; improve it last (Phase 7), after the Go API and web are done.
-- Migrations: **squash**; local and prod data are disposable.
-- Auth: **httpOnly cookies** with SSR prefetch (design refined below).
-- Brainrot / premium / TikTok pages: **keep**.
+## Decisions (current)
 
-2026-10-10, round 2:
-- Go API: **package-by-feature** layout (see "Project structure"), done in Phase 2.
-- AWS: **replace API Gateway with Caddy TLS on EC2**; **replace SQS + Lambda + NAT with a Postgres job queue** in Go; **harden** RDS, state and CI.
-- Domain: `api.chanombude.me` (Go API on EC2) and `twitter.chanombude.me` (Amplify). *Superseded in Phase 8: one domain, `twitter.chanombude.me`, for both.*
-- Auth design, refined by having a domain: the **Go API sets httpOnly cookies** (`Domain=.chanombude.me`, `SameSite=Lax`, `Secure`). The browser calls `api.*` directly with `credentials: "include"` (SSE included, so no Next proxy hop). Next server components read the cookie and forward it as `Authorization: Bearer`. CSRF: `SameSite=Lax`, a strict CORS allowlist, and an `Origin` check on unsafe methods. Locally, `localhost:3000` and `localhost:8080` are same-site, so this works unchanged.
+- **Go API is primary;** the Java API is kept as an optional backend with the same contract and schema (parity verified, not deployed).
+- **Migrations are squashed** into one init migration, edited in place: local and prod data are disposable.
+- **Sessions are httpOnly cookies** set by the API (`SameSite=Lax`, `Secure` in prod, host-only), with server prefetch in Next.js; CSRF is handled by `SameSite` plus an Origin check on unsafe requests.
+- **Package-by-feature** Go layout; interfaces belong to their consumer.
+- **One host, one domain** (`twitter.chanombude.me`): nginx + certbot in front of Next.js and the Go API on EC2, RDS in private subnets, media on S3 + CloudFront. No Amplify, API Gateway, SQS, Lambda or NAT; embeddings use a Postgres job queue in the API.
+- **No Redis in production** (single instance); the code supports it for scaling out.
+- **Everything is code** (Terraform for AWS and Grafana, alerts included) and **nothing is deployed**: infra stays valid offline (`validate`, mocked `terraform test`, local rehearsals).
+- **Kept:** the brainrot / premium / TikTok pages.
 
 ## Phases
 
-### Phase 0: Repo hygiene
+### Phase 0: Repo hygiene ✅
 - [x] Add PR CI: Go vet/test with `-race`; web lint, typecheck and build
-- [ ] Add `CLAUDE.md` with the conventions below (after Phase 2 settles them)
-- (Java leftovers `.github/modernize`, `twitter-java-api/.idea` → Phase 7)
+- [x] `CLAUDE.md` with the conventions (Phase 6)
+- [x] Java leftovers (`.github/modernize`, `twitter-java-api/.idea`) untracked and gitignored
 
 ### Phase 1: Backend correctness & security ✅
 - [x] G1/G2 object keys `{folder}/{userId}/{uuid}{ext}`, validated server-side; URLs rejected; size signed into the presign; only delete keys from our own bucket
@@ -218,17 +164,17 @@ Good already: `default_tags`, the modern standalone `aws_vpc_security_group_*_ru
 - [x] G20 `go mod tidy`, bump Go/Gin, pin Docker base
 - [x] Frontend quick fixes W1, W2, W3, W5 (plus: stale `['auth','user']` key after a profile edit, obsolete `postinstall` patch removed)
 
-### Phase 2: Backend foundation
+### Phase 2: Backend foundation ✅
 - [x] **2a Structure & idioms:** package-by-feature move (N3, N4, N10); `run() error` main (N7); `c.Request.Context()` everywhere (N1); naming fixes N2, N5, N6, N9; embed migrations; per-package `Config` with `time.Duration` TTLs (N11, partly; the rest lands in 2b). `internal/db` kept its name (it's the sqlc convention); query strings are no longer logged (G5, partly)
 - [x] **2b Platform:** `slog` with request-ID-aware handler; env config via `caarlos0/env` + optional `app.env` (no viper, no in-app SSM fetch; typed durations, `notEmpty` checks, all errors reported at once) (G15, G16, N8, N11); unified error mapping in `httpError` + `db.NotFound` for resource-specific 404s (G14); `/readyz` reports each dependency without leaking error details; sanitized `X-Request-ID`
   - ⚠️ Env vars renamed: `FRONTEND_URL`→`ALLOWED_ORIGINS`, `TOKEN_DURATION_MINUTES`→`ACCESS_TOKEN_TTL` (`15m`), `REFRESH_TOKEN_DURATION_DAYS`→`REFRESH_TOKEN_TTL` (`720h`), `DB_MAX_CONN_LIFETIME_MINUTES`→`DB_MAX_CONN_LIFETIME` (`5m`), `REDIS_ADDRESS`+`REDIS_PASSWORD`→`REDIS_URL`, `S3_BUCKET_NAME` unchanged. The app no longer reads SSM itself: Phase 5 must render SSM into the container's env (and rename the SSM keys).
 - [x] **2c Realtime:** `internal/realtime` hub; **one SSE stream** at `GET /api/v1/events` (`notification` + `dm` events) fanned out via Redis; WebSocket handler, its connection registry and the token-in-query-string removed (G10, G13, G5). Frontend: `useRealtimeEvents` replaces `useNotificationSSE` + `useChatWebSocket`
-- [x] **2d Data:** opaque keyset cursors (`internal/pagination`) for every chronological list, an anchored `tweet_score()` cursor for For-You, offset-in-cursor for relevance search (G9); `retweets` table, with retweets returned as the original tweet + `retweetedBy`/`retweetedAt` instead of wrapper tweets (G19); per-device refresh tokens rotated via a single `DELETE … RETURNING` (G8). `dbtest.MockStore` is now generated from `db.Querier`; 12 Postgres integration tests (run in CI via a service container)
+- [x] **2d Data:** opaque keyset cursors (`internal/pagination`) for every chronological list, an anchored `tweet_score()` cursor for For-You, offset-in-cursor for relevance search (G9); `retweets` table, with retweets returned as the original tweet + `retweetedBy`/`retweetedAt` instead of wrapper tweets (G19; replaced by feed items in Phase 10); per-device refresh tokens rotated via a single `DELETE … RETURNING` (G8). `dbtest.MockStore` is now generated from `db.Querier`; 12 Postgres integration tests (run in CI via a service container)
 - [x] **2e Features:** `GET /users/by-username/:username`; `GET /users/:id/{posts,replies,media,likes}` (likes owner-only); `location`/`website`/`createdAt` on users; case-insensitive usernames + `POST /users/me/onboarding` (G18)
-- [x] **2f Auth cookies:** login/refresh set httpOnly `access_token` + `refresh_token` cookies (`SameSite=Lax`, `Secure` in prod, `COOKIE_DOMAIN`), logout clears them; tokens no longer in response bodies; middleware accepts cookie or Bearer; `http.CrossOriginProtection` refuses cross-origin writes; a failed refresh never clears cookies (concurrent-refresh race)
+- [x] **2f Auth cookies:** login/refresh set httpOnly `access_token` + `refresh_token` cookies (`SameSite=Lax`, `Secure` in prod, `COOKIE_DOMAIN`, no longer needed since Phase 8), logout clears them; tokens no longer in response bodies; middleware accepts cookie or Bearer; `http.CrossOriginProtection` refuses cross-origin writes; a failed refresh never clears cookies (concurrent-refresh race)
 - [x] **2g Embeddings:** `embedding_jobs` enqueued in the tweet's own transaction; in-process worker leases jobs (`FOR UPDATE SKIP LOCKED`, 5 min lease), retries with exponential backoff and gives up after 8 attempts; the assistant embeds questions through the same `embedding.Embedder`. SQS publisher removed; works locally (G21). The SQS/Lambda/NAT Terraform and `infra/lambda` are removed in Phase 5
 
-### Phase 3: Frontend architecture
+### Phase 3: Frontend architecture ✅
 - [x] Cookie auth against the API (no tokens in JS, W6): `proxy.ts` renews expired sessions before rendering; root layout seeds the current user from the server (no `AuthInitializer` spinner); `useAuth` reads it from TanStack Query; single-flight refresh on `TOKEN_EXPIRED` (new API code, also from optional-auth routes so signed-in users never get silent anonymous data); native `EventSource` with credentials (polyfill removed); per-tab `QueryClient` (W8)
 - [x] Server prefetch + `HydrationBoundary` for home, profile and tweet pages (viewer-specific state included); `generateMetadata` for profile/tweet; real 404s via `notFound()`. No `loading.tsx`: with it Next streams a 200 before `notFound()` can set 404
 - [x] W9 cleanup: unused `tailwind.config.ts` (Tailwind v4), `theme/tokens.ts`, `TweetCard` re-export
@@ -243,6 +189,7 @@ Good already: `default_tags`, the modern standalone `aws_vpc_security_group_*_ru
 - [x] Kept: mobile nav, public browsing + sign-in modal, `/{username}` URLs, DMs, ChanomBot, theme toggle, fun pages. Dropped fake affordances (dead footer links, "…" on trends, "Switch account")
 
 ### Phase 5: Infrastructure (Terraform) ✅
+The host layout below was later replaced: Amplify and the `api.` subdomain in Phase 8, Caddy and EC2 Instance Connect in Phases 8–9, Redis in production in Phase 8.
 - [x] Removed API Gateway, SQS/DLQ, Lambda, NAT instance, `infra/lambda`, `GatewayGuard`/`GATEWAY_SECRET`. EC2 SG allows 80/443 (+ SSH from the EICE only); Caddy + Redis in `infra/ec2/compose.yml`; pinned image versions; Elastic IP
 - [x] Secrets out of user data: cloud-init only writes files; `deploy.sh` renders `api.env` from SSM (`/<project>/<env>/api/*`, one parameter per env var, empty values skipped)
 - [x] RDS encrypted, `gp3`, 1-day backups, Postgres 16; RDS reachable only from the API host; private subnets have no internet route
@@ -265,9 +212,8 @@ Fixed:
 - **UX/honesty:** onboarding redirect moved to the server (no flash); sign-in/sign-up modals merged and their fake email/password fields removed; login errors as toasts; validation messages say "characters"/"items"; DM input allows the API's 2000
 - **Robustness:** assistant history text capped; realtime hub stops on shutdown; in-memory rate limiter no longer leaks a goroutine per instance
 
-Accepted (documented, not worth the complexity here):
+Accepted (documented, not worth the complexity here; server-rendered requests sharing the web server's rate limit, also listed at the time, was fixed in Phase 8):
 - Two tabs refreshing the session at the same instant can, in a narrow window, sign one out (refresh tokens are single-use).
-- Server-rendered requests reach the API from the web server's IP, so they share per-IP rate limits.
 - An open SSE stream stays authorised until it reconnects, even after its access token expires.
 - `braces` advisory (no fixed version) in the ESLint plugin's dev dependencies only.
 
@@ -279,6 +225,7 @@ Accepted (documented, not worth the complexity here):
 - Differences by design: anonymous requests to unknown routes answer 401 (Spring Security is secure-by-default) instead of 404
 
 ### Phase 8: Single-host production setup ✅
+(Caddy here became nginx + certbot in Phase 9.)
 Decided 2026-10-11: drop Amplify; one domain (`twitter.chanombude.me`) and one EC2 host for the web app and the API.
 - [x] Caddy routes `/api/*` (and `/healthz`, `/readyz`) to the API and everything else to Next.js; `/metrics` is never public. One origin: no CORS, no `COOKIE_DOMAIN`, host-only cookies
 - [x] Next.js runs in the Compose stack; the browser calls the relative `/api/v1`, server rendering calls `http://api:8080` over the Docker network (`API_INTERNAL_URL`) and forwards the visitor's IP for rate limiting
