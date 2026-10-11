@@ -15,13 +15,11 @@ type Store interface {
 	Ping(ctx context.Context) error
 }
 
-// SQLStore provides all functions to execute db queries and transactions
 type SQLStore struct {
 	*Queries
 	conn *pgxpool.Pool
 }
 
-// NewStore creates a new Store.
 func NewStore(conn *pgxpool.Pool) Store {
 	return &SQLStore{
 		Queries: New(conn),
@@ -29,9 +27,6 @@ func NewStore(conn *pgxpool.Pool) Store {
 	}
 }
 
-// ExecTx executes a function within a database transaction.
-// If the function returns an error, the transaction is rolled back.
-// Otherwise, the transaction is committed.
 func (s *SQLStore) ExecTx(ctx context.Context, fn func(Querier) error) error {
 	tx, err := s.conn.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {

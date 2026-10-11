@@ -1,16 +1,10 @@
-# ── DB Subnet Group ──────────────────────────────────
-
-resource "aws_db_subnet_group" "this" {
-  name       = "${var.project_name}-rds-subnets"
-  subnet_ids = [aws_subnet.private_1.id, aws_subnet.private_2.id]
-
-  tags = { Name = "${var.project_name}-rds-subnets" }
+resource "aws_db_subnet_group" "main" {
+  name       = "${local.name}-db"
+  subnet_ids = aws_subnet.private[*].id
 }
 
-# ── RDS PostgreSQL ──────────────────────────────────
-
-resource "aws_db_instance" "this" {
-  identifier     = "${var.project_name}-pgrds"
+resource "aws_db_instance" "main" {
+  identifier     = "${local.name}-db"
   engine         = "postgres"
   engine_version = "16"
   instance_class = var.rds_instance_class
@@ -20,20 +14,22 @@ resource "aws_db_instance" "this" {
   password = var.db_password
 
   allocated_storage = 20
-  storage_type      = "gp2"
+  storage_type      = "gp3"
+  storage_encrypted = true # free; encrypts data, backups and snapshots at rest
 
-  db_subnet_group_name   = aws_db_subnet_group.this.name
+  db_subnet_group_name   = aws_db_subnet_group.main.name
   vpc_security_group_ids = [aws_security_group.rds.id]
+  publicly_accessible    = false
 
-  publicly_accessible = false
-  multi_az            = false
-  skip_final_snapshot = true
+  # Single AZ keeps the cost down; backups and deletion protection keep the data safe.
+  # To tear down on purpose: set deletion_protection = false and apply first.
+  multi_az                   = false
+  backup_retention_period    = 7 # point-in-time restore to any second of the last week
+  deletion_protection        = true
+  skip_final_snapshot        = false
+  final_snapshot_identifier  = "${local.name}-db-final"
+  auto_minor_version_upgrade = true
+  apply_immediately          = true
 
-  # Low-cost settings (disable for learning project)
-  backup_retention_period      = 0
-  storage_encrypted            = false
-  performance_insights_enabled = false
-  monitoring_interval          = 0
-
-  tags = { Name = "${var.project_name}-pgrds" }
+  tags = { Name = "${local.name}-db" }
 }

@@ -2,27 +2,38 @@ package main
 
 import (
 	"context"
-	stdlog "log"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
+	_ "github.com/chanombude/twitter-go-api/docs"
+	"github.com/chanombude/twitter-go-api/internal/api"
+	"github.com/chanombude/twitter-go-api/internal/assistant"
+	"github.com/chanombude/twitter-go-api/internal/auth"
 	"github.com/chanombude/twitter-go-api/internal/config"
 	"github.com/chanombude/twitter-go-api/internal/db"
+	"github.com/chanombude/twitter-go-api/internal/discovery"
+	"github.com/chanombude/twitter-go-api/internal/embedding"
+	"github.com/chanombude/twitter-go-api/internal/feed"
 	"github.com/chanombude/twitter-go-api/internal/logger"
-	"github.com/chanombude/twitter-go-api/internal/server"
+	"github.com/chanombude/twitter-go-api/internal/media"
+	"github.com/chanombude/twitter-go-api/internal/message"
+	"github.com/chanombude/twitter-go-api/internal/notification"
+	"github.com/chanombude/twitter-go-api/internal/realtime"
+	"github.com/chanombude/twitter-go-api/internal/search"
+	"github.com/chanombude/twitter-go-api/internal/storage"
+	"github.com/chanombude/twitter-go-api/internal/token"
+	"github.com/chanombude/twitter-go-api/internal/tweet"
+	"github.com/chanombude/twitter-go-api/internal/user"
 	"github.com/gin-gonic/gin"
-	"github.com/redis/go-redis/v9"
-	"github.com/rs/zerolog/log"
-
-	"github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jackc/pgx/v5/pgxpool"
-	_ "github.com/chanombude/twitter-go-api/docs"
+	"github.com/redis/go-redis/v9"
 )
 
 // @title			Twitter Go API
@@ -42,114 +53,200 @@ import (
 // @securityDefinitions.apikey	BearerAuth
 // @in							header
 // @name						Authorization
-// @description				Type 'Bearer ' followed by your JWT token.
+// @description				Type 'Bearer ' followed by an access token. Browsers use the httpOnly access_token cookie instead.
+
+const shutdownTimeout = 10 * time.Second
 
 func main() {
-	config, err := config.LoadConfig(".")
+	// The image is distroless (no shell or curl), so the container health check runs the binary itself.
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		os.Exit(healthcheck())
+	}
+	if err := run(); err != nil {
+		slog.Error("API exited with error", "err", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	cfg, err := config.Load()
 	if err != nil {
-		stdlog.Fatal("cannot load config:", err)
-	}
-	if err := config.ValidateForRuntime(); err != nil {
-		stdlog.Fatal("invalid runtime config:", err)
+		return fmt.Errorf("load config: %w", err)
 	}
 
-	logger.InitLogger(config.Environment)
-
-	if strings.EqualFold(config.Environment, "production") {
+	slog.SetDefault(logger.New(os.Stderr, cfg.Production(), cfg.LogLevel))
+	if cfg.Production() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	poolConfig, err := pgxpool.ParseConfig(config.DBSource)
+	// Cancelled on SIGINT/SIGTERM; every long-lived goroutine and request derives from it.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	pool, err := newDBPool(ctx, cfg)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Cannot parse db config")
+		return err
 	}
-	if config.DBMaxConns > 0 {
-		poolConfig.MaxConns = config.DBMaxConns
+	defer pool.Close()
+
+	if err := db.Migrate(cfg.DatabaseURL); err != nil {
+		return err
 	}
-	if config.DBMinConns > 0 {
-		poolConfig.MinConns = config.DBMinConns
-	}
-	if config.DBMaxConnLifetimeMinutes > 0 {
-		poolConfig.MaxConnLifetime = time.Duration(config.DBMaxConnLifetimeMinutes) * time.Minute
+	slog.Info("database migrated")
+
+	rdb := newRedis(ctx, cfg)
+	if rdb != nil {
+		defer rdb.Close()
 	}
 
-	conn, err := pgxpool.NewWithConfig(context.Background(), poolConfig)
+	srv, err := newServer(ctx, cfg, db.NewStore(pool), rdb)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Cannot connect to db")
+		return err
 	}
-	defer conn.Close()
 
-	runDBMigration("file://db/migration", config.DBSource)
+	httpServer := srv.HTTPServer(ctx, cfg.HTTPAddr)
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- httpServer.ListenAndServe() }()
+	slog.Info("API listening", "addr", cfg.HTTPAddr)
 
-	var redisClient *redis.Client
-	if config.RedisAddress != "" {
-		redisOpt, err := redis.ParseURL(config.RedisAddress)
-		if err != nil {
-			log.Warn().Err(err).Msg("Invalid REDIS_ADDRESS, starting without Redis")
-		} else {
-			if config.RedisPassword != "" {
-				redisOpt.Password = config.RedisPassword
-			}
-			client := redis.NewClient(redisOpt)
-			pingCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			pingErr := client.Ping(pingCtx).Err()
-			cancel()
-			if pingErr != nil {
-				log.Warn().Err(pingErr).Msg("Redis unavailable, starting without Redis")
-				_ = client.Close()
-			} else {
-				redisClient = client
-				defer redisClient.Close()
-			}
+	select {
+	case err := <-serveErr:
+		if !errors.Is(err, http.ErrServerClosed) {
+			return fmt.Errorf("http server: %w", err)
 		}
+	case <-ctx.Done():
+		slog.Info("shutting down")
 	}
 
-	store := db.NewStore(conn)
-	server, err := server.NewServer(config, store, redisClient)
-	if err != nil {
-		log.Fatal().Err(err).Msg("Cannot create server")
-	}
-
-	srv := server.HTTPServer(config.HTTPServerAddress)
-	go func() {
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatal().Err(err).Msg("HTTP listen failed")
-		}
-	}()
-
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-	log.Info().Msg("Shutting down server...")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
-	server.Shutdown()
-	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatal().Err(err).Msg("Server forced to shutdown")
-	}
-
-	log.Info().Msg("Server exiting")
+	return httpServer.Shutdown(shutdownCtx)
 }
 
-func runDBMigration(migrationURL string, dbSource string) {
-	migration, err := migrate.New(migrationURL, dbSource)
+// healthcheck asks the running server's /readyz (database reachable) and returns the exit code.
+func healthcheck() int {
+	addr := os.Getenv("HTTP_SERVER_ADDRESS")
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil || port == "" {
+		port = "8080"
+	}
+	client := http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get("http://127.0.0.1:" + port + "/readyz")
 	if err != nil {
-		log.Fatal().Err(err).Msg("Cannot create new migrate instance")
+		fmt.Fprintln(os.Stderr, "healthcheck:", err)
+		return 1
 	}
-	defer func() {
-		sourceErr, dbErr := migration.Close()
-		if sourceErr != nil {
-			log.Warn().Err(sourceErr).Msg("Failed to close migration source")
-		}
-		if dbErr != nil {
-			log.Warn().Err(dbErr).Msg("Failed to close migration db")
-		}
-	}()
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		fmt.Fprintln(os.Stderr, "healthcheck: status", resp.StatusCode)
+		return 1
+	}
+	return 0
+}
 
-	if err = migration.Up(); err != nil && err != migrate.ErrNoChange {
-		log.Fatal().Err(err).Msg("Failed to run migrate up")
+// newServer wires the feature services into the HTTP layer.
+func newServer(ctx context.Context, cfg config.Config, store db.Store, rdb *redis.Client) (*api.Server, error) {
+	tokens, err := token.NewJWTMaker(cfg.TokenSymmetricKey)
+	if err != nil {
+		return nil, fmt.Errorf("create token maker: %w", err)
 	}
 
-	log.Info().Msg("DB migrated successfully")
+	s3, err := storage.NewS3(ctx, storage.Config{Bucket: cfg.S3Bucket, Region: cfg.S3Region, CDNDomain: cfg.CloudFrontDomain})
+	if err != nil {
+		return nil, fmt.Errorf("create storage: %w", err)
+	}
+
+	gemini, err := assistant.NewGeminiClient(ctx, cfg.GeminiAPIKey)
+	if err != nil {
+		return nil, fmt.Errorf("create gemini client: %w", err)
+	}
+
+	// RAG needs Gemini both to embed tweets (background worker) and to embed questions.
+	rag := cfg.EnableRAG && gemini != nil
+	if rag {
+		docs := embedding.NewGemini(gemini, cfg.GeminiEmbeddingModel, embedding.TaskDocument)
+		go embedding.NewWorker(store, docs, embedding.DefaultWorkerConfig()).Run(ctx)
+	} else {
+		slog.Warn("RAG disabled: tweets are not embedded (set ENABLE_RAG and GEMINI_API_KEY to enable)")
+	}
+
+	hub := realtime.NewHub(rdb)
+	go hub.Run(ctx)
+	notifications := notification.New(store, hub)
+
+	services := api.Services{
+		Auth: auth.New(auth.Config{
+			GoogleClientID:  cfg.GoogleClientID,
+			AccessTokenTTL:  cfg.AccessTokenTTL,
+			RefreshTokenTTL: cfg.RefreshTokenTTL,
+		}, store, tokens, auth.GoogleIDTokenVerifier{}),
+		Users:         user.New(store, s3, notifications),
+		Tweets:        tweet.New(tweet.Config{EmbedTweets: rag}, store, s3, notifications),
+		Feeds:         feed.New(store),
+		Search:        search.New(store),
+		Discovery:     discovery.New(store),
+		Notifications: notifications,
+		Messages:      message.New(store, hub),
+		Assistant: assistant.New(assistant.Config{
+			ChatModel: cfg.GeminiChatModel,
+			EnableRAG: rag,
+		}, store, gemini, embedding.NewGemini(gemini, cfg.GeminiEmbeddingModel, embedding.TaskQuery)),
+		Media: media.New(s3, media.Limits{
+			MaxTweetMediaBytes: cfg.MaxMediaBytes,
+			MaxAvatarBytes:     cfg.MaxAvatarBytes,
+			MaxBannerBytes:     cfg.MaxBannerBytes,
+		}),
+	}
+
+	return api.New(api.Config{
+		Production:     cfg.Production(),
+		AllowedOrigins: cfg.AllowedOrigins,
+		CookieDomain:   cfg.CookieDomain,
+	}, services, tokens, hub, store, rdb)
+}
+
+func newDBPool(ctx context.Context, cfg config.Config) (*pgxpool.Pool, error) {
+	poolCfg, err := pgxpool.ParseConfig(cfg.DatabaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("parse database URL: %w", err)
+	}
+	if cfg.DBMaxConns > 0 {
+		poolCfg.MaxConns = cfg.DBMaxConns
+	}
+	if cfg.DBMinConns > 0 {
+		poolCfg.MinConns = cfg.DBMinConns
+	}
+	if cfg.DBMaxConnLifetime > 0 {
+		poolCfg.MaxConnLifetime = cfg.DBMaxConnLifetime
+	}
+
+	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
+	if err != nil {
+		return nil, fmt.Errorf("connect database: %w", err)
+	}
+	return pool, nil
+}
+
+// newRedis returns nil when Redis is not configured or unreachable; the API then
+// runs single-instance (in-memory rate limits and realtime fan-out).
+func newRedis(ctx context.Context, cfg config.Config) *redis.Client {
+	if cfg.RedisURL == "" {
+		return nil
+	}
+
+	opts, err := redis.ParseURL(cfg.RedisURL)
+	if err != nil {
+		slog.Warn("invalid REDIS_URL, starting without Redis", "err", err)
+		return nil
+	}
+
+	client := redis.NewClient(opts)
+	pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	if err := client.Ping(pingCtx).Err(); err != nil {
+		slog.Warn("Redis unavailable, starting without Redis", "err", err)
+		_ = client.Close()
+		return nil
+	}
+	return client
 }

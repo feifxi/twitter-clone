@@ -7,14 +7,13 @@ package db
 
 import (
 	"context"
+	"time"
 )
 
 const createNotification = `-- name: CreateNotification :one
-INSERT INTO notifications (
-  recipient_id, actor_id, tweet_id, type
-) VALUES (
-  $1, $2, $3, $4
-)
+INSERT INTO notifications (recipient_id, actor_id, tweet_id, type)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT DO NOTHING
 RETURNING id, recipient_id, actor_id, tweet_id, type, is_read, created_at
 `
 
@@ -25,6 +24,7 @@ type CreateNotificationParams struct {
 	Type        string `json:"type"`
 }
 
+// Returns no row when deduped by idx_notifications_dedupe.
 func (q *Queries) CreateNotification(ctx context.Context, arg CreateNotificationParams) (Notification, error) {
 	row := q.db.QueryRow(ctx, createNotification,
 		arg.RecipientID,
@@ -60,18 +60,26 @@ func (q *Queries) GetUnreadNotificationCount(ctx context.Context, recipientID in
 const listNotifications = `-- name: ListNotifications :many
 SELECT id, recipient_id, actor_id, tweet_id, type, is_read, created_at FROM notifications
 WHERE recipient_id = $1
+  AND ($2::timestamptz IS NULL
+       OR (created_at, id) < ($2::timestamptz, $3::bigint))
 ORDER BY created_at DESC, id DESC
-LIMIT $2 OFFSET $3
+LIMIT $4
 `
 
 type ListNotificationsParams struct {
-	RecipientID int64 `json:"recipient_id"`
-	Limit       int32 `json:"limit"`
-	Offset      int32 `json:"offset"`
+	RecipientID int64      `json:"recipient_id"`
+	CursorTime  *time.Time `json:"cursor_time"`
+	CursorID    *int64     `json:"cursor_id"`
+	PageLimit   int32      `json:"page_limit"`
 }
 
 func (q *Queries) ListNotifications(ctx context.Context, arg ListNotificationsParams) ([]Notification, error) {
-	rows, err := q.db.Query(ctx, listNotifications, arg.RecipientID, arg.Limit, arg.Offset)
+	rows, err := q.db.Query(ctx, listNotifications,
+		arg.RecipientID,
+		arg.CursorTime,
+		arg.CursorID,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}

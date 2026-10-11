@@ -71,52 +71,6 @@ func TestMessageOf_NonAppError(t *testing.T) {
 	}
 }
 
-func TestWrap_NilReturnsNil(t *testing.T) {
-	t.Parallel()
-
-	if Wrap(KindBadRequest, "msg", nil) != nil {
-		t.Fatal("expected nil from Wrap(nil)")
-	}
-}
-
-func TestWrap_NonNilWraps(t *testing.T) {
-	t.Parallel()
-
-	inner := errors.New("inner")
-	wrapped := Wrap(KindForbidden, "forbidden resource", inner)
-	if wrapped == nil {
-		t.Fatal("expected non-nil error")
-	}
-	kind, ok := KindOf(wrapped)
-	if !ok || kind != KindForbidden {
-		t.Fatalf("expected FORBIDDEN kind, got %q ok=%v", kind, ok)
-	}
-	if !errors.Is(wrapped, inner) {
-		t.Fatal("expected wrapped error to unwrap to inner")
-	}
-}
-
-func TestWithf_NilReturnsNil(t *testing.T) {
-	t.Parallel()
-
-	if Withf(nil, "context %s", "info") != nil {
-		t.Fatal("expected nil from Withf(nil, ...)")
-	}
-}
-
-func TestWithf_WrapsMessage(t *testing.T) {
-	t.Parallel()
-
-	inner := errors.New("base error")
-	wrapped := Withf(inner, "operation %s", "failed")
-	if wrapped == nil {
-		t.Fatal("expected non-nil")
-	}
-	if !errors.Is(wrapped, inner) {
-		t.Fatal("expected Withf to preserve error chain")
-	}
-}
-
 func TestInternalUsesErrAsRoot(t *testing.T) {
 	t.Parallel()
 

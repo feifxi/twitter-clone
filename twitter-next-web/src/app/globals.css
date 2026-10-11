@@ -2,11 +2,6 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Tailwind layers: use @layer so utilities can override MUI when needed (MUI uses @layer mui via enableCssLayer). */
-@layer components {
-  /* Add component overrides here if needed. */
-}
-
 @layer utilities {
   .no-scrollbar::-webkit-scrollbar {
     display: none;
@@ -52,6 +47,9 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  --color-like: var(--like);
+  --color-retweet: var(--retweet);
+  --color-banner: var(--banner);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -61,85 +59,92 @@
   --radius-4xl: calc(var(--radius) + 16px);
 }
 
+/*
+ * X (Twitter) palette. Components use these semantic tokens, never raw colors:
+ * like/retweet buttons use text-like / text-retweet, empty banners bg-banner.
+ */
 :root {
   --radius: 0.8rem;
-  --background: oklch(1 0 0); /* Pure White #FFFFFF */
-  --foreground: oklch(0.165 0.015 261.2); /* Classic Dark Navy #14171A */
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.165 0.015 261.2);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.165 0.015 261.2);
-  --primary: oklch(0.707 0.165 242.4); /* Classic Twitter Blue #1DA1F2 */
+  --primary: oklch(0.647 0.189 220); /* #1D9BF0 */
   --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.978 0.005 247.9); /* #F5F8FA Extra Light Gray */
-  --secondary-foreground: oklch(0.535 0.024 246.9); /* #657786 Secondary Text */
-  --muted: oklch(0.978 0.005 247.9);
-  --muted-foreground: oklch(0.535 0.024 246.9);
-  --accent: oklch(0.95 0.01 247.9); /* Subtle hover */
-  --accent-foreground: oklch(0.165 0.015 261.2);
+  --background: oklch(1 0 0); /* #FFFFFF */
+  --foreground: oklch(0.112 0.011 253); /* #0F1419 */
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.112 0.011 253);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.112 0.011 253);
+  --secondary: oklch(0.973 0.003 222); /* #F7F9F9 */
+  --secondary-foreground: oklch(0.112 0.011 253);
+  --muted: oklch(0.973 0.003 222);
+  --muted-foreground: oklch(0.448 0.025 222); /* #536471 */
+  --accent: oklch(0.973 0.003 222);
+  --accent-foreground: oklch(0.112 0.011 253);
+  --border: oklch(0.952 0.005 222); /* #EFF3F4 */
+  --input: oklch(0.952 0.005 222);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.925 0.01 247); /* #E1E8ED Border */
-  --input: oklch(0.925 0.01 247);
-  --ring: oklch(0.707 0.165 242.4);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
+  --ring: oklch(0.647 0.189 220);
+  --like: oklch(0.626 0.247 0); /* #F91880 */
+  --retweet: oklch(0.685 0.149 162); /* #00BA7C */
+  --banner: oklch(0.88 0.006 222); /* #CFD9DE */
+  --chart-1: oklch(0.647 0.189 220);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
   --sidebar: oklch(1 0 0);
-  --sidebar-foreground: oklch(0.165 0.015 261.2);
-  --sidebar-primary: oklch(0.707 0.165 242.4);
+  --sidebar-foreground: oklch(0.112 0.011 253);
+  --sidebar-primary: oklch(0.647 0.189 220);
   --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.978 0.005 247.9);
-  --sidebar-accent-foreground: oklch(0.165 0.015 261.2);
-  --sidebar-border: oklch(0.925 0.01 247);
-  --sidebar-ring: oklch(0.707 0.165 242.4);
+  --sidebar-accent: oklch(0.973 0.003 222);
+  --sidebar-accent-foreground: oklch(0.112 0.011 253);
+  --sidebar-border: oklch(0.952 0.005 222);
+  --sidebar-ring: oklch(0.647 0.189 220);
 }
 
 .dark {
-  --background: oklch(0 0 0);
-  /* Pure Black #000000 */
-  --foreground: oklch(0.908 0.005 264.5);
-  /* #e7e9ea */
-  --card: oklch(0 0 0);
-  --card-foreground: oklch(0.908 0.005 264.5);
-  --popover: oklch(0 0 0);
-  --popover-foreground: oklch(0.908 0.005 264.5);
-  --primary: oklch(0.607 0.174 251.1);
-  /* Twitter Blue #1d9bf0 */
+  --primary: oklch(0.647 0.189 220); /* #1D9BF0 */
   --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.20 0 0);
-  /* #333639 (Hover state approx) */
-  --secondary-foreground: oklch(0.908 0.005 264.5);
-  --muted: oklch(0.20 0 0);
-  --muted-foreground: oklch(0.48 0 0);
-  /* #71767b */
-  --accent: oklch(0.20 0 0);
-  /* Hover background */
-  --accent-foreground: oklch(0.908 0.005 264.5);
-  --destructive: oklch(0.396 0.141 25.723);
-  /* Red */
-  --destructive-foreground: oklch(0.908 0.005 264.5);
-  --border: oklch(0.233 0.013 264.5);
-  /* #2f3336 */
-  --input: oklch(0.233 0.013 264.5);
-  /* #2f3336 */
-  --ring: oklch(0.607 0.174 251.1);
-  /* Blue ring */
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --background: oklch(0 0 0); /* #000000 */
+  --foreground: oklch(0.925 0.003 258); /* #E7E9EA */
+  --card: oklch(0.124 0.006 262); /* #16181C */
+  --card-foreground: oklch(0.925 0.003 258);
+  --popover: oklch(0 0 0);
+  --popover-foreground: oklch(0.925 0.003 258);
+  --secondary: oklch(0.124 0.006 262);
+  --secondary-foreground: oklch(0.925 0.003 258);
+  --muted: oklch(0.18 0.006 262);
+  --muted-foreground: oklch(0.525 0.009 258); /* #71767B */
+  --accent: oklch(0.18 0.006 262);
+  --accent-foreground: oklch(0.925 0.003 258);
+  --border: oklch(0.26 0.007 262); /* #2F3336 */
+  --input: oklch(0.26 0.007 262);
+  --destructive: oklch(0.704 0.191 22.216);
+  --ring: oklch(0.647 0.189 220);
+  --like: oklch(0.626 0.247 0);
+  --retweet: oklch(0.685 0.149 162);
+  --banner: oklch(0.275 0.005 248); /* #333639 */
+  --chart-1: oklch(0.647 0.189 220);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0 0 0);
+  --sidebar-foreground: oklch(0.925 0.003 258);
+  --sidebar-primary: oklch(0.647 0.189 220);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.18 0.006 262);
+  --sidebar-accent-foreground: oklch(0.925 0.003 258);
+  --sidebar-border: oklch(0.26 0.007 262);
+  --sidebar-ring: oklch(0.647 0.189 220);
 }
+
+/*
+ * Z-index scale: slot new layers in here instead of inventing values.
+ *   z-30   sticky page headers
+ *   z-40   navigation (mobile bottom bar)
+ *   z-50   dialogs, dropdowns, popovers, image lightbox
+ *   z-[100] toasts
+ */
 
 @layer base {
   * {

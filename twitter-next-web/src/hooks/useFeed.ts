@@ -1,27 +1,18 @@
 'use client';
 
-import {
-  useInfiniteQuery,
-  useQueryClient,
-  type InfiniteData,
-} from '@tanstack/react-query';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import { axiosInstance } from '@/api/axiosInstance';
-import type { PageResponse, TweetResponse } from '@/types';
-
-const PAGE_SIZE = 20;
+import { PAGE_SIZE, queryKeys } from '@/lib/query-keys';
+import type { FeedItemResponse, PageResponse } from '@/types';
 
 export type FeedKind = 'global' | 'following';
-
-export function feedQueryKey(kind: FeedKind) {
-  return ['feeds', kind] as const;
-}
 
 async function fetchFeed(
   kind: FeedKind,
   cursor: string | null
-): Promise<PageResponse<TweetResponse>> {
+): Promise<PageResponse<FeedItemResponse>> {
   const path = kind === 'global' ? '/feeds/global' : '/feeds/following';
-  const { data } = await axiosInstance.get<PageResponse<TweetResponse>>(path, {
+  const { data } = await axiosInstance.get<PageResponse<FeedItemResponse>>(path, {
     params: { cursor: cursor ?? undefined, size: PAGE_SIZE },
   });
   return data;
@@ -29,7 +20,7 @@ async function fetchFeed(
 
 export function useGlobalFeed(enabled = true) {
   return useInfiniteQuery({
-    queryKey: feedQueryKey('global'),
+    queryKey: queryKeys.feeds.global,
     queryFn: ({ pageParam }) => fetchFeed('global', pageParam),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) =>
@@ -40,44 +31,11 @@ export function useGlobalFeed(enabled = true) {
 
 export function useFollowingFeed(enabled = true) {
   return useInfiniteQuery({
-    queryKey: feedQueryKey('following'),
+    queryKey: queryKeys.feeds.following,
     queryFn: ({ pageParam }) => fetchFeed('following', pageParam),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) =>
       lastPage.hasNext ? lastPage.nextCursor : undefined,
     enabled,
   });
-}
-
-/** Helper to update a single tweet in infinite feed cache (for optimistic like/retweet). */
-export function useUpdateFeedTweet() {
-  const queryClient = useQueryClient();
-
-  function updateTweetInFeed(
-    kind: FeedKind,
-    tweetId: number,
-    updater: (t: TweetResponse) => TweetResponse
-  ) {
-    queryClient.setQueryData<InfiniteData<PageResponse<TweetResponse>>>(
-      feedQueryKey(kind),
-      (old) => {
-        if (!old) return old;
-        return {
-          ...old,
-          pages: old.pages.map((page) => ({
-            ...page,
-            items: page.items.map((t) => {
-              const target = t.retweetedTweet?.id === tweetId ? t.retweetedTweet : t;
-              if (target.id === tweetId) return updater(t);
-              if (t.retweetedTweet?.id === tweetId)
-                return { ...t, retweetedTweet: updater(t.retweetedTweet!) };
-              return t;
-            }),
-          })),
-        };
-      }
-    );
-  }
-
-  return { updateTweetInFeed };
 }

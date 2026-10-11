@@ -1,82 +1,53 @@
+// Package logger configures the process-wide slog logger and carries the
+// request ID through context so every log line inside a request is correlated.
 package logger
 
 import (
-	"os"
-	"time"
-
-	"github.com/chanombude/twitter-go-api/internal/middleware"
-	"github.com/gin-gonic/gin"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
+	"context"
+	"io"
+	"log/slog"
 )
 
-// InitLogger configures the global zerolog instance.
-func InitLogger(env string) {
-	zerolog.TimeFieldFormat = time.RFC3339
+type ctxKey struct{}
 
-	if env == "development" {
-		// Pretty console output for unhandled development logging
-		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
-	} else {
-		// Strict JSON for production
-		log.Logger = zerolog.New(os.Stderr).With().Timestamp().Logger()
+// New returns a JSON logger for production and a human-readable one otherwise.
+// Records logged with a context that carries a request ID get a request_id attribute.
+func New(w io.Writer, production bool, level slog.Level) *slog.Logger {
+	opts := &slog.HandlerOptions{Level: level}
+
+	var handler slog.Handler = slog.NewTextHandler(w, opts)
+	if production {
+		handler = slog.NewJSONHandler(w, opts)
 	}
+	return slog.New(requestIDHandler{handler})
 }
 
-// GinMiddleware replaces the default Gin logger with Zerolog.
-func GinMiddleware() gin.HandlerFunc {
-	return func(ctx *gin.Context) {
-		start := time.Now()
-		path := ctx.Request.URL.Path
-		raw := ctx.Request.URL.RawQuery
+// WithRequestID returns a context whose log records will include id.
+func WithRequestID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, ctxKey{}, id)
+}
 
-		// Skip internal health and metrics checks to reduce log noise
-		if path == "/metrics" || path == "/healthz" || path == "/readyz" {
-			ctx.Next()
-			return
-		}
+// RequestID returns the request ID stored by WithRequestID, or "".
+func RequestID(ctx context.Context) string {
+	id, _ := ctx.Value(ctxKey{}).(string)
+	return id
+}
 
-		route := ctx.FullPath()
-		if route == "" {
-			route = path
-		}
-		requestID := middleware.GetRequestID(ctx)
+type requestIDHandler struct {
+	slog.Handler
+}
 
-		ctx.Next()
-
-		// Skip logging if a middleware (like NoRoute) has flagged it
-		if skip, _ := ctx.Get("skip_log"); skip == true {
-			return
-		}
-
-		if raw != "" {
-			path = path + "?" + raw
-		}
-
-		duration := time.Since(start)
-		statusCode := ctx.Writer.Status()
-		clientIP := ctx.ClientIP()
-		method := ctx.Request.Method
-		userAgent := ctx.Request.UserAgent()
-		errorMessage := ctx.Errors.ByType(gin.ErrorTypePrivate).String()
-		bodySize := ctx.Writer.Size()
-
-		event := log.Info()
-		if statusCode >= 400 {
-			event = log.Error()
-		}
-
-		event.
-			Int("status", statusCode).
-			Str("method", method).
-			Str("path", path).
-			Str("route", route).
-			Str("request_id", requestID).
-			Str("ip", clientIP).
-			Str("user_agent", userAgent).
-			Dur("duration", duration).
-			Int("body_size", bodySize).
-			Str("error", errorMessage).
-			Msg("HTTP request")
+func (h requestIDHandler) Handle(ctx context.Context, r slog.Record) error {
+	if id := RequestID(ctx); id != "" {
+		r.AddAttrs(slog.String("request_id", id))
 	}
+	return h.Handler.Handle(ctx, r)
+}
+
+func (h requestIDHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return requestIDHandler{h.Handler.WithAttrs(attrs)}
+}
+
+func (h requestIDHandler) WithGroup(name string) slog.Handler {
+	return requestIDHandler{h.Handler.WithGroup(name)}
 }

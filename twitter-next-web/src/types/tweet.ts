@@ -16,8 +16,23 @@ export interface TweetResponse {
     retweetCount: number;
     isLiked: boolean;
     isRetweeted: boolean;
-    retweetedTweet?: TweetResponse | null;
     replyToTweetId?: number | null;
     replyToUsername?: string | null;
     createdAt: string;
+}
+
+export interface RetweetResponse {
+    id: number;
+    retweeter: UserResponse;
+    createdAt: string;
+}
+
+/**
+ * One entry of a timeline (feeds and profile tabs). `tweet` is always the original;
+ * for kind "retweet", `retweet` says who put it in this timeline and when.
+ */
+export interface FeedItemResponse {
+    kind: 'tweet' | 'retweet';
+    tweet: TweetResponse;
+    retweet: RetweetResponse | null;
 }

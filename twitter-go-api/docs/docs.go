@@ -30,7 +30,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Interact with the Gemini-powered AI assistant. It provides streaming responses (SSE) and has access to recent tweet context via RAG.",
+                "description": "Interact with the Gemini-powered AI assistant. Streams Server-Sent Events: each ` + "`" + `data:` + "`" + ` line is a JSON ` + "`" + `{\"text\": \"...\"}` + "`" + ` chunk; the stream ends with ` + "`" + `event: done` + "`" + `, or ` + "`" + `event: error` + "`" + ` with ` + "`" + `{\"message\": \"...\"}` + "`" + `.",
                 "consumes": [
                     "application/json"
                 ],
@@ -48,7 +48,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/usecase.AssistantInput"
+                            "$ref": "#/definitions/api.assistantRequest"
                         }
                     }
                 ],
@@ -62,7 +62,7 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -70,7 +70,7 @@ const docTemplate = `{
         },
         "/auth/google": {
             "post": {
-                "description": "Exchange a Google ID token for a JWT access and refresh token.",
+                "description": "Exchange a Google ID token for a session. The access and refresh tokens are set as httpOnly cookies.",
                 "consumes": [
                     "application/json"
                 ],
@@ -88,7 +88,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/server.googleLoginRequest"
+                            "$ref": "#/definitions/api.googleLoginRequest"
                         }
                     }
                 ],
@@ -96,13 +96,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.AuthResponse"
+                            "$ref": "#/definitions/api.CurrentUserResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -110,15 +110,7 @@ const docTemplate = `{
         },
         "/auth/logout": {
             "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Revoke the user session and clear access/refresh tokens.",
-                "consumes": [
-                    "application/json"
-                ],
+                "description": "End this browser's session and clear its cookies. Other devices stay signed in.",
                 "produces": [
                     "application/json"
                 ],
@@ -126,27 +118,11 @@ const docTemplate = `{
                     "Auth"
                 ],
                 "summary": "Logout",
-                "parameters": [
-                    {
-                        "description": "Optional Refresh Token to revoke explicitly",
-                        "name": "request",
-                        "in": "body",
-                        "schema": {
-                            "$ref": "#/definitions/server.refreshTokenRequest"
-                        }
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.SuccessResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/api.SuccessResponse"
                         }
                     }
                 }
@@ -171,13 +147,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.UserResponse"
+                            "$ref": "#/definitions/api.CurrentUserResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -185,10 +161,7 @@ const docTemplate = `{
         },
         "/auth/refresh": {
             "post": {
-                "description": "Obtain a new access token and refresh token using an existing refresh token.",
-                "consumes": [
-                    "application/json"
-                ],
+                "description": "Rotate the session in the refresh_token cookie: both cookies are replaced and the old refresh token stops working.",
                 "produces": [
                     "application/json"
                 ],
@@ -196,28 +169,17 @@ const docTemplate = `{
                     "Auth"
                 ],
                 "summary": "Refresh Access Token",
-                "parameters": [
-                    {
-                        "description": "Refresh Token",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/server.refreshTokenRequest"
-                        }
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.AuthResponse"
+                            "$ref": "#/definitions/api.CurrentUserResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -247,7 +209,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/server.HashtagResponse"
+                                "$ref": "#/definitions/api.HashtagResponse"
                             }
                         }
                     }
@@ -282,7 +244,38 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.PageResponse-server_UserResponse"
+                            "$ref": "#/definitions/api.PageResponse-api_UserResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/events": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "One Server-Sent Events stream per signed-in tab. Event names: ` + "`" + `connected` + "`" + `, ` + "`" + `notification` + "`" + ` (NotificationResponse), ` + "`" + `dm` + "`" + ` (MessageResponse). Comment lines (` + "`" + `: ping` + "`" + `) are heartbeats. Reconnect on close; the server suggests a 3s retry.",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "Realtime"
+                ],
+                "summary": "Real-time Events (SSE)",
+                "responses": {
+                    "200": {
+                        "description": "text/event-stream",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -321,13 +314,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.PageResponse-server_TweetResponse"
+                            "$ref": "#/definitions/api.PageResponse-api_FeedItemResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -361,48 +354,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.PageResponse-server_TweetResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/feeds/user/{id}": {
-            "get": {
-                "description": "Get a paginated list of tweets for a specific user profile.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Feeds"
-                ],
-                "summary": "User Profile Feed",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "User ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Pagination cursor",
-                        "name": "cursor",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Number of items per page",
-                        "name": "size",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/server.PageResponse-server_TweetResponse"
+                            "$ref": "#/definitions/api.PageResponse-api_FeedItemResponse"
                         }
                     }
                 }
@@ -410,7 +362,7 @@ const docTemplate = `{
         },
         "/healthz": {
             "get": {
-                "description": "Simple health check to verify the API server is running and reachable.",
+                "description": "Reports that the process is up. Never checks dependencies, so a database blip doesn't get the container restarted.",
                 "produces": [
                     "application/json"
                 ],
@@ -420,12 +372,9 @@ const docTemplate = `{
                 "summary": "Liveness Probe",
                 "responses": {
                     "200": {
-                        "description": "status ok",
+                        "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/api.HealthResponse"
                         }
                     }
                 }
@@ -464,13 +413,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.PageResponse-server_ConversationResponse"
+                            "$ref": "#/definitions/api.PageResponse-api_ConversationResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -516,13 +465,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.PageResponse-server_MessageResponse"
+                            "$ref": "#/definitions/api.PageResponse-api_MessageResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -559,7 +508,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/server.sendMessageRequest"
+                            "$ref": "#/definitions/api.sendMessageRequest"
                         }
                     }
                 ],
@@ -567,13 +516,13 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/server.MessageResponse"
+                            "$ref": "#/definitions/api.MessageResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -612,7 +561,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/server.sendMessageRequest"
+                            "$ref": "#/definitions/api.sendMessageRequest"
                         }
                     }
                 ],
@@ -620,43 +569,13 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/server.MessageResponse"
+                            "$ref": "#/definitions/api.MessageResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/messages/ws": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Establish a WebSocket connection to receive real-time direct messages. Supports authentication via 'access_token' query param or 'Authorization' header.",
-                "tags": [
-                    "Messages"
-                ],
-                "summary": "Stream Messages (WebSocket)",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "JWT Access Token (if not using Authorization header)",
-                        "name": "access_token",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "101": {
-                        "description": "Switching Protocols",
-                        "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -695,13 +614,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.PageResponse-server_NotificationResponse"
+                            "$ref": "#/definitions/api.PageResponse-api_NotificationResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -723,44 +642,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.SuccessResponse"
+                            "$ref": "#/definitions/api.SuccessResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/notifications/stream": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Establish a Server-Sent Events (SSE) connection to receive near real-time notifications for likes, replies, retweets, and new followers.",
-                "produces": [
-                    "text/event-stream"
-                ],
-                "tags": [
-                    "Notifications"
-                ],
-                "summary": "Stream Real-time Notifications (SSE)",
-                "responses": {
-                    "200": {
-                        "description": "text/event-stream",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -783,19 +671,15 @@ const docTemplate = `{
                 "summary": "Get Unread Count",
                 "responses": {
                     "200": {
-                        "description": "unread count",
+                        "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "integer",
-                                "format": "int64"
-                            }
+                            "$ref": "#/definitions/api.UnreadCountResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -803,7 +687,7 @@ const docTemplate = `{
         },
         "/readyz": {
             "get": {
-                "description": "Comprehensive readiness check that verifies active connections to the database and Redis cache.",
+                "description": "Checks every dependency (database, and Redis when configured) and reports each one.",
                 "produces": [
                     "application/json"
                 ],
@@ -813,21 +697,15 @@ const docTemplate = `{
                 "summary": "Readiness Probe",
                 "responses": {
                     "200": {
-                        "description": "status ready",
+                        "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/api.HealthResponse"
                         }
                     },
                     "503": {
-                        "description": "dependency failure",
+                        "description": "a dependency is unreachable",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/api.HealthResponse"
                         }
                     }
                 }
@@ -864,7 +742,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/server.HashtagResponse"
+                                "$ref": "#/definitions/api.HashtagResponse"
                             }
                         }
                     }
@@ -906,7 +784,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.PageResponse-server_TweetResponse"
+                            "$ref": "#/definitions/api.PageResponse-api_TweetResponse"
                         }
                     }
                 }
@@ -947,7 +825,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.PageResponse-server_UserResponse"
+                            "$ref": "#/definitions/api.PageResponse-api_UserResponse"
                         }
                     }
                 }
@@ -978,7 +856,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/server.createTweetRequest"
+                            "$ref": "#/definitions/api.createTweetRequest"
                         }
                     }
                 ],
@@ -986,19 +864,19 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/server.TweetResponse"
+                            "$ref": "#/definitions/api.TweetResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -1028,13 +906,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.TweetResponse"
+                            "$ref": "#/definitions/api.TweetResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -1064,19 +942,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.SuccessResponse"
+                            "$ref": "#/definitions/api.SuccessResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -1108,13 +986,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.SuccessResponse"
+                            "$ref": "#/definitions/api.SuccessResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -1144,13 +1022,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.SuccessResponse"
+                            "$ref": "#/definitions/api.SuccessResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -1191,7 +1069,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.PageResponse-server_TweetResponse"
+                            "$ref": "#/definitions/api.PageResponse-api_TweetResponse"
                         }
                     }
                 }
@@ -1226,13 +1104,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.TweetResponse"
+                            "$ref": "#/definitions/api.TweetResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -1262,13 +1140,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.SuccessResponse"
+                            "$ref": "#/definitions/api.SuccessResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -1281,7 +1159,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Generate a temporary presigned URL to upload a file directly to S3.",
+                "description": "Generate a temporary presigned URL to upload a file directly to S3. The upload must use exactly the declared Content-Type and Content-Length.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1299,24 +1177,113 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/server.presignRequest"
+                            "$ref": "#/definitions/api.presignRequest"
                         }
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "presignedUrl and objectKey",
+                        "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/api.PresignResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/users/by-username/{username}": {
+            "get": {
+                "description": "Look a profile up by handle (case-insensitive).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Get User by Username",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Username",
+                        "name": "username",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.UserResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/users/me/onboarding": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Choose a username (3-20 letters, numbers or underscores) and display name. Sign-up assigns a generated username until then.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Complete Onboarding",
+                "parameters": [
+                    {
+                        "description": "Chosen username and display name",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.onboardingRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.CurrentUserResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "username taken",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -1347,7 +1314,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/server.updateProfileRequest"
+                            "$ref": "#/definitions/api.updateProfileRequest"
                         }
                     }
                 ],
@@ -1355,19 +1322,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.UserResponse"
+                            "$ref": "#/definitions/api.UserResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -1397,13 +1364,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.UserResponse"
+                            "$ref": "#/definitions/api.UserResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -1438,13 +1405,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.SuccessResponse"
+                            "$ref": "#/definitions/api.SuccessResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -1477,13 +1444,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.SuccessResponse"
+                            "$ref": "#/definitions/api.SuccessResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/server.ErrorResponse"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -1524,7 +1491,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.PageResponse-server_UserResponse"
+                            "$ref": "#/definitions/api.PageResponse-api_UserResponse"
                         }
                     }
                 }
@@ -1565,7 +1532,182 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/server.PageResponse-server_UserResponse"
+                            "$ref": "#/definitions/api.PageResponse-api_UserResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/users/{id}/likes": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Tweets the user liked, most recently liked first. Only the user themselves may list their likes.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Profile: Likes",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "User ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Pagination cursor",
+                        "name": "cursor",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of items per page",
+                        "name": "size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.PageResponse-api_FeedItemResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/users/{id}/media": {
+            "get": {
+                "description": "A user's tweets that carry an image or video, newest first.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Profile: Media",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "User ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Pagination cursor",
+                        "name": "cursor",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of items per page",
+                        "name": "size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.PageResponse-api_FeedItemResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/users/{id}/posts": {
+            "get": {
+                "description": "A user's top-level tweets and retweets, newest first.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Profile: Posts",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "User ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Pagination cursor",
+                        "name": "cursor",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of items per page",
+                        "name": "size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.PageResponse-api_FeedItemResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/users/{id}/replies": {
+            "get": {
+                "description": "Replies written by a user, newest first.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Profile: Replies",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "User ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Pagination cursor",
+                        "name": "cursor",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of items per page",
+                        "name": "size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.PageResponse-api_FeedItemResponse"
                         }
                     }
                 }
@@ -1573,49 +1715,72 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "apperr.FieldError": {
-            "type": "object",
-            "properties": {
-                "field": {
-                    "type": "string"
-                },
-                "message": {
-                    "type": "string"
-                }
-            }
-        },
-        "server.AuthResponse": {
-            "type": "object",
-            "properties": {
-                "accessToken": {
-                    "type": "string"
-                },
-                "refreshToken": {
-                    "type": "string"
-                },
-                "user": {
-                    "$ref": "#/definitions/server.UserResponse"
-                }
-            }
-        },
-        "server.ConversationResponse": {
+        "api.ConversationResponse": {
             "type": "object",
             "properties": {
                 "id": {
                     "type": "integer"
                 },
                 "lastMessage": {
-                    "$ref": "#/definitions/server.MessageResponse"
+                    "$ref": "#/definitions/api.MessageResponse"
                 },
                 "peer": {
-                    "$ref": "#/definitions/server.UserResponse"
+                    "$ref": "#/definitions/api.UserResponse"
                 },
                 "updatedAt": {
                     "type": "string"
                 }
             }
         },
-        "server.ErrorResponse": {
+        "api.CurrentUserResponse": {
+            "type": "object",
+            "properties": {
+                "avatarUrl": {
+                    "type": "string"
+                },
+                "bannerUrl": {
+                    "type": "string"
+                },
+                "bio": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "displayName": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "followersCount": {
+                    "type": "integer"
+                },
+                "followingCount": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "isFollowing": {
+                    "type": "boolean"
+                },
+                "location": {
+                    "type": "string"
+                },
+                "onboarded": {
+                    "description": "Onboarded is false until the user has chosen their own username.",
+                    "type": "boolean"
+                },
+                "username": {
+                    "type": "string"
+                },
+                "website": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.ErrorResponse": {
             "type": "object",
             "properties": {
                 "code": {
@@ -1635,7 +1800,25 @@ const docTemplate = `{
                 }
             }
         },
-        "server.HashtagResponse": {
+        "api.FeedItemResponse": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "enum": [
+                        "tweet",
+                        "retweet"
+                    ]
+                },
+                "retweet": {
+                    "$ref": "#/definitions/api.RetweetResponse"
+                },
+                "tweet": {
+                    "$ref": "#/definitions/api.TweetResponse"
+                }
+            }
+        },
+        "api.HashtagResponse": {
             "type": "object",
             "properties": {
                 "createdAt": {
@@ -1655,7 +1838,22 @@ const docTemplate = `{
                 }
             }
         },
-        "server.MessageResponse": {
+        "api.HealthResponse": {
+            "type": "object",
+            "properties": {
+                "checks": {
+                    "description": "Checks maps each dependency to \"ok\" or \"error\"; failure details are logged, not exposed.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.MessageResponse": {
             "type": "object",
             "properties": {
                 "content": {
@@ -1671,15 +1869,15 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "sender": {
-                    "$ref": "#/definitions/server.UserResponse"
+                    "$ref": "#/definitions/api.UserResponse"
                 }
             }
         },
-        "server.NotificationResponse": {
+        "api.NotificationResponse": {
             "type": "object",
             "properties": {
                 "actor": {
-                    "$ref": "#/definitions/server.UserResponse"
+                    "$ref": "#/definitions/api.UserResponse"
                 },
                 "createdAt": {
                     "type": "string"
@@ -1713,7 +1911,7 @@ const docTemplate = `{
                 }
             }
         },
-        "server.PageResponse-server_ConversationResponse": {
+        "api.PageResponse-api_ConversationResponse": {
             "type": "object",
             "properties": {
                 "hasNext": {
@@ -1722,7 +1920,7 @@ const docTemplate = `{
                 "items": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/server.ConversationResponse"
+                        "$ref": "#/definitions/api.ConversationResponse"
                     }
                 },
                 "nextCursor": {
@@ -1730,7 +1928,7 @@ const docTemplate = `{
                 }
             }
         },
-        "server.PageResponse-server_MessageResponse": {
+        "api.PageResponse-api_FeedItemResponse": {
             "type": "object",
             "properties": {
                 "hasNext": {
@@ -1739,7 +1937,7 @@ const docTemplate = `{
                 "items": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/server.MessageResponse"
+                        "$ref": "#/definitions/api.FeedItemResponse"
                     }
                 },
                 "nextCursor": {
@@ -1747,7 +1945,7 @@ const docTemplate = `{
                 }
             }
         },
-        "server.PageResponse-server_NotificationResponse": {
+        "api.PageResponse-api_MessageResponse": {
             "type": "object",
             "properties": {
                 "hasNext": {
@@ -1756,7 +1954,7 @@ const docTemplate = `{
                 "items": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/server.NotificationResponse"
+                        "$ref": "#/definitions/api.MessageResponse"
                     }
                 },
                 "nextCursor": {
@@ -1764,7 +1962,7 @@ const docTemplate = `{
                 }
             }
         },
-        "server.PageResponse-server_TweetResponse": {
+        "api.PageResponse-api_NotificationResponse": {
             "type": "object",
             "properties": {
                 "hasNext": {
@@ -1773,7 +1971,7 @@ const docTemplate = `{
                 "items": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/server.TweetResponse"
+                        "$ref": "#/definitions/api.NotificationResponse"
                     }
                 },
                 "nextCursor": {
@@ -1781,7 +1979,7 @@ const docTemplate = `{
                 }
             }
         },
-        "server.PageResponse-server_UserResponse": {
+        "api.PageResponse-api_TweetResponse": {
             "type": "object",
             "properties": {
                 "hasNext": {
@@ -1790,7 +1988,7 @@ const docTemplate = `{
                 "items": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/server.UserResponse"
+                        "$ref": "#/definitions/api.TweetResponse"
                     }
                 },
                 "nextCursor": {
@@ -1798,7 +1996,49 @@ const docTemplate = `{
                 }
             }
         },
-        "server.SuccessResponse": {
+        "api.PageResponse-api_UserResponse": {
+            "type": "object",
+            "properties": {
+                "hasNext": {
+                    "type": "boolean"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.UserResponse"
+                    }
+                },
+                "nextCursor": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.PresignResponse": {
+            "type": "object",
+            "properties": {
+                "objectKey": {
+                    "type": "string"
+                },
+                "presignedUrl": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.RetweetResponse": {
+            "type": "object",
+            "properties": {
+                "createdAt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "retweeter": {
+                    "$ref": "#/definitions/api.UserResponse"
+                }
+            }
+        },
+        "api.SuccessResponse": {
             "type": "object",
             "properties": {
                 "success": {
@@ -1806,7 +2046,7 @@ const docTemplate = `{
                 }
             }
         },
-        "server.TweetResponse": {
+        "api.TweetResponse": {
             "type": "object",
             "properties": {
                 "content": {
@@ -1845,15 +2085,20 @@ const docTemplate = `{
                 "retweetCount": {
                     "type": "integer"
                 },
-                "retweetedTweet": {
-                    "$ref": "#/definitions/server.TweetResponse"
-                },
                 "user": {
-                    "$ref": "#/definitions/server.UserResponse"
+                    "$ref": "#/definitions/api.UserResponse"
                 }
             }
         },
-        "server.UserResponse": {
+        "api.UnreadCountResponse": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.UserResponse": {
             "type": "object",
             "properties": {
                 "avatarUrl": {
@@ -1865,10 +2110,10 @@ const docTemplate = `{
                 "bio": {
                     "type": "string"
                 },
-                "displayName": {
+                "createdAt": {
                     "type": "string"
                 },
-                "email": {
+                "displayName": {
                     "type": "string"
                 },
                 "followersCount": {
@@ -1883,12 +2128,57 @@ const docTemplate = `{
                 "isFollowing": {
                     "type": "boolean"
                 },
+                "location": {
+                    "type": "string"
+                },
                 "username": {
+                    "type": "string"
+                },
+                "website": {
                     "type": "string"
                 }
             }
         },
-        "server.createTweetRequest": {
+        "api.assistantHistoryItem": {
+            "type": "object",
+            "required": [
+                "role"
+            ],
+            "properties": {
+                "role": {
+                    "type": "string",
+                    "enum": [
+                        "user",
+                        "model",
+                        "assistant"
+                    ]
+                },
+                "text": {
+                    "type": "string",
+                    "maxLength": 4000
+                }
+            }
+        },
+        "api.assistantRequest": {
+            "type": "object",
+            "required": [
+                "query"
+            ],
+            "properties": {
+                "history": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                        "$ref": "#/definitions/api.assistantHistoryItem"
+                    }
+                },
+                "query": {
+                    "type": "string",
+                    "maxLength": 4000
+                }
+            }
+        },
+        "api.createTweetRequest": {
             "type": "object",
             "properties": {
                 "content": {
@@ -1896,14 +2186,8 @@ const docTemplate = `{
                     "maxLength": 280
                 },
                 "mediaKey": {
-                    "type": "string"
-                },
-                "mediaType": {
                     "type": "string",
-                    "enum": [
-                        "IMAGE",
-                        "VIDEO"
-                    ]
+                    "maxLength": 200
                 },
                 "parentId": {
                     "type": "integer",
@@ -1911,7 +2195,7 @@ const docTemplate = `{
                 }
             }
         },
-        "server.googleLoginRequest": {
+        "api.googleLoginRequest": {
             "type": "object",
             "required": [
                 "idToken"
@@ -1922,11 +2206,29 @@ const docTemplate = `{
                 }
             }
         },
-        "server.presignRequest": {
+        "api.onboardingRequest": {
             "type": "object",
             "required": [
+                "displayName",
+                "username"
+            ],
+            "properties": {
+                "displayName": {
+                    "type": "string",
+                    "maxLength": 50
+                },
+                "username": {
+                    "type": "string",
+                    "maxLength": 20,
+                    "minLength": 3
+                }
+            }
+        },
+        "api.presignRequest": {
+            "type": "object",
+            "required": [
+                "contentLength",
                 "contentType",
-                "filename",
                 "folder"
             ],
             "properties": {
@@ -1937,23 +2239,17 @@ const docTemplate = `{
                 "contentType": {
                     "type": "string"
                 },
-                "filename": {
-                    "type": "string"
-                },
                 "folder": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                        "tweets",
+                        "avatars",
+                        "banners"
+                    ]
                 }
             }
         },
-        "server.refreshTokenRequest": {
-            "type": "object",
-            "properties": {
-                "refreshToken": {
-                    "type": "string"
-                }
-            }
-        },
-        "server.sendMessageRequest": {
+        "api.sendMessageRequest": {
             "type": "object",
             "required": [
                 "content"
@@ -1965,14 +2261,16 @@ const docTemplate = `{
                 }
             }
         },
-        "server.updateProfileRequest": {
+        "api.updateProfileRequest": {
             "type": "object",
             "properties": {
                 "avatarKey": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 200
                 },
                 "bannerKey": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 200
                 },
                 "bio": {
                     "type": "string",
@@ -1980,35 +2278,25 @@ const docTemplate = `{
                 },
                 "displayName": {
                     "type": "string",
+                    "maxLength": 50
+                },
+                "location": {
+                    "type": "string",
                     "maxLength": 30
+                },
+                "website": {
+                    "type": "string",
+                    "maxLength": 100
                 }
             }
         },
-        "usecase.AssistantHistoryItem": {
+        "apperr.FieldError": {
             "type": "object",
             "properties": {
-                "role": {
-                    "description": "\"user\" or \"model\" (for Gemini)",
+                "field": {
                     "type": "string"
                 },
-                "text": {
-                    "type": "string"
-                }
-            }
-        },
-        "usecase.AssistantInput": {
-            "type": "object",
-            "required": [
-                "query"
-            ],
-            "properties": {
-                "history": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/usecase.AssistantHistoryItem"
-                    }
-                },
-                "query": {
+                "message": {
                     "type": "string"
                 }
             }
@@ -2016,7 +2304,7 @@ const docTemplate = `{
     },
     "securityDefinitions": {
         "BearerAuth": {
-            "description": "Type 'Bearer ' followed by your JWT token.",
+            "description": "Type 'Bearer ' followed by an access token. Browsers use the httpOnly access_token cookie instead.",
             "type": "apiKey",
             "name": "Authorization",
             "in": "header"

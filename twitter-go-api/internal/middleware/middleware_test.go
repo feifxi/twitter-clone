@@ -16,11 +16,11 @@ func TestRateLimiter_AllowsUnderLimit(t *testing.T) {
 	handler := RateLimiter(rate.Limit(10), 10)
 
 	w := httptest.NewRecorder()
-	ctx, _ := gin.CreateTestContext(w)
-	ctx.Request = httptest.NewRequest(http.MethodGet, "/", nil)
-	ctx.Request.RemoteAddr = "1.2.3.4:1234"
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	c.Request.RemoteAddr = "1.2.3.4:1234"
 
-	handler(ctx)
+	handler(c)
 
 	if w.Code == http.StatusTooManyRequests {
 		t.Fatal("expected request to be allowed, got 429")
@@ -35,11 +35,11 @@ func TestRateLimiter_BlocksWhenExceeded(t *testing.T) {
 
 	makeRequest := func() int {
 		w := httptest.NewRecorder()
-		ctx, _ := gin.CreateTestContext(w)
+		c, _ := gin.CreateTestContext(w)
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.RemoteAddr = "5.6.7.8:4321"
-		ctx.Request = req
-		handler(ctx)
+		c.Request = req
+		handler(c)
 		return w.Code
 	}
 
@@ -60,11 +60,11 @@ func TestRateLimiter_DifferentIPsHaveSeparateLimits(t *testing.T) {
 
 	doRequest := func(ip string) int {
 		w := httptest.NewRecorder()
-		ctx, _ := gin.CreateTestContext(w)
+		c, _ := gin.CreateTestContext(w)
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.RemoteAddr = ip + ":80"
-		ctx.Request = req
-		handler(ctx)
+		c.Request = req
+		handler(c)
 		return w.Code
 	}
 
@@ -83,17 +83,17 @@ func TestRequestID_SetsHeaderAndContext(t *testing.T) {
 	handler := RequestID()
 
 	w := httptest.NewRecorder()
-	ctx, _ := gin.CreateTestContext(w)
-	ctx.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
 
-	handler(ctx)
+	handler(c)
 
 	id := w.Header().Get("X-Request-ID")
 	if id == "" {
 		t.Fatal("expected X-Request-ID header to be set")
 	}
 
-	ctxID := GetRequestID(ctx)
+	ctxID := GetRequestID(c)
 	if ctxID != id {
 		t.Fatalf("context request ID %q does not match header %q", ctxID, id)
 	}
@@ -105,12 +105,12 @@ func TestRequestID_PreservesExistingHeader(t *testing.T) {
 	handler := RequestID()
 
 	w := httptest.NewRecorder()
-	ctx, _ := gin.CreateTestContext(w)
+	c, _ := gin.CreateTestContext(w)
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("X-Request-ID", "existing-id")
-	ctx.Request = req
+	c.Request = req
 
-	handler(ctx)
+	handler(c)
 
 	if got := w.Header().Get("X-Request-ID"); got != "existing-id" {
 		t.Fatalf("expected existing-id to be preserved, got %q", got)
@@ -127,12 +127,12 @@ func TestRateLimiterWithRedis_NilRedisUsesLocalFallback(t *testing.T) {
 	}
 
 	w := httptest.NewRecorder()
-	ctx, _ := gin.CreateTestContext(w)
-	ctx.Request = httptest.NewRequest(http.MethodGet, "/", nil)
-	ctx.Request.RemoteAddr = "9.9.9.9:9090"
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	c.Request.RemoteAddr = "9.9.9.9:9090"
 
 	// Should not panic, should allow the request.
-	handler(ctx)
+	handler(c)
 	if w.Code == http.StatusTooManyRequests {
 		t.Fatal("expected request to be allowed with generous limit")
 	}
@@ -142,10 +142,10 @@ func TestGetRequestID_EmptyWhenNotSet(t *testing.T) {
 	t.Parallel()
 
 	w := httptest.NewRecorder()
-	ctx, _ := gin.CreateTestContext(w)
-	ctx.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
 	// Do not call RequestID() handler — ID should be empty string.
-	if id := GetRequestID(ctx); id != "" {
+	if id := GetRequestID(c); id != "" {
 		t.Fatalf("expected empty string, got %q", id)
 	}
 }
@@ -158,11 +158,30 @@ func TestRateLimiter_ExpiresOldClients(t *testing.T) {
 
 	for i := range 5 {
 		w := httptest.NewRecorder()
-		ctx, _ := gin.CreateTestContext(w)
+		c, _ := gin.CreateTestContext(w)
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.RemoteAddr = "192.168.0." + string(rune('1'+i)) + ":80"
-		ctx.Request = req
-		handler(ctx)
+		c.Request = req
+		handler(c)
 	}
 	// No panic = pass.
+}
+
+func TestRateLimiterKeysByRoute(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	limiter := RateLimiter(rate.Every(time.Hour), 1) // one request per route, then blocked
+	r := gin.New()
+	r.POST("/a", limiter, func(c *gin.Context) { c.Status(http.StatusOK) })
+	r.POST("/b", limiter, func(c *gin.Context) { c.Status(http.StatusOK) })
+
+	for _, step := range []struct {
+		path string
+		want int
+	}{{"/a", http.StatusOK}, {"/a", http.StatusTooManyRequests}, {"/b", http.StatusOK}} {
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, step.path, nil))
+		if rec.Code != step.want {
+			t.Fatalf("%s: expected %d, got %d", step.path, step.want, rec.Code)
+		}
+	}
 }

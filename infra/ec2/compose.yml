@@ -1,0 +1,90 @@
+# Production stack on the EC2 instance: nginx in front of the web app and the API on one
+# domain, certbot for its certificate, and the monitoring agents.
+#
+# deploy.sh provides API_IMAGE, WEB_IMAGE, SITE_DOMAIN, ACME_EMAIL and STATE_DIR (env
+# files rendered from SSM, certificates, the ACME webroot). Log rotation for every
+# container is set once in /etc/docker/daemon.json (cloud-init).
+#
+# Single instance, so no Redis: rate limits and live updates work in memory. To run several
+# instances behind a load balancer, add a shared Redis (e.g. ElastiCache) and set REDIS_URL.
+name: twitter
+
+services:
+  # TLS termination and routing; the only container with published ports.
+  nginx:
+    image: nginx:1.28-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN}
+    volumes:
+      - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./nginx/reload-on-cert-change.sh:/docker-entrypoint.d/90-reload-on-cert-change.sh:ro
+      - ${STATE_DIR}/tls:/etc/nginx/tls:ro
+      - ${STATE_DIR}/acme:/var/www/acme:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/nginx-health"]
+      interval: 10s
+      timeout: 3s
+      start_period: 5s
+
+  # Issues and renews the Let's Encrypt certificate (see certbot.sh).
+  certbot:
+    image: certbot/certbot:v5.1.0
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/certbot.sh"]
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+      ACME_SERVER: ${ACME_SERVER:-} # empty = Let's Encrypt production
+      CERTBOT_FLAGS: ${CERTBOT_FLAGS:-}
+    volumes:
+      - ./certbot.sh:/certbot.sh:ro
+      - ${STATE_DIR}/letsencrypt:/etc/letsencrypt
+      - ${STATE_DIR}/acme:/var/www/acme
+      - ${STATE_DIR}/tls:/tls
+    depends_on: [nginx]
+
+  # Next.js (server rendering). It calls the API inside this network, not through nginx.
+  web:
+    image: ${WEB_IMAGE}
+    restart: unless-stopped
+    environment:
+      API_INTERNAL_URL: http://api:8080/api/v1
+      HOSTNAME: 0.0.0.0
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+
+  api:
+    image: ${API_IMAGE}
+    restart: unless-stopped
+    env_file: ${STATE_DIR}/api.env
+    healthcheck:
+      # Distroless image: the binary checks its own /readyz (database reachable).
+      test: ["CMD", "/app/api", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+
+  node-exporter:
+    profiles: [monitoring]
+    image: prom/node-exporter:v1.10.2
+    restart: unless-stopped
+    command: ["--path.procfs=/host/proc", "--path.sysfs=/host/sys", "--path.rootfs=/rootfs"]
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+
+  alloy:
+    profiles: [monitoring]
+    image: grafana/alloy:v1.14.0
+    restart: unless-stopped
+    env_file: ${STATE_DIR}/monitoring.env
+    command: ["run", "--storage.path=/var/lib/alloy/data", "--server.http.listen-addr=0.0.0.0:12345", "/etc/alloy/config.alloy"]
+    volumes:
+      - ./config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro

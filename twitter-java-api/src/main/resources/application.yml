@@ -1,56 +1,90 @@
-server:
-  port: 8080
-
+# Settings come from the same environment variables as twitter-go-api (see app.env.example),
+# so one app.env works for either backend. DATABASE_URL, HTTP_SERVER_ADDRESS, REDIS_URL and
+# LOG_LEVEL are translated into Spring properties by GoStyleEnvironment.
 spring:
+  application:
+    name: twitter-java-api
+  config:
+    import: optional:file:./app.env[.properties]
   threads:
     virtual:
       enabled: true
-  application:
-    name: twitter-java-api
-  servlet:
-    multipart:
-      max-file-size: 100MB
-      max-request-size: 100MB
-  datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/twitter_db}
-    username: ${DB_USER:root}
-    password: ${DB_PASSWORD:rootpass}
-    driver-class-name: org.postgresql.Driver
   jpa:
+    open-in-view: false
     hibernate:
       ddl-auto: validate
-#      ddl-auto: none
-    show-sql: false
-    properties:
-      hibernate:
-        # When you touch one lazy Entity, fetch the next 50 instantly.
-        default_batch_fetch_size: 50
-  security:
-    oauth2:
-      client:
-        registration:
-          google:
-            client-id: ${GOOGLE_OAUTH_CLIENT_ID}
-  cloud:
-    azure:
-      storage:
-        blob:
-          endpoint: https://${AZURE_STORAGE_ACCOUNT_NAME}.blob.core.windows.net
-          account-name: ${AZURE_STORAGE_ACCOUNT_NAME}
-          account-key: ${AZURE_STORAGE_ACCOUNT_ACCESS_KEY}
-          container-name: ${AZURE_STORAGE_CONTAINER_NAME:tweet-media}
   flyway:
     enabled: true
-  web:
-    error:
-      include-stacktrace: never
+    # V1 is byte-identical to the Go API's migration (CI checks this), so on a database the
+    # Go API already migrated, Flyway adopts the existing schema as V1 instead of failing.
+    baseline-on-migrate: true
+    baseline-version: 1
+  data:
+    redis:
+      repositories:
+        enabled: false
+  ai:
+    # Gemini through Spring AI. Without GEMINI_API_KEY, GoStyleEnvironment switches the
+    # models off (spring.ai.model.*=none) and the assistant reports itself unavailable.
+    google:
+      genai:
+        api-key: ${GEMINI_API_KEY:}
+        chat:
+          options:
+            model: ${GEMINI_CHAT_MODEL:gemini-2.5-flash}
+        embedding:
+          api-key: ${GEMINI_API_KEY:}
+          text:
+            options:
+              model: ${GEMINI_EMBEDDING_MODEL:gemini-embedding-2-preview}
+              dimensions: 768
+  mvc:
+    problemdetails:
+      enabled: false
+  jackson:
+    default-property-inclusion: always
 
-jwt:
-  # Secret must be 32+ chars. Run `openssl rand -base64 32` to generate one.
-  secret: 9a8b7c6d5e4f3g2h1i0j9k8l7m6n5o4p3q2r1s0t9u8v7w6x5y4z3a2b1c0d
-  access-expiration: 1800000   # 30 minutes (Short lived)
-  refresh-expiration: 2592000000 # 30 Days (Long lived)
+server:
+  # Behind a reverse proxy (nginx): trust X-Forwarded-For from private addresses only (client IPs for rate limits).
+  forward-headers-strategy: native
+  error:
+    include-stacktrace: never
+    whitelabel:
+      enabled: false
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      base-path: /
+      exposure:
+        include: prometheus
+      path-mapping:
+        prometheus: metrics
+
+springdoc:
+  swagger-ui:
+    path: /swagger/index.html
+  api-docs:
+    path: /swagger/doc.json
 
 app:
-  frontend:
-    url: ${FRONTEND_URL:http://localhost:3000}
+  environment: ${ENVIRONMENT:development}
+  allowed-origins: ${ALLOWED_ORIGINS:http://localhost:3000}
+  cookie-domain: ${COOKIE_DOMAIN:}
+  token-symmetric-key: ${TOKEN_SYMMETRIC_KEY:}
+  access-token-ttl: ${ACCESS_TOKEN_TTL:15m}
+  refresh-token-ttl: ${REFRESH_TOKEN_TTL:720h}
+  google-client-id: ${GOOGLE_CLIENT_ID:}
+  s3-bucket: ${S3_BUCKET_NAME:}
+  s3-region: ${S3_REGION:ap-southeast-1}
+  cloudfront-domain: ${CLOUDFRONT_DOMAIN:}
+  max-media-bytes: ${MAX_MEDIA_BYTES:104857600}
+  max-avatar-bytes: ${MAX_AVATAR_BYTES:5242880}
+  max-banner-bytes: ${MAX_BANNER_BYTES:10485760}
+  gemini-api-key: ${GEMINI_API_KEY:}
+  gemini-chat-model: ${GEMINI_CHAT_MODEL:gemini-2.5-flash}
+  gemini-embedding-model: ${GEMINI_EMBEDDING_MODEL:gemini-embedding-2-preview}
+  enable-rag: ${ENABLE_RAG:true}
+  # Tests turn this off; RateLimitIntegrationTest turns it back on.
+  rate-limits-enabled: ${RATE_LIMITS_ENABLED:true}

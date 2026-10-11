@@ -1,60 +1,50 @@
-output "vpc_id" {
-  description = "VPC ID"
-  value       = aws_vpc.this.id
+output "site_url" {
+  value = local.site_origin
 }
 
-output "ec2_public_ip" {
-  description = "Public IP of the API server"
-  value       = aws_instance.api.public_ip
+output "public_ip" {
+  description = "Elastic IP of the app host (the domain's A record)"
+  value       = aws_eip.app.public_ip
 }
 
 output "ec2_instance_id" {
-  description = "EC2 Instance ID (Required for GitHub Secrets and SSH)"
-  value       = aws_instance.api.id
+  description = "GitHub Actions variable EC2_INSTANCE_ID; shell: aws ssm start-session --target <id>"
+  value       = aws_instance.app.id
 }
 
-output "eice_id" {
-  description = "EC2 Instance Connect Endpoint ID"
-  value       = aws_ec2_instance_connect_endpoint.this.id
+output "ecr_api_repository" {
+  description = "GitHub Actions variable ECR_API_REPOSITORY"
+  value       = aws_ecr_repository.app["api"].repository_url
 }
 
-output "ssm_parameter_prefix" {
-  description = "Prefix for all application parameters in SSM"
-  value       = "/chmtwt/prod/"
+output "ecr_web_repository" {
+  description = "GitHub Actions variable ECR_WEB_REPOSITORY"
+  value       = aws_ecr_repository.app["web"].repository_url
+}
+
+output "github_deploy_role_arn" {
+  description = "GitHub Actions variable AWS_DEPLOY_ROLE_ARN"
+  value       = aws_iam_role.github_deploy.arn
 }
 
 output "rds_endpoint" {
-  description = "RDS connection endpoint (host:port)"
-  value       = aws_db_instance.this.endpoint
+  value = aws_db_instance.main.endpoint
 }
 
-output "rds_database_url" {
-  description = "Full PostgreSQL connection string"
-  value       = "postgresql://${var.db_username}:${var.db_password}@${aws_db_instance.this.endpoint}/${var.db_name}?sslmode=require"
-  sensitive   = true
-}
-
-output "s3_bucket_name" {
-  description = "S3 media bucket name"
-  value       = aws_s3_bucket.media.id
+output "media_bucket" {
+  value = aws_s3_bucket.media.id
 }
 
 output "cloudfront_domain" {
-  description = "CloudFront distribution domain for media"
-  value       = aws_cloudfront_distribution.media.domain_name
+  value = aws_cloudfront_distribution.media.domain_name
 }
 
-output "api_gateway_url" {
-  description = "API Gateway invoke URL"
-  value       = aws_apigatewayv2_api.this.api_endpoint
+output "dns_records" {
+  description = "Record to create when Route 53 doesn't manage the domain"
+  value       = local.manage_dns ? "Managed in Route 53." : "${var.domain} A ${aws_eip.app.public_ip}"
 }
 
-output "amplify_app_url" {
-  description = "Amplify Frontend URL"
-  value       = "https://${aws_amplify_branch.main.branch_name}.${aws_amplify_app.this.default_domain}"
-}
-
-output "allowed_frontend_origins" {
-  description = "Aggregated list of allowed frontend origins"
-  value       = local.frontend_origins
+output "deploy_bucket" {
+  description = "GitHub Actions variable DEPLOY_BUCKET"
+  value       = aws_s3_bucket.deploy.id
 }

@@ -1,6 +1,6 @@
 # Twitter Clone
 
-Full-stack Twitter/X clone with a Next.js frontend, Go backend, and production-ready AWS infrastructure managed by Terraform—featuring an AI assistant with RAG and a complete observability stack with Grafana Cloud.
+A full-stack Twitter/X clone: a Next.js frontend and a Go API (with an optional Spring Boot API that serves the same contract), PostgreSQL with pgvector, real-time notifications and direct messages, and an AI assistant that answers from recent posts (RAG with Gemini). AWS infrastructure is defined in Terraform, with monitoring through Grafana Cloud.
 
 <p align="center">
   <img src="docs/assets/app-preview.png" alt="App Preview" width="100%" style="border-radius: 8px;">
@@ -8,17 +8,16 @@ Full-stack Twitter/X clone with a Next.js frontend, Go backend, and production-r
 
 ## Features
 
-- **Authentication** — Google OAuth with JWT access & refresh tokens
+- **Authentication** — Google sign-in; the session lives in httpOnly cookies (short-lived JWT + rotating refresh token), renewed before server rendering
 - **Tweets** — Create, delete, like, retweet, and threaded replies
 - **Feeds** — "For You" global feed with **time-decay gravity algorithm** (weighing likes, retweets, and replies), following-only feed, and per-user profile feed
 - **Follow / Unfollow** — Follow users with follower & following lists
 - **Media Uploads** — S3 presigned-URL uploads served via CloudFront CDN
-- **Real-time Notifications** — Server-Sent Events (SSE) streaming with unread count
-- **Direct Messages** — Real-time conversations over WebSocket
+- **Real-time Updates** — one Server-Sent Events (SSE) stream for notifications and direct messages (fanned out across instances via Redis when several run)
+- **Direct Messages** — one-to-one conversations, delivered in real time over the same SSE stream
 - **Search** — Search users, tweets, and hashtags
 - **Trending & Discovery** — Trending hashtags and suggested users
-- **AI Assistant** — Context-aware chat powered by Gemini 2.5 Flash with personal timeline knowledge
-- **RAG (Retrieval-Augmented Generation)** — Automatic tweet vectorization via Gemini Embedding 2.0 and pgvector search for accurate context retrieval
+- **AI Assistant (RAG)** — streaming chat with Gemini that answers using related tweets: new tweets are queued in Postgres (same transaction as the tweet), embedded in the background, and retrieved with pgvector
 - **Observability** — Real-time metrics (Prometheus) and log aggregation (Loki) via Grafana Cloud
 
 ## Tech Stack
@@ -26,37 +25,100 @@ Full-stack Twitter/X clone with a Next.js frontend, Go backend, and production-r
 | Layer | Technologies |
 |---|---|
 | Frontend | Next.js (App Router), TypeScript, Tailwind CSS, TanStack Query, Zustand |
-| Backend | Go, Gin, PostgreSQL + sqlc, Redis |
-| Infrastructure | AWS (Amplify, API Gateway, EC2, RDS, S3, CloudFront, SQS, Lambda), Terraform, GitHub Actions |
+| Backend | Go, Gin, PostgreSQL + sqlc + pgvector, Redis (optional); optional Spring Boot API |
+| Infrastructure | AWS (EC2 + Docker Compose + nginx, RDS, S3, CloudFront, ECR, SSM, CloudWatch), Let's Encrypt (certbot), Terraform, GitHub Actions |
 | Observability | Grafana Cloud (Loki, Prometheus), Grafana Alloy, Node Exporter |
 
 ## Architecture
 
-![AWS Architecture](docs/assets/Chanom_Twitter_AWS_Architecture.jpg)
+How a request is served:
+
+```mermaid
+flowchart TB
+  user(["Browser"])
+  cf["CloudFront"]
+  s3[("S3 media<br/>private, OAC")]
+
+  subgraph ec2["EC2 · public subnet · Docker Compose"]
+    nginx["nginx · twitter.&lt;domain&gt;<br/>TLS, routing"]
+    certbot["certbot<br/>Let's Encrypt"]
+    web["Next.js<br/>server rendering"]
+    api["Go API<br/>+ embedding worker"]
+    nginx -- "/*" --> web
+    nginx -- "/api/*" --> api
+    certbot -. "certificate" .-> nginx
+    web -- "server render,<br/>internal network" --> api
+  end
+
+  subgraph priv["Private subnets · no internet route"]
+    rds[("RDS PostgreSQL 16<br/>+ pgvector")]
+  end
+  ext["Google OAuth · Gemini"]
+
+  user -- "pages, REST, SSE<br/>httpOnly cookies" --> nginx
+  user -- "media GET" --> cf --> s3
+  user -. "presigned PUT" .-> s3
+  api -- SQL --> rds
+  api -- HTTPS --> ext
+```
+
+How code ships:
+
+```mermaid
+flowchart LR
+  push(["git push main"]) --> ci["CI<br/>tests, lint, terraform"]
+  ci -- "passed" --> gha["Deploy workflow<br/>build web + API images"]
+  gha -- "push :sha" --> ecr[("ECR")]
+  gha -- "infra/ec2 files" --> s3[("S3 releases")]
+  gha -- "SSM Run Command<br/>twitter-deploy &lt;sha&gt;" --> ec2["EC2"]
+  ec2 -- "sync stack, pull images" --> s3
+  ec2 --> ecr
+  ec2 -- "render env files,<br/>record release" --> ssm[("SSM Parameter Store")]
+  gha -- "GET /readyz" --> ec2
+```
+
+- **One host, one domain:** nginx terminates TLS and routes `/api/*` to the API and everything else to Next.js. The web app and the API share an origin, so there is no CORS and the session cookies are plain first-party cookies. A certbot container issues and renews the Let's Encrypt certificate; nginx reloads itself when it changes.
+- **A release is one commit:** both images tagged with its SHA plus its `infra/ec2` files. Changing `compose.yml` or the nginx config is an ordinary deploy, not a new instance.
+- **Deploys check themselves:** every container has a health check; if the new release doesn't come up healthy within 3 minutes, the instance rolls back to the previous one and the workflow fails. A replaced instance redeploys the last good release on its own at first boot.
+- **Sessions in httpOnly cookies:** the browser sends them on every request and the Next.js server forwards them when it renders a page; JavaScript never sees a token.
+- **Async work without queues:** tweet embeddings are jobs in a Postgres table (`embedding_jobs`), enqueued in the same transaction as the tweet and processed by a worker inside the API (`FOR UPDATE SKIP LOCKED`). No SQS, Lambda or NAT.
+- **No public database:** RDS lives in private subnets with no internet route; only the app host's security group can reach it. Backups are kept for 7 days and the instance is protected from deletion.
+- **Scaling out later:** one instance keeps rate limits and live updates in memory. To run several instances behind a load balancer, add a shared Redis (ElastiCache) and set `REDIS_URL`; both APIs already support it.
 
 ## Observability
 
-We use **Grafana Cloud** for a "Single Pane of Glass" monitoring experience. The EC2 instance runs **Grafana Alloy** alongside **Node Exporter** to provide a unified view of hardware health, Go application performance, and real-time logs.
+Everything is code and every alert arrives by email.
+
+| What | How |
+|---|---|
+| **Metrics** | Grafana Alloy on the instance sends to Grafana Cloud: the API's metrics (by route), host metrics (Node Exporter), the embedding queue, and site-wide request rate, status codes and latency derived from nginx's JSON access logs |
+| **Logs** | Every container's logs go to Grafana Cloud Loki, labelled by service; nginx and the API share a request ID per request |
+| **Dashboard + alerts** | [`infra/grafana`](infra/grafana) (Terraform): the "Twitter overview" dashboard and alert rules for error rate, slow responses, API down / no metrics, disk, memory and the embedding queue |
+| **Uptime** | A Route 53 health check calls `https://twitter.<domain>/readyz` from several regions; a CloudWatch alarm emails you after 2 minutes of failures |
+| **Self-healing** | CloudWatch reboots the instance if its OS stops responding and moves it to healthy hardware if AWS's host fails; containers restart on their own; OS patches install weekly (SSM Patch Manager) |
+| **Database** | CloudWatch alarms for low storage, high CPU and low memory on RDS |
 
 ![Grafana Dashboard](docs/assets/grafana-dashboard.png)
 
 ## Prerequisites
 
-| Tool | Purpose |
+| Tool | Needed for |
 |---|---|
-| [Go](https://go.dev/dl/) | Backend API development |
-| [Node.js](https://nodejs.org/) (v18+) | Frontend development |
-| [Docker](https://www.docker.com/) | Local Postgres + Redis, and production deployment |
-| [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) | AWS resource management & SSH tunneling |
-| [Terraform](https://developer.hashicorp.com/terraform/install) (v1.5+) | Infrastructure provisioning |
-| [Make](https://www.gnu.org/software/make/) | Running Go API tasks (migrations, etc.) |
-| [Google Cloud Console](https://console.cloud.google.com/) | Google OAuth 2.0 Client ID for authentication |
-| [Google AI Studio](https://aistudio.google.com/) | Gemini API Key for Assistant & RAG |
+| [Docker](https://www.docker.com/) | Local Postgres + Redis; the Java tests; building images |
+| [Go](https://go.dev/dl/) 1.26+ | The Go API |
+| [Node.js](https://nodejs.org/) 22+ | The web app |
+| [Make](https://www.gnu.org/software/make/) | Go API tasks (`make run`, `make test`, `make sqlc`) |
+| [Google Cloud Console](https://console.cloud.google.com/) | A Google OAuth Client ID for sign-in |
+| [Google AI Studio](https://aistudio.google.com/) (optional) | A Gemini API key for the assistant |
+| JDK 25 (optional) | Only for the Java API |
+| [Terraform](https://developer.hashicorp.com/terraform/install) 1.10+ (optional) | Checking or provisioning the infrastructure |
+| [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) (optional) | Only for a real AWS deployment |
 
 **Install via Homebrew (macOS):**
 
 ```bash
-brew install go node docker awscli hashicorp/tap/terraform make
+brew install go node make hashicorp/tap/terraform
+brew install --cask docker
 ```
 
 ## Third-Party Setup
@@ -78,10 +140,9 @@ This project uses Google OAuth for authentication. You need to create a Client I
     - Select **Web application** as the Application type.
     - **Authorized JavaScript origins**:
       - `http://localhost:3000` (Local)
-      - `https://main.<app-id>.amplifyapp.com` (Production - update after deployment)
-    - **Authorized redirect URIs**:
-      - `http://localhost:3000/api/auth/callback/google`
-5.  **Copy Client ID**: Save the **Client ID**. You will need this for your `.env` files and Terraform variables.
+      - `https://twitter.<domain>` (Production)
+    - No redirect URI is needed: the app signs in with Google ID tokens.
+5.  **Copy Client ID**: Save the **Client ID**. You will need it in `twitter-go-api/app.env`, `twitter-next-web/.env.local` and the Terraform variables.
 
 ### 2. Google Gemini Setup (AI & RAG)
 
@@ -108,238 +169,220 @@ This project supports centralized logging and metrics via [Grafana Cloud](https:
 
 ## Local Development
 
-### 1. Start infra (Postgres + Redis)
+### 1. Start Postgres + Redis
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
-### 2. Run Go API
+### 2. Run the Go API
 
 ```bash
 cd twitter-go-api
-# Ensure you have created app.env from app.env.example
-make migrateup
-make run
+cp app.env.example app.env   # set TOKEN_SYMMETRIC_KEY (openssl rand -base64 48) and GOOGLE_CLIENT_ID
+make run                     # http://localhost:8080; migrations run at startup
 ```
 
-### 3. Run Next.js Web
+Swagger UI: http://localhost:8080/swagger/index.html (outside production). The optional Java API runs from the same `app.env` instead (see [`twitter-java-api/README.md`](twitter-java-api/README.md)); run one backend at a time.
+
+### 3. Run the web app
 
 ```bash
 cd twitter-next-web
+cp .example.env .env.local   # set NEXT_PUBLIC_GOOGLE_CLIENT_ID
 npm install
-npm run dev
+npm run dev                  # http://localhost:3000
 ```
 
-Web: `http://localhost:3000`
-API: `http://localhost:8080`
+Photo/video uploads also need an S3 bucket (`S3_BUCKET_NAME` + AWS credentials); everything else works without AWS. The assistant needs `GEMINI_API_KEY`.
+
+## Contributing
+
+- Enable the pre-commit hook (gofmt, `terraform fmt`, ESLint on staged files): `git config core.hooksPath .githooks`
+- Conventions for the Go API, web app and infra are in [`CLAUDE.md`](CLAUDE.md).
 
 ## Validation Commands
 
-Before pushing or deploying, ensure everything is correct:
+The same checks CI runs ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)):
 
-**Go API:**
 ```bash
-cd twitter-go-api
-go test ./...
+# Go API: integration tests need a throwaway Postgres (skipped without TEST_DATABASE_URL)
+docker run -d --name twitter-test-pg -p 55432:5432 -e POSTGRES_USER=test -e POSTGRES_PASSWORD=test \
+  -e POSTGRES_DB=twitter_test pgvector/pgvector:pg16
+cd twitter-go-api && go vet ./... && \
+  TEST_DATABASE_URL='postgres://test:test@localhost:55432/twitter_test?sslmode=disable' go test -race ./...
+
+# Web
+cd twitter-next-web && npm run lint && npx tsc --noEmit && npm test && npm run build
+
+# Java API (starts its own containers; needs Docker)
+cd twitter-java-api && ./mvnw verify
+
+# Terraform: all three modules, against mocked providers (no AWS or Grafana account)
+cd infra && terraform fmt -check -recursive && \
+  for d in bootstrap terraform grafana; do terraform -chdir=$d init -backend=false && terraform -chdir=$d validate; done && \
+  terraform -chdir=terraform test && terraform -chdir=grafana test
 ```
 
-**Next.js Web:**
-```bash
-cd twitter-next-web
-npx tsc --noEmit
-npm run lint
-```
+CI also lints the EC2 stack (`shellcheck`, `nginx -t`, `docker compose config`, Alloy config) and checks that generated code (sqlc, test fakes) is up to date.
 
 ## AWS Infrastructure
 
 | Service | Purpose |
 |---|---|
-| **Amplify** | Hosts & auto-deploys the Next.js frontend (SSR) |
-| **API Gateway** | HTTP API proxy to the backend EC2 instance |
-| **EC2** | Runs the Go API and observability agents (Grafana Alloy, Node Exporter) via Docker |
-| **RDS** | Managed PostgreSQL database with pgvector support (private subnet) |
-| **S3** | Media storage with presigned-URL uploads |
-| **CloudFront** | CDN for serving S3 media over HTTPS |
-| **SQS** | Buffers tweet creation events for asynchronous vectorization |
-| **Lambda** | Python-based worker that generates embeddings via Gemini and stores them in RDS |
-| **NAT Instance** | Provides cost-effective internet access for Lambda and RDS in private subnets |
-| **SSM Parameter Store** | Securely manages, stores, and injects runtime configuration into the Go API |
-| **Terraform** | Infrastructure as Code for all resources (using `.tftpl` templates for configuration) |
-| **GitHub Actions** | CI/CD pipeline pulling from GHCR and deploying via SSM Run Command |
+| **EC2** (t3.small + Elastic IP) | Docker Compose stack: nginx (TLS + routing), certbot, Next.js, Go API, Grafana Alloy, Node Exporter |
+| **RDS** | PostgreSQL 16 + pgvector, encrypted, private subnets, 7-day backups, deletion protection |
+| **S3 + CloudFront** | Media: presigned uploads to a private bucket, served through CloudFront (OAC) |
+| **ECR** | Web and API images, tagged by commit SHA (immutable) |
+| **S3 (releases)** | Each commit's `infra/ec2` files, fetched by the instance at deploy time |
+| **SSM** | Parameter Store for runtime config, secrets and the current release; Session Manager for shell access and DB tunnels (no SSH port); Patch Manager for weekly OS updates |
+| **CloudWatch + SNS** | Uptime check (Route 53 health check), instance auto-recovery and reboot, RDS alarms; alerts by email |
+| **IAM OIDC** | GitHub Actions deploys with short-lived credentials (no stored AWS keys) |
+| **Route 53** (optional) | DNS for `twitter.<domain>`; any DNS provider works |
+
+Roughly $35–45/month: EC2 t3.small, RDS db.t4g.micro and the public IPv4 address make up nearly all of it.
+
+Terraform lives in [`infra/terraform`](infra/terraform) (one file per concern: `network.tf`, `ec2.tf`, `rds.tf`, `storage.tf`, `deploy.tf`, `alerts.tf`, `ssm.tf`, `ecr.tf`, `github.tf`, `dns.tf`), the Grafana dashboard and alerts in [`infra/grafana`](infra/grafana), and the files that run on the host in [`infra/ec2`](infra/ec2).
 
 ## AWS Setup
 
-> You need an [AWS account](https://aws.amazon.com/free/) to deploy this project.
+> You need an [AWS account](https://aws.amazon.com/free/) and a domain you control.
 
-### 1. Create an IAM user for Terraform
+### 1. AWS CLI credentials
 
-1. Go to the [IAM Console](https://console.aws.amazon.com/iam/) → Users → **Create user**
-2. Attach the **AdministratorAccess** policy (for a learning project; use least-privilege in production)
-3. Create an **Access Key** (select "CLI" use case) and save the Access Key ID and Secret
-
-### 2. Configure AWS CLI
+Use an admin identity for Terraform, preferably IAM Identity Center:
 
 ```bash
-aws configure
+aws configure sso   # or: aws configure (IAM user access key)
 ```
 
-Enter your Access Key ID, Secret, region (`ap-southeast-1`), and output format (`json`).
+For shell access to the instance, also install the [Session Manager plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html) (`brew install --cask session-manager-plugin`).
+
+### 2. State bucket (once per account)
+
+```bash
+cd infra/bootstrap
+terraform init && terraform apply
+terraform output state_bucket
+```
 
 ### 3. Provision infrastructure
 
 ```bash
 cd infra/terraform
-cp terraform.tfvars.example terraform.tfvars  # Fill in your values
-terraform init
-terraform plan     # Review what will be created
-terraform apply    # Create all resources (~5 min)
+cp backend.hcl.example backend.hcl            # set bucket = <state_bucket>
+cp terraform.tfvars.example terraform.tfvars  # fill in your values
+terraform init -backend-config=backend.hcl
+terraform plan
+terraform apply                               # ~10 min (RDS is the slow part)
 ```
 
-> **Tip:** Use `terraform output` to view your infrastructure details at any time—it is a safe, read-only command.
+### 4. DNS
 
-To tear down all resources and **stop all AWS charges**:
+Without `route53_zone_id`, add the record from `terraform output dns_records` at your DNS provider: an `A` record for `twitter.<domain>` → the Elastic IP. certbot keeps retrying every 15 minutes and gets the certificate once the record resolves; until then nginx serves a temporary self-signed one.
+
+Also confirm the two "AWS Notification - Subscription Confirmation" emails (one per region) so alerts can reach you.
+
+### 5. GitHub Actions variables
+
+In **Settings → Secrets and variables → Actions → Variables**, add:
+
+| Variable | Value |
+|---|---|
+| `AWS_REGION` | e.g. `ap-southeast-1` |
+| `AWS_DEPLOY_ROLE_ARN` | `terraform output github_deploy_role_arn` |
+| `ECR_API_REPOSITORY` | `terraform output ecr_api_repository` |
+| `ECR_WEB_REPOSITORY` | `terraform output ecr_web_repository` |
+| `DEPLOY_BUCKET` | `terraform output deploy_bucket` |
+| `EC2_INSTANCE_ID` | `terraform output ec2_instance_id` |
+| `SITE_DOMAIN` | e.g. `twitter.chanombude.me` |
+| `GOOGLE_CLIENT_ID` | your OAuth client ID (compiled into the web app) |
+
+None of these are secrets. Then run the **Deploy** workflow once (Actions → Run workflow) to ship the first release.
+
+### 6. Grafana dashboard and alerts (optional)
+
+Create a free [Grafana Cloud](https://grafana.com/) stack, put its Prometheus/Loki push details in `terraform.tfvars` (the `grafana_cloud_*` variables) and `terraform apply` so Alloy starts shipping. Then, with a service account token (Administration → Service accounts, role Editor):
 
 ```bash
-terraform destroy
+cd infra/grafana
+cp terraform.tfvars.example terraform.tfvars   # stack URL, token, data source name, alert email
+terraform init -backend-config=../terraform/backend.hcl -backend-config="key=grafana.tfstate"
+terraform apply
 ```
 
+### Tear down
+
+RDS has deletion protection. Set `deletion_protection = false` in `rds.tf`, `terraform apply`, then:
+
+```bash
+cd infra/terraform && terraform destroy   # keeps a final DB snapshot; stops all other charges
+```
+
+Terraform checks run in CI without AWS credentials: `terraform fmt -check`, `validate`, and `terraform test` (plans the whole stack against a mocked AWS provider, see [`tests/`](infra/terraform/tests)).
 
 ## Deployment
 
-### Frontend — AWS Amplify
+[`deploy.yml`](.github/workflows/deploy.yml) runs when CI passes on `main` (and is skipped until the `AWS_DEPLOY_ROLE_ARN` variable exists, i.e. before the infrastructure is provisioned):
 
-The frontend is deployed automatically via **AWS Amplify**, configured through Terraform ([`amplify.tf`](infra/terraform/amplify.tf)).
+1. **Build & push** the web and API images to ECR, both tagged with the commit SHA
+2. **Upload** that commit's `infra/ec2` files to the releases bucket
+3. **Deploy**: SSM Run Command runs [`twitter-deploy <sha>`](infra/ec2/twitter-deploy) on the instance. It fetches the stack files, and the commit's [`deploy.sh`](infra/ec2/deploy.sh) renders the env files from SSM Parameter Store, pulls both images, runs `docker compose up --wait` and records the release. If the health checks fail, it redeploys the previous release and the workflow fails
+4. **Verify**: polls `https://twitter.<domain>/readyz` and the home page
 
-**How it works:**
+**Roll back by hand:** Actions → Deploy → Run workflow with `image_tag` set to an earlier commit SHA (skips the build, reuses that release's files).
 
-1. Amplify connects to the GitHub repository using a Personal Access Token
-2. On every push to `main`, Amplify auto-builds the Next.js app:
-   - Runs `npm ci` and `npm run build` inside `twitter-next-web/`
-   - Deploys as a Server-Side Rendered (SSR) application (`WEB_COMPUTE` platform)
-3. Environment variables (e.g. `NEXT_PUBLIC_API_URL`) are injected by Terraform from the API Gateway stage URL
+**Change a setting:** edit `terraform.tfvars`, `terraform apply` (updates SSM), then re-run the deploy (or `sudo twitter-deploy <sha>` on the host) so the containers pick it up.
 
-**Amplify default URL pattern:** `https://<branch>.<app-id>.amplifyapp.com`
-
-### Backend — GitHub Actions → EC2
-
-The Go API is deployed via the [`deploy-go-api.yml`](.github/workflows/deploy-go-api.yml) GitHub Actions workflow.
-
-**Trigger:** Push to `main` when `twitter-go-api/**` changes, or manual dispatch.
-
-**Pipeline:**
-
-1. **Test** — Sets up Go and runs `go test ./...`
-2. **Build & Push** — Builds a Docker image and pushes it to GitHub Container Registry (GHCR)
-3. **Deploy** — Sends commands to EC2 via **AWS SSM** (no SSH key needed), pulls the latest image, and restarts the container via `docker compose`
-
-**Required GitHub Secrets:**
-
-| Secret | Description |
-|---|---|
-| `AWS_ACCESS_KEY_ID` | IAM access key for SSM commands |
-| `AWS_SECRET_ACCESS_KEY` | IAM secret key |
-| `AWS_REGION` | AWS region (e.g. `ap-southeast-1`) |
-| `EC2_INSTANCE_ID` | EC2 instance ID (e.g. `i-0e83a1b99...`) |
-| `GHCR_PAT` | GitHub PAT with `read:packages` scope for pulling from GHCR |
+**Certificates:** nothing to do. certbot checks twice a day and renews 30 days before expiry; nginx reloads within a minute.
 
 ## AWS Access
 
-### SSH into EC2
+### Shell on the instance
 
-Connect to the EC2 instance using the **EC2 Instance Connect Endpoint** (no `.pem` key needed):
-
-```bash
-aws ec2-instance-connect ssh --instance-id [INSTANCE_ID] --connection-type eice
-```
-
-**Alternative (Web Portal):**
-1. Go to **AWS Console** &rarr; **EC2** &rarr; **Instances**
-2. Select your instance and click **Connect**
-3. Select the **EC2 Instance Connect** tab
-4. **Connection Type**: Select **"Connect using a Private IP"**
-5. **EC2 Instance Connect Endpoint**: Select your endpoint from the dropdown (e.g., `eice-xxxx...`)
-6. Click **Connect** to open a terminal in your browser.
-
-### Monitoring Startup Logs (Initialization)
-
-When Terraform creates an EC2 instance, it is initially only "hardware-ready." It takes an additional 2-3 minutes for the software (Docker, API, monitoring agents) to finish installing and starting up.
-
-To watch the progress of your startup scripts in real-time:
-
-1. **SSH into the instance** (as shown above).
-2. Run this command to follow the initialization logs:
+Through **Session Manager** (no SSH port, no key pairs):
 
 ```bash
-tail -f /var/log/cloud-init-output.log
+aws ssm start-session --target $(terraform output -raw ec2_instance_id)
 ```
 
-**Common "Early-login" Issues:**
-* `docker: command not found` &rarr; The installer is still running.
-* `Cannot connect to Docker daemon` &rarr; Docker service is still booting.
-* `No data` in Grafana &rarr; The monitoring agent hasn't reached the configuration step yet.
+Or in the console: **EC2 → Instances → Connect → Session Manager**.
 
-Once you see the **"✅ Setup Complete!"** message in the log, your server is 100% ready.
-
-### Troubleshooting SSH & RDS Connections
-
-If you see the error **`WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!`** when connecting or tunneling, the EC2 instance has been recreated and is reusing a previously known IP address.
-
-**The Fix:**
-Clear the stale host key from your local `known_hosts` file:
+On the host:
 
 ```bash
-ssh-keygen -R [INSTANCE_IP]
-# Example: ssh-keygen -R 10.0.0.82
+cd /opt/twitter/stack                         # the current release's files
+sudo docker compose ps
+sudo docker compose logs -f api web nginx
+sudo tail -f /var/log/cloud-init-output.log   # first-boot setup progress (~2-3 min)
 ```
 
-After running this, re-run the `aws ec2-instance-connect ssh` command and type **"yes"** when prompted to confirm the new key.
+### Connect to RDS
 
-### Connect to RDS (via SSH tunnel)
-
-RDS is located in a private subnet and cannot be accessed directly. Use the EC2 instance as a bastion host to create a secure SSH tunnel:
+RDS has no public access. Forward a local port through the instance:
 
 ```bash
-aws ec2-instance-connect ssh \
-    --instance-id [INSTANCE_ID] \
-    --connection-type eice \
-    --local-forwarding 5433:[RDS_ENDPOINT]:5432
+aws ssm start-session \
+    --target $(terraform output -raw ec2_instance_id) \
+    --document-name AWS-StartPortForwardingSessionToRemoteHost \
+    --parameters "host=$(terraform output -raw rds_endpoint | cut -d: -f1),portNumber=5432,localPortNumber=5433"
 ```
 
-This forwards your local port `5433` to RDS port `5432` through the EC2 instance. Port `5433` is used to avoid conflicts with any local PostgreSQL instance running on `5432`.
-
-**Keep the terminal window open**, then connect with your database tool (DBeaver, TablePlus, etc.):
-
-| Setting | Value |
-|---|---|
-| Host | `127.0.0.1` |
-| Port | `5433` |
-| Database | `twitter_db` |
-| Username | _(from `terraform.tfvars`)_ |
-| Password | _(from `terraform.tfvars`)_ |
-
-> [!TIP]
-> Add `-- -N` at the end to open the tunnel in the background without dropping into the EC2 shell:
-> ```bash
-> aws ec2-instance-connect ssh \
->     --instance-id [INSTANCE_ID] \
->     --connection-type eice \
->     --local-forwarding 5433:[RDS_ENDPOINT]:5432 \
->     -- -N
-> ```
+Then connect your DB tool to `127.0.0.1:5433`, database `twitter_db`, with the credentials from `terraform.tfvars` (port `5433` avoids clashing with a local Postgres).
 
 ## Project Structure
 
 ```
 ├── twitter-next-web/    # Next.js frontend
 ├── twitter-go-api/      # Go backend (primary)
-├── twitter-java-api/    # Java backend (legacy/alternative)
+├── twitter-java-api/    # Optional Spring Boot backend: same API and schema as the Go one
 ├── infra/
-│   ├── terraform/       # AWS infrastructure (Terraform)
-│   ├── lambda/          # Python Lambda functions (Embeddings worker)
-│   └── ec2/             # Docker Compose templates (.tftpl) & Alloy configuration
-├── docs/
-│   └── assets/          # Architecture diagrams & Monitoring screenshots
-├──.github/workflows/   # CI/CD pipelines (GitHub Actions)
-└── docker-compose.yml   # Local development (Postgres & Redis)
+│   ├── bootstrap/       # One-time: S3 bucket for Terraform state
+│   ├── terraform/       # AWS infrastructure (+ tests/ with a mocked-provider plan)
+│   ├── grafana/         # Grafana Cloud dashboard and alert rules (Terraform)
+│   └── ec2/             # What runs on the host: compose.yml, nginx config, certbot, Alloy config, deploy scripts
+├── docs/assets/         # Screenshots used in this README
+├── .github/workflows/   # CI (tests, lint, Terraform checks) and the deploy pipeline
+├── .githooks/           # pre-commit: gofmt, terraform fmt, ESLint on staged files
+└── docker-compose.yml   # Local development (Postgres + pgvector, Redis)
 ```

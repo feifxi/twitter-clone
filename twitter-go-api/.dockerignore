@@ -1,0 +1,7 @@
+# Keep secrets and local artefacts out of the build context.
+app.env
+.env*
+*.out
+coverage*
+tmp/
+.git

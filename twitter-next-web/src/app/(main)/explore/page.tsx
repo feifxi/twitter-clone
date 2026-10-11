@@ -1,71 +1,46 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { Search, ArrowLeft } from 'lucide-react';
-
-import { useTrendingHashtags } from '@/hooks/useDiscovery';
 import Link from 'next/link';
+import { EmptyState, ErrorState } from '@/components/ListStates';
+import { SearchBox } from '@/components/SearchBox';
+import { useTrendingHashtags } from '@/hooks/useDiscovery';
+import { formatCount } from '@/lib/format';
 
 export default function ExplorePage() {
-  const router = useRouter();
-  const [query, setQuery] = useState('');
-  const { data: trending, isLoading: trendingLoading } = useTrendingHashtags(20);
-
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (query.trim()) {
-      router.push(`/search?q=${encodeURIComponent(query)}`);
-    }
-  };
+  const trending = useTrendingHashtags(20);
 
   return (
     <div className="min-h-screen">
-      {/* Search Bar Header */}
-      <div className="sticky top-0 z-30 bg-background/60 backdrop-blur-md border-b border-border px-4 py-3 flex items-center gap-4">
-        <div 
-            onClick={() => router.back()} 
-            className="p-2 rounded-full hover:bg-card cursor-pointer transition-colors -ml-2"
-        >
-            <ArrowLeft className="w-5 h-5 text-foreground" />
-        </div>
-        <form onSubmit={handleSearch} className="relative flex-1">
-          <div className="flex items-center gap-2 rounded-full bg-secondary/50 border border-border focus-within:border-primary focus-within:bg-background px-4 py-2.5 transition-colors">
-            <Search className="w-5 h-5 text-muted-foreground shrink-0 focus-within:text-primary" />
-            <input
-              type="search"
-              placeholder="Search Twitter"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className="flex-1 min-w-0 bg-transparent text-foreground text-[15px] placeholder:text-muted-foreground outline-none border-none"
-            />
-          </div>
-        </form>
-      </div>
+      <header className="sticky top-0 z-30 border-b border-border bg-background/80 px-4 py-1.5 backdrop-blur-md">
+        <SearchBox />
+      </header>
 
-      {/* Trending List */}
-      <h1 className="text-xl font-bold p-4 border-b border-border">Trends for you</h1>
-      
-      {trendingLoading ? (
-         <div className="p-4 space-y-4">
-            {[1, 2, 3, 4, 5].map((i) => (
-                <div key={i} className="h-16 bg-card/30 rounded-lg animate-pulse" />
-            ))}
-         </div>
-      ) : (
-          <div>
-              {trending?.map((item) => (
-                <Link
-                    key={item.text}
-                    href={`/search?q=${encodeURIComponent('#' + item.text)}`}
-                    className="block px-4 py-3 hover:bg-card transition-colors border-b border-border"
-                >
-                    <div className="text-[13px] text-muted-foreground">Trending</div>
-                    <div className="font-bold text-foreground text-[16px]">#{item.text}</div>
-                    <div className="text-[13px] text-muted-foreground">{item.usageCount} posts</div>
-                </Link>
-              ))}
+      <h1 className="px-4 py-3 text-[20px] font-extrabold">Trends for you</h1>
+      {trending.isPending ? (
+        Array.from({ length: 6 }, (_, i) => (
+          <div key={i} className="animate-pulse space-y-2 px-4 py-3" aria-hidden="true">
+            <div className="h-3 w-24 rounded bg-muted" />
+            <div className="h-4 w-40 rounded bg-muted" />
           </div>
+        ))
+      ) : trending.isError ? (
+        <ErrorState onRetry={() => trending.refetch()} />
+      ) : !trending.data?.length ? (
+        <EmptyState title="No trends yet" body="Hashtags people use in their posts show up here." />
+      ) : (
+        <ol>
+          {trending.data.map((tag, i) => (
+            <li key={tag.text}>
+              <Link href={`/search?q=${encodeURIComponent(`#${tag.text}`)}`} className="block px-4 py-3 transition-colors hover:bg-foreground/[0.03]">
+                <p className="text-[13px] text-muted-foreground">{i + 1} · Trending</p>
+                <p className="text-[15px] font-bold">#{tag.text}</p>
+                <p className="text-[13px] text-muted-foreground">
+                  {formatCount(tag.usageCount)} {tag.usageCount === 1 ? 'post' : 'posts'}
+                </p>
+              </Link>
+            </li>
+          ))}
+        </ol>
       )}
     </div>
   );

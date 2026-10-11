@@ -22,39 +22,37 @@ type client struct {
 // RateLimiter provides in-memory token-bucket limiting (single-instance).
 func RateLimiter(r rate.Limit, b int) gin.HandlerFunc {
 	var (
-		mu      sync.Mutex
-		clients = make(map[string]*client)
+		mu        sync.Mutex
+		clients   = make(map[string]*client)
+		lastSweep = time.Now()
 	)
 
-	go func() {
-		for {
-			time.Sleep(time.Minute)
-			mu.Lock()
-			for ip, c := range clients {
-				if time.Since(c.lastSeen) > 3*time.Minute {
-					delete(clients, ip)
+	return func(c *gin.Context) {
+		// Per route and client, matching the Redis limiter's key.
+		key := c.FullPath() + "|" + c.ClientIP()
+		mu.Lock()
+		// Forget idle clients now and then (here rather than in a goroutine that would outlive the limiter).
+		if now := time.Now(); now.Sub(lastSweep) > time.Minute {
+			for k, cl := range clients {
+				if now.Sub(cl.lastSeen) > 3*time.Minute {
+					delete(clients, k)
 				}
 			}
-			mu.Unlock()
+			lastSweep = now
 		}
-	}()
-
-	return func(ctx *gin.Context) {
-		ip := ctx.ClientIP()
-		mu.Lock()
-		if _, found := clients[ip]; !found {
-			clients[ip] = &client{limiter: rate.NewLimiter(r, b)}
+		if _, found := clients[key]; !found {
+			clients[key] = &client{limiter: rate.NewLimiter(r, b)}
 		}
-		clients[ip].lastSeen = time.Now()
-		limiter := clients[ip].limiter
+		clients[key].lastSeen = time.Now()
+		limiter := clients[key].limiter
 		mu.Unlock()
 
 		if !limiter.Allow() {
-			abortWithError(ctx, http.StatusTooManyRequests, "TOO_MANY_REQUESTS", "rate limit exceeded")
+			abortWithError(c, http.StatusTooManyRequests, "TOO_MANY_REQUESTS", "rate limit exceeded")
 			return
 		}
 
-		ctx.Next()
+		c.Next()
 	}
 }
 
@@ -79,51 +77,51 @@ func RateLimiterWithRedis(redisClient *redis.Client, r rate.Limit, b int, prefix
 		windowSeconds = 1
 	}
 
-	return func(ctx *gin.Context) {
-		path := ctx.FullPath()
+	return func(c *gin.Context) {
+		path := c.FullPath()
 		if path == "" {
-			path = ctx.Request.URL.Path
+			path = c.Request.URL.Path
 		}
-		key := fmt.Sprintf("%s:%s:%s", prefix, path, ctx.ClientIP())
+		key := fmt.Sprintf("%s:%s:%s", prefix, path, c.ClientIP())
 
-		redisCtx, cancel := context.WithTimeout(ctx.Request.Context(), 200*time.Millisecond)
+		redisCtx, cancel := context.WithTimeout(c.Request.Context(), 200*time.Millisecond)
 		defer cancel()
 
 		raw, err := redisWindowScript.Run(redisCtx, redisClient, []string{key}, windowSeconds).Result()
 		if err != nil {
-			localFallback(ctx)
+			localFallback(c)
 			return
 		}
 
 		results, ok := raw.([]any)
 		if !ok || len(results) != 2 {
-			localFallback(ctx)
+			localFallback(c)
 			return
 		}
 
 		current, okCurrent := toInt64(results[0])
 		ttl, okTTL := toInt64(results[1])
 		if !okCurrent || !okTTL {
-			localFallback(ctx)
+			localFallback(c)
 			return
 		}
 
 		limit := int64(b)
-		ctx.Header("X-RateLimit-Limit", strconv.FormatInt(limit, 10))
+		c.Header("X-RateLimit-Limit", strconv.FormatInt(limit, 10))
 		remaining := limit - current
 		if remaining < 0 {
 			remaining = 0
 		}
-		ctx.Header("X-RateLimit-Remaining", strconv.FormatInt(remaining, 10))
+		c.Header("X-RateLimit-Remaining", strconv.FormatInt(remaining, 10))
 
 		if current > limit {
 			retryAfter := max(ttl, 1)
-			ctx.Header("Retry-After", strconv.FormatInt(retryAfter, 10))
-			abortWithError(ctx, http.StatusTooManyRequests, "TOO_MANY_REQUESTS", "rate limit exceeded")
+			c.Header("Retry-After", strconv.FormatInt(retryAfter, 10))
+			abortWithError(c, http.StatusTooManyRequests, "TOO_MANY_REQUESTS", "rate limit exceeded")
 			return
 		}
 
-		ctx.Next()
+		c.Next()
 	}
 }
 

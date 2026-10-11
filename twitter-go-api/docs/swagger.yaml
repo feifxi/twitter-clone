@@ -1,33 +1,49 @@
 basePath: /api/v1
 definitions:
-  apperr.FieldError:
-    properties:
-      field:
-        type: string
-      message:
-        type: string
-    type: object
-  server.AuthResponse:
-    properties:
-      accessToken:
-        type: string
-      refreshToken:
-        type: string
-      user:
-        $ref: '#/definitions/server.UserResponse'
-    type: object
-  server.ConversationResponse:
+  api.ConversationResponse:
     properties:
       id:
         type: integer
       lastMessage:
-        $ref: '#/definitions/server.MessageResponse'
+        $ref: '#/definitions/api.MessageResponse'
       peer:
-        $ref: '#/definitions/server.UserResponse'
+        $ref: '#/definitions/api.UserResponse'
       updatedAt:
         type: string
     type: object
-  server.ErrorResponse:
+  api.CurrentUserResponse:
+    properties:
+      avatarUrl:
+        type: string
+      bannerUrl:
+        type: string
+      bio:
+        type: string
+      createdAt:
+        type: string
+      displayName:
+        type: string
+      email:
+        type: string
+      followersCount:
+        type: integer
+      followingCount:
+        type: integer
+      id:
+        type: integer
+      isFollowing:
+        type: boolean
+      location:
+        type: string
+      onboarded:
+        description: Onboarded is false until the user has chosen their own username.
+        type: boolean
+      username:
+        type: string
+      website:
+        type: string
+    type: object
+  api.ErrorResponse:
     properties:
       code:
         type: string
@@ -40,7 +56,19 @@ definitions:
       requestId:
         type: string
     type: object
-  server.HashtagResponse:
+  api.FeedItemResponse:
+    properties:
+      kind:
+        enum:
+        - tweet
+        - retweet
+        type: string
+      retweet:
+        $ref: '#/definitions/api.RetweetResponse'
+      tweet:
+        $ref: '#/definitions/api.TweetResponse'
+    type: object
+  api.HashtagResponse:
     properties:
       createdAt:
         type: string
@@ -53,7 +81,18 @@ definitions:
       usageCount:
         type: integer
     type: object
-  server.MessageResponse:
+  api.HealthResponse:
+    properties:
+      checks:
+        additionalProperties:
+          type: string
+        description: Checks maps each dependency to "ok" or "error"; failure details
+          are logged, not exposed.
+        type: object
+      status:
+        type: string
+    type: object
+  api.MessageResponse:
     properties:
       content:
         type: string
@@ -64,12 +103,12 @@ definitions:
       id:
         type: integer
       sender:
-        $ref: '#/definitions/server.UserResponse'
+        $ref: '#/definitions/api.UserResponse'
     type: object
-  server.NotificationResponse:
+  api.NotificationResponse:
     properties:
       actor:
-        $ref: '#/definitions/server.UserResponse'
+        $ref: '#/definitions/api.UserResponse'
       createdAt:
         type: string
       id:
@@ -91,67 +130,94 @@ definitions:
       type:
         type: string
     type: object
-  server.PageResponse-server_ConversationResponse:
+  api.PageResponse-api_ConversationResponse:
     properties:
       hasNext:
         type: boolean
       items:
         items:
-          $ref: '#/definitions/server.ConversationResponse'
+          $ref: '#/definitions/api.ConversationResponse'
         type: array
       nextCursor:
         type: string
     type: object
-  server.PageResponse-server_MessageResponse:
+  api.PageResponse-api_FeedItemResponse:
     properties:
       hasNext:
         type: boolean
       items:
         items:
-          $ref: '#/definitions/server.MessageResponse'
+          $ref: '#/definitions/api.FeedItemResponse'
         type: array
       nextCursor:
         type: string
     type: object
-  server.PageResponse-server_NotificationResponse:
+  api.PageResponse-api_MessageResponse:
     properties:
       hasNext:
         type: boolean
       items:
         items:
-          $ref: '#/definitions/server.NotificationResponse'
+          $ref: '#/definitions/api.MessageResponse'
         type: array
       nextCursor:
         type: string
     type: object
-  server.PageResponse-server_TweetResponse:
+  api.PageResponse-api_NotificationResponse:
     properties:
       hasNext:
         type: boolean
       items:
         items:
-          $ref: '#/definitions/server.TweetResponse'
+          $ref: '#/definitions/api.NotificationResponse'
         type: array
       nextCursor:
         type: string
     type: object
-  server.PageResponse-server_UserResponse:
+  api.PageResponse-api_TweetResponse:
     properties:
       hasNext:
         type: boolean
       items:
         items:
-          $ref: '#/definitions/server.UserResponse'
+          $ref: '#/definitions/api.TweetResponse'
         type: array
       nextCursor:
         type: string
     type: object
-  server.SuccessResponse:
+  api.PageResponse-api_UserResponse:
+    properties:
+      hasNext:
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/api.UserResponse'
+        type: array
+      nextCursor:
+        type: string
+    type: object
+  api.PresignResponse:
+    properties:
+      objectKey:
+        type: string
+      presignedUrl:
+        type: string
+    type: object
+  api.RetweetResponse:
+    properties:
+      createdAt:
+        type: string
+      id:
+        type: integer
+      retweeter:
+        $ref: '#/definitions/api.UserResponse'
+    type: object
+  api.SuccessResponse:
     properties:
       success:
         type: boolean
     type: object
-  server.TweetResponse:
+  api.TweetResponse:
     properties:
       content:
         type: string
@@ -177,12 +243,15 @@ definitions:
         type: string
       retweetCount:
         type: integer
-      retweetedTweet:
-        $ref: '#/definitions/server.TweetResponse'
       user:
-        $ref: '#/definitions/server.UserResponse'
+        $ref: '#/definitions/api.UserResponse'
     type: object
-  server.UserResponse:
+  api.UnreadCountResponse:
+    properties:
+      count:
+        type: integer
+    type: object
+  api.UserResponse:
     properties:
       avatarUrl:
         type: string
@@ -190,9 +259,9 @@ definitions:
         type: string
       bio:
         type: string
-      displayName:
+      createdAt:
         type: string
-      email:
+      displayName:
         type: string
       followersCount:
         type: integer
@@ -202,54 +271,91 @@ definitions:
         type: integer
       isFollowing:
         type: boolean
+      location:
+        type: string
       username:
         type: string
+      website:
+        type: string
     type: object
-  server.createTweetRequest:
+  api.assistantHistoryItem:
+    properties:
+      role:
+        enum:
+        - user
+        - model
+        - assistant
+        type: string
+      text:
+        maxLength: 4000
+        type: string
+    required:
+    - role
+    type: object
+  api.assistantRequest:
+    properties:
+      history:
+        items:
+          $ref: '#/definitions/api.assistantHistoryItem'
+        maxItems: 100
+        type: array
+      query:
+        maxLength: 4000
+        type: string
+    required:
+    - query
+    type: object
+  api.createTweetRequest:
     properties:
       content:
         maxLength: 280
         type: string
       mediaKey:
-        type: string
-      mediaType:
-        enum:
-        - IMAGE
-        - VIDEO
+        maxLength: 200
         type: string
       parentId:
         minimum: 1
         type: integer
     type: object
-  server.googleLoginRequest:
+  api.googleLoginRequest:
     properties:
       idToken:
         type: string
     required:
     - idToken
     type: object
-  server.presignRequest:
+  api.onboardingRequest:
+    properties:
+      displayName:
+        maxLength: 50
+        type: string
+      username:
+        maxLength: 20
+        minLength: 3
+        type: string
+    required:
+    - displayName
+    - username
+    type: object
+  api.presignRequest:
     properties:
       contentLength:
         minimum: 1
         type: integer
       contentType:
         type: string
-      filename:
-        type: string
       folder:
+        enum:
+        - tweets
+        - avatars
+        - banners
         type: string
     required:
+    - contentLength
     - contentType
-    - filename
     - folder
     type: object
-  server.refreshTokenRequest:
-    properties:
-      refreshToken:
-        type: string
-    type: object
-  server.sendMessageRequest:
+  api.sendMessageRequest:
     properties:
       content:
         maxLength: 2000
@@ -257,37 +363,33 @@ definitions:
     required:
     - content
     type: object
-  server.updateProfileRequest:
+  api.updateProfileRequest:
     properties:
       avatarKey:
+        maxLength: 200
         type: string
       bannerKey:
+        maxLength: 200
         type: string
       bio:
         maxLength: 160
         type: string
       displayName:
+        maxLength: 50
+        type: string
+      location:
         maxLength: 30
         type: string
-    type: object
-  usecase.AssistantHistoryItem:
-    properties:
-      role:
-        description: '"user" or "model" (for Gemini)'
-        type: string
-      text:
+      website:
+        maxLength: 100
         type: string
     type: object
-  usecase.AssistantInput:
+  apperr.FieldError:
     properties:
-      history:
-        items:
-          $ref: '#/definitions/usecase.AssistantHistoryItem'
-        type: array
-      query:
+      field:
         type: string
-    required:
-    - query
+      message:
+        type: string
     type: object
 host: localhost:8080
 info:
@@ -306,15 +408,16 @@ paths:
     post:
       consumes:
       - application/json
-      description: Interact with the Gemini-powered AI assistant. It provides streaming
-        responses (SSE) and has access to recent tweet context via RAG.
+      description: 'Interact with the Gemini-powered AI assistant. Streams Server-Sent
+        Events: each `data:` line is a JSON `{"text": "..."}` chunk; the stream ends
+        with `event: done`, or `event: error` with `{"message": "..."}`.'
       parameters:
       - description: Chat query and history
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/usecase.AssistantInput'
+          $ref: '#/definitions/api.assistantRequest'
       produces:
       - text/event-stream
       responses:
@@ -325,7 +428,7 @@ paths:
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
       security:
       - BearerAuth: []
       summary: AI Assistant Chat (SSE)
@@ -335,52 +438,40 @@ paths:
     post:
       consumes:
       - application/json
-      description: Exchange a Google ID token for a JWT access and refresh token.
+      description: Exchange a Google ID token for a session. The access and refresh
+        tokens are set as httpOnly cookies.
       parameters:
       - description: Google ID Token
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/server.googleLoginRequest'
+          $ref: '#/definitions/api.googleLoginRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.AuthResponse'
+            $ref: '#/definitions/api.CurrentUserResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
       summary: Login with Google
       tags:
       - Auth
   /auth/logout:
     post:
-      consumes:
-      - application/json
-      description: Revoke the user session and clear access/refresh tokens.
-      parameters:
-      - description: Optional Refresh Token to revoke explicitly
-        in: body
-        name: request
-        schema:
-          $ref: '#/definitions/server.refreshTokenRequest'
+      description: End this browser's session and clear its cookies. Other devices
+        stay signed in.
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.SuccessResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/server.ErrorResponse'
-      security:
-      - BearerAuth: []
+            $ref: '#/definitions/api.SuccessResponse'
       summary: Logout
       tags:
       - Auth
@@ -393,11 +484,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.UserResponse'
+            $ref: '#/definitions/api.CurrentUserResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Get Current User
@@ -405,28 +496,19 @@ paths:
       - Auth
   /auth/refresh:
     post:
-      consumes:
-      - application/json
-      description: Obtain a new access token and refresh token using an existing refresh
-        token.
-      parameters:
-      - description: Refresh Token
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/server.refreshTokenRequest'
+      description: 'Rotate the session in the refresh_token cookie: both cookies are
+        replaced and the old refresh token stops working.'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.AuthResponse'
+            $ref: '#/definitions/api.CurrentUserResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
       summary: Refresh Access Token
       tags:
       - Auth
@@ -445,7 +527,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/server.HashtagResponse'
+              $ref: '#/definitions/api.HashtagResponse'
             type: array
       summary: Trending Hashtags
       tags:
@@ -468,10 +550,32 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.PageResponse-server_UserResponse'
+            $ref: '#/definitions/api.PageResponse-api_UserResponse'
       summary: Suggested Users
       tags:
       - Discovery
+  /events:
+    get:
+      description: 'One Server-Sent Events stream per signed-in tab. Event names:
+        `connected`, `notification` (NotificationResponse), `dm` (MessageResponse).
+        Comment lines (`: ping`) are heartbeats. Reconnect on close; the server suggests
+        a 3s retry.'
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: text/event-stream
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Real-time Events (SSE)
+      tags:
+      - Realtime
   /feeds/following:
     get:
       description: Get a paginated list of tweets from users the current user follows.
@@ -490,11 +594,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.PageResponse-server_TweetResponse'
+            $ref: '#/definitions/api.PageResponse-api_FeedItemResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Following Feed
@@ -518,49 +622,21 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.PageResponse-server_TweetResponse'
+            $ref: '#/definitions/api.PageResponse-api_FeedItemResponse'
       summary: Global Feed
       tags:
       - Feeds
-  /feeds/user/{id}:
+  /healthz:
     get:
-      description: Get a paginated list of tweets for a specific user profile.
-      parameters:
-      - description: User ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: Pagination cursor
-        in: query
-        name: cursor
-        type: string
-      - description: Number of items per page
-        in: query
-        name: size
-        type: integer
+      description: Reports that the process is up. Never checks dependencies, so a
+        database blip doesn't get the container restarted.
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.PageResponse-server_TweetResponse'
-      summary: User Profile Feed
-      tags:
-      - Feeds
-  /healthz:
-    get:
-      description: Simple health check to verify the API server is running and reachable.
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: status ok
-          schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/api.HealthResponse'
       summary: Liveness Probe
       tags:
       - Monitoring
@@ -582,11 +658,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.PageResponse-server_ConversationResponse'
+            $ref: '#/definitions/api.PageResponse-api_ConversationResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
       security:
       - BearerAuth: []
       summary: List Conversations
@@ -615,11 +691,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.PageResponse-server_MessageResponse'
+            $ref: '#/definitions/api.PageResponse-api_MessageResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
       security:
       - BearerAuth: []
       summary: List Conversation Messages
@@ -641,18 +717,18 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/server.sendMessageRequest'
+          $ref: '#/definitions/api.sendMessageRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/server.MessageResponse'
+            $ref: '#/definitions/api.MessageResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Send Message to Conversation
@@ -675,41 +751,21 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/server.sendMessageRequest'
+          $ref: '#/definitions/api.sendMessageRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/server.MessageResponse'
+            $ref: '#/definitions/api.MessageResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Send Message to User
-      tags:
-      - Messages
-  /messages/ws:
-    get:
-      description: Establish a WebSocket connection to receive real-time direct messages.
-        Supports authentication via 'access_token' query param or 'Authorization'
-        header.
-      parameters:
-      - description: JWT Access Token (if not using Authorization header)
-        in: query
-        name: access_token
-        type: string
-      responses:
-        "101":
-          description: Switching Protocols
-          schema:
-            type: string
-      security:
-      - BearerAuth: []
-      summary: Stream Messages (WebSocket)
       tags:
       - Messages
   /notifications:
@@ -731,11 +787,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.PageResponse-server_NotificationResponse'
+            $ref: '#/definitions/api.PageResponse-api_NotificationResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
       security:
       - BearerAuth: []
       summary: List Notifications
@@ -748,34 +804,14 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.SuccessResponse'
+            $ref: '#/definitions/api.SuccessResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Mark All Read
-      tags:
-      - Notifications
-  /notifications/stream:
-    get:
-      description: Establish a Server-Sent Events (SSE) connection to receive near
-        real-time notifications for likes, replies, retweets, and new followers.
-      produces:
-      - text/event-stream
-      responses:
-        "200":
-          description: text/event-stream
-          schema:
-            type: string
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/server.ErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: Stream Real-time Notifications (SSE)
       tags:
       - Notifications
   /notifications/unread-count:
@@ -785,16 +821,13 @@ paths:
       - application/json
       responses:
         "200":
-          description: unread count
+          description: OK
           schema:
-            additionalProperties:
-              format: int64
-              type: integer
-            type: object
+            $ref: '#/definitions/api.UnreadCountResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Get Unread Count
@@ -802,23 +835,19 @@ paths:
       - Notifications
   /readyz:
     get:
-      description: Comprehensive readiness check that verifies active connections
-        to the database and Redis cache.
+      description: Checks every dependency (database, and Redis when configured) and
+        reports each one.
       produces:
       - application/json
       responses:
         "200":
-          description: status ready
+          description: OK
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/api.HealthResponse'
         "503":
-          description: dependency failure
+          description: a dependency is unreachable
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/api.HealthResponse'
       summary: Readiness Probe
       tags:
       - Monitoring
@@ -842,7 +871,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/server.HashtagResponse'
+              $ref: '#/definitions/api.HashtagResponse'
             type: array
       summary: Search Hashtags
       tags:
@@ -870,7 +899,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.PageResponse-server_TweetResponse'
+            $ref: '#/definitions/api.PageResponse-api_TweetResponse'
       summary: Search Tweets
       tags:
       - Search
@@ -897,7 +926,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.PageResponse-server_UserResponse'
+            $ref: '#/definitions/api.PageResponse-api_UserResponse'
       summary: Search Users
       tags:
       - Search
@@ -912,22 +941,22 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/server.createTweetRequest'
+          $ref: '#/definitions/api.createTweetRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/server.TweetResponse'
+            $ref: '#/definitions/api.TweetResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Create Tweet
@@ -947,15 +976,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.SuccessResponse'
+            $ref: '#/definitions/api.SuccessResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
         "403":
           description: Forbidden
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Delete Tweet
@@ -976,11 +1005,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.TweetResponse'
+            $ref: '#/definitions/api.TweetResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
       summary: Get Tweet
       tags:
       - Tweets
@@ -998,11 +1027,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.SuccessResponse'
+            $ref: '#/definitions/api.SuccessResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Unlike Tweet
@@ -1021,11 +1050,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.SuccessResponse'
+            $ref: '#/definitions/api.SuccessResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Like Tweet
@@ -1054,7 +1083,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.PageResponse-server_TweetResponse'
+            $ref: '#/definitions/api.PageResponse-api_TweetResponse'
       summary: Get Tweet Replies
       tags:
       - Tweets
@@ -1072,11 +1101,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.SuccessResponse'
+            $ref: '#/definitions/api.SuccessResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Undo Retweet
@@ -1097,11 +1126,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.TweetResponse'
+            $ref: '#/definitions/api.TweetResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Retweet
@@ -1112,27 +1141,29 @@ paths:
       consumes:
       - application/json
       description: Generate a temporary presigned URL to upload a file directly to
-        S3.
+        S3. The upload must use exactly the declared Content-Type and Content-Length.
       parameters:
       - description: Upload request details
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/server.presignRequest'
+          $ref: '#/definitions/api.presignRequest'
       produces:
       - application/json
       responses:
         "200":
-          description: presignedUrl and objectKey
+          description: OK
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/api.PresignResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Presign Upload URL
@@ -1154,11 +1185,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.UserResponse'
+            $ref: '#/definitions/api.UserResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
       summary: Get User Profile
       tags:
       - Users
@@ -1178,11 +1209,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.SuccessResponse'
+            $ref: '#/definitions/api.SuccessResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Unfollow User
@@ -1203,11 +1234,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.SuccessResponse'
+            $ref: '#/definitions/api.SuccessResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Follow User
@@ -1236,7 +1267,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.PageResponse-server_UserResponse'
+            $ref: '#/definitions/api.PageResponse-api_UserResponse'
       summary: List Followers
       tags:
       - Users
@@ -1263,8 +1294,179 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.PageResponse-server_UserResponse'
+            $ref: '#/definitions/api.PageResponse-api_UserResponse'
       summary: List Following
+      tags:
+      - Users
+  /users/{id}/likes:
+    get:
+      description: Tweets the user liked, most recently liked first. Only the user
+        themselves may list their likes.
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Pagination cursor
+        in: query
+        name: cursor
+        type: string
+      - description: Number of items per page
+        in: query
+        name: size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.PageResponse-api_FeedItemResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 'Profile: Likes'
+      tags:
+      - Users
+  /users/{id}/media:
+    get:
+      description: A user's tweets that carry an image or video, newest first.
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Pagination cursor
+        in: query
+        name: cursor
+        type: string
+      - description: Number of items per page
+        in: query
+        name: size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.PageResponse-api_FeedItemResponse'
+      summary: 'Profile: Media'
+      tags:
+      - Users
+  /users/{id}/posts:
+    get:
+      description: A user's top-level tweets and retweets, newest first.
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Pagination cursor
+        in: query
+        name: cursor
+        type: string
+      - description: Number of items per page
+        in: query
+        name: size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.PageResponse-api_FeedItemResponse'
+      summary: 'Profile: Posts'
+      tags:
+      - Users
+  /users/{id}/replies:
+    get:
+      description: Replies written by a user, newest first.
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Pagination cursor
+        in: query
+        name: cursor
+        type: string
+      - description: Number of items per page
+        in: query
+        name: size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.PageResponse-api_FeedItemResponse'
+      summary: 'Profile: Replies'
+      tags:
+      - Users
+  /users/by-username/{username}:
+    get:
+      description: Look a profile up by handle (case-insensitive).
+      parameters:
+      - description: Username
+        in: path
+        name: username
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.UserResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      summary: Get User by Username
+      tags:
+      - Users
+  /users/me/onboarding:
+    post:
+      consumes:
+      - application/json
+      description: Choose a username (3-20 letters, numbers or underscores) and display
+        name. Sign-up assigns a generated username until then.
+      parameters:
+      - description: Chosen username and display name
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/api.onboardingRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.CurrentUserResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "409":
+          description: username taken
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Complete Onboarding
       tags:
       - Users
   /users/profile:
@@ -1279,22 +1481,22 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/server.updateProfileRequest'
+          $ref: '#/definitions/api.updateProfileRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/server.UserResponse'
+            $ref: '#/definitions/api.UserResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/server.ErrorResponse'
+            $ref: '#/definitions/api.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Update User Profile
@@ -1302,7 +1504,8 @@ paths:
       - Users
 securityDefinitions:
   BearerAuth:
-    description: Type 'Bearer ' followed by your JWT token.
+    description: Type 'Bearer ' followed by an access token. Browsers use the httpOnly
+      access_token cookie instead.
     in: header
     name: Authorization
     type: apiKey

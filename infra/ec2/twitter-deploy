@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# twitter-deploy <commit-sha>: fetches the stack files CI uploaded for that commit
+# (infra/ec2 → s3://<bucket>/stack/<sha>/) and runs that commit's deploy.sh.
+#
+# Installed once by cloud-init as /usr/local/bin/twitter-deploy and kept deliberately
+# small: everything that changes between releases lives in the synced stack, so
+# changing compose.yml or the nginx config is a normal deploy, not a new instance.
+# Run by the GitHub Actions deploy job (via SSM) and at first boot.
+set -euo pipefail
+
+APP_DIR=${APP_DIR:-/opt/twitter}
+# shellcheck source=/dev/null # REGION, DEPLOY_BUCKET, ... (written by cloud-init)
+source "$APP_DIR/deploy.env"
+tag=${1:?usage: twitter-deploy <commit-sha>}
+
+# One deploy at a time (CI and first boot can overlap). A rollback started by a failing
+# deploy already holds the lock.
+if [[ -z "${TWITTER_DEPLOY_LOCKED:-}" ]]; then
+  exec 9>"$APP_DIR/deploy.lock"
+  flock --wait 900 9 || { echo "Another deploy is still running" >&2; exit 1; }
+  export TWITTER_DEPLOY_LOCKED=1
+fi
+
+# Fetch into a fresh directory and swap it in only once it's complete.
+incoming="$APP_DIR/stack.incoming"
+rm -rf "$incoming"
+aws s3 sync --region "$REGION" --only-show-errors "s3://$DEPLOY_BUCKET/stack/$tag/" "$incoming/"
+if [[ ! -f "$incoming/deploy.sh" ]]; then
+  echo "No stack uploaded for $tag (s3://$DEPLOY_BUCKET/stack/$tag/)" >&2
+  exit 1
+fi
+chmod +x "$incoming"/*.sh "$incoming"/nginx/*.sh
+rm -rf "$APP_DIR/stack" && mv "$incoming" "$APP_DIR/stack"
+
+TWITTER_DEPLOY=$(realpath "$0")
+export TWITTER_DEPLOY
+exec "$APP_DIR/stack/deploy.sh" "$tag"

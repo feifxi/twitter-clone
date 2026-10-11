@@ -1,56 +1,43 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { useFollowUser, useUnfollowUser } from '@/hooks/useProfile';
-import { useDebouncedToggle } from '@/hooks/useDebouncedToggle';
+import { useToggleFollow } from '@/hooks/useProfile';
 import { useAuth } from '@/hooks/useAuth';
 import { useUIStore } from '@/store/useUIStore';
 
 interface FollowButtonProps {
   userId: number;
+  /** From the cache: flips immediately when clicked. */
   isFollowing: boolean;
-  username?: string; // Optional for future use
 }
 
 export function FollowButton({ userId, isFollowing }: FollowButtonProps) {
-  const followMutation = useFollowUser();
-  const unfollowMutation = useUnfollowUser();
+  const toggleFollow = useToggleFollow();
   const { isLoggedIn } = useAuth();
   const openSignInModal = useUIStore((s) => s.openSignInModal);
 
-  const {
-      optimisticState: following,
-      toggle,
-  } = useDebouncedToggle({
-      initialState: isFollowing,
-      onMutate: (newState) => {
-          if (newState) followMutation.mutate(userId);
-          else unfollowMutation.mutate(userId);
-      },
-  });
-
   const handleFollow = (e: React.MouseEvent) => {
     e.stopPropagation();
-    e.preventDefault(); // Prevent link navigation if inside a link
+    e.preventDefault(); // the button can sit inside a link (UserRow)
     if (!isLoggedIn) {
-        openSignInModal();
-        return;
+      openSignInModal();
+      return;
     }
-    toggle();
+    toggleFollow({ id: userId, isFollowing });
   };
 
   return (
     <Button
       size="sm"
-      variant={following ? "outline" : "secondary"}
+      variant={isFollowing ? "outline" : "secondary"}
       onClick={handleFollow}
       className={`rounded-full font-bold h-8 px-4 transition-colors cursor-pointer ${
-        following
+        isFollowing
           ? 'hover:text-destructive hover:bg-destructive/10 border-border text-foreground hover:border-destructive/30'
           : 'bg-primary text-primary-foreground hover:bg-primary/90'
       }`}
     >
-      {following ? 'Following' : 'Follow'}
+      {isFollowing ? 'Following' : 'Follow'}
     </Button>
   );
 }

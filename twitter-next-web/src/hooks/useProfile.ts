@@ -1,17 +1,20 @@
 'use client';
 
-import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useCallback } from 'react';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { axiosInstance } from '@/api/axiosInstance';
-import type { PageResponse, UserResponse, TweetResponse } from '@/types';
-import type { UpdateProfileInput } from '@/lib/validation';
 import { uploadFileWithPresignedUrl } from '@/api/upload';
-
-const userQueryKey = (id: number) => ['users', id] as const;
-export const userFeedQueryKey = (userId: number) => ['feeds', 'user', userId] as const;
+import { useAuth } from '@/hooks/useAuth';
+import { debouncedToggle } from '@/lib/debounced-toggle';
+import { invalidateEntities, updateUser } from '@/lib/query-cache';
+import { PAGE_SIZE, queryKeys, type ProfileTab } from '@/lib/query-keys';
+import type { UpdateProfileInput } from '@/lib/validation';
+import type { FeedItemResponse, PageResponse, UserResponse } from '@/types';
 
 export function useUserProfile(userId: number | null) {
   return useQuery({
-    queryKey: userQueryKey(userId!),
+    queryKey: queryKeys.users.detail(userId!),
     queryFn: async (): Promise<UserResponse> => {
       const { data } = await axiosInstance.get<UserResponse>(`/users/${userId}`);
       return data;
@@ -20,150 +23,75 @@ export function useUserProfile(userId: number | null) {
   });
 }
 
-/** Resolve user by username via search (backend has GET /users/{id} by id). */
 export function useUserProfileByUsername(username: string) {
   return useQuery({
-    queryKey: ['users', 'byUsername', username],
-    queryFn: async (): Promise<UserResponse | null> => {
-      const { data } = await axiosInstance.get<PageResponse<UserResponse>>(
-        '/search/users',
-        { params: { q: username, size: 10 } }
-      );
-      const match = data.items.find(
-        (u) => u.username.toLowerCase() === username.toLowerCase()
-      );
-      return match ?? null;
+    queryKey: queryKeys.users.byUsername(username),
+    queryFn: async (): Promise<UserResponse> => {
+      const { data } = await axiosInstance.get<UserResponse>(`/users/by-username/${encodeURIComponent(username)}`);
+      return data;
     },
     enabled: !!username,
   });
 }
 
-export function useUserFeed(userId: number | null, pageSize = 20) {
+/** A profile tab. Likes are private: only the owner can load their own. */
+export function useUserTimeline(userId: number | null, tab: ProfileTab = 'posts', { enabled = true, pageSize = PAGE_SIZE } = {}) {
   return useInfiniteQuery({
-    queryKey: userFeedQueryKey(userId!),
-    queryFn: async ({
-      pageParam,
-    }: {
-      pageParam: string | null;
-    }): Promise<PageResponse<TweetResponse>> => {
-      const { data } = await axiosInstance.get<PageResponse<TweetResponse>>(
-        `/feeds/user/${userId}`,
-        { params: { cursor: pageParam ?? undefined, size: pageSize } }
-      );
+    queryKey: queryKeys.users.timeline(userId!, tab),
+    queryFn: async ({ pageParam }: { pageParam: string | null }): Promise<PageResponse<FeedItemResponse>> => {
+      const { data } = await axiosInstance.get<PageResponse<FeedItemResponse>>(`/users/${userId}/${tab}`, {
+        params: { cursor: pageParam ?? undefined, size: pageSize },
+      });
       return data;
     },
     initialPageParam: null as string | null,
-    getNextPageParam: (lastPage) =>
-      lastPage.hasNext ? lastPage.nextCursor : undefined,
-    enabled: userId != null && userId > 0,
+    getNextPageParam: (lastPage) => (lastPage.hasNext ? lastPage.nextCursor : undefined),
+    enabled: enabled && userId != null && userId > 0,
   });
 }
 
-// Helper to update user follow status in various query caches
-function useUpdateUserCache() {
+/**
+ * Follow/unfollow. Every cached copy of the user (profile, lists, tweet authors)
+ * and the current user's following count update immediately; the request is debounced.
+ */
+export function useToggleFollow() {
   const queryClient = useQueryClient();
+  const { user: me } = useAuth();
+  const myId = me?.id;
 
-  return (userId: number, isFollowing: boolean) => {
-    // 1. Update individual user profile
-    queryClient.setQueryData<UserResponse>(userQueryKey(userId), (old) => {
-      if (!old) return old;
-      return {
-        ...old,
-        followedByMe: isFollowing,
-        followersCount: isFollowing ? (old.followersCount + 1) : Math.max(0, old.followersCount - 1),
-      };
-    });
+  return useCallback(
+    (target: Pick<UserResponse, 'id' | 'isFollowing'>) => {
+      const following = !target.isFollowing;
+      const delta = following ? 1 : -1;
+      updateUser(queryClient, target.id, (u) => ({
+        ...u,
+        isFollowing: following,
+        followersCount: Math.max(0, u.followersCount + delta),
+      }));
+      if (myId !== undefined) {
+        updateUser(queryClient, myId, (u) => ({ ...u, followingCount: Math.max(0, u.followingCount + delta) }));
+      }
 
-    // 2. Update Discovery/Suggested Users
-    queryClient.setQueriesData<PageResponse<UserResponse>>({ queryKey: ['discovery', 'users'] }, (old) => {
-      if (!old) return old;
-      return {
-        ...old,
-        items: old.items.map(u => u.id === userId ? { ...u, followedByMe: isFollowing } : u)
-      };
-    });
-
-    // 3. Update Search Users
-    queryClient.setQueriesData<PageResponse<UserResponse>>({ queryKey: ['search', 'users'] }, (old) => {
-      if (!old) return old;
-      return {
-        ...old,
-        items: old.items.map(u => u.id === userId ? { ...u, followedByMe: isFollowing } : u)
-      };
-    });
-
-    // 4. Update "By Username" cache if exists (we don't know username but can iterate)
-    // Actually setQueriesData with predicate is hard without username. 
-    // We can rely on invalidation for byUsername or try to find it.
-    // For now, let's stick to the list caches which are most visible.
-  };
-}
-
-export function useFollowUser() {
-  const queryClient = useQueryClient();
-  const updateUserCache = useUpdateUserCache();
-
-  return useMutation({
-    mutationFn: (userId: number) => axiosInstance.post(`/users/${userId}/follow`),
-    onMutate: async (userId) => {
-      await queryClient.cancelQueries({ queryKey: userQueryKey(userId) });
-      await queryClient.cancelQueries({ queryKey: ['discovery', 'users'] });
-      await queryClient.cancelQueries({ queryKey: ['search', 'users'] });
-      await queryClient.cancelQueries({ queryKey: ['users', 'byUsername'] });
-
-      updateUserCache(userId, true);
+      debouncedToggle(`follow:${target.id}`, target.isFollowing, following, async (state) => {
+        try {
+          if (state) await axiosInstance.post(`/users/${target.id}/follow`);
+          else await axiosInstance.delete(`/users/${target.id}/follow`);
+          // The following timeline gains or loses this user's tweets.
+          queryClient.invalidateQueries({ queryKey: queryKeys.feeds.following, refetchType: 'none' });
+        } catch {
+          toast.error(state ? 'Could not follow' : 'Could not unfollow');
+          invalidateEntities(queryClient);
+        }
+      });
     },
-    onError: (_err, userId) => {
-      updateUserCache(userId, false); // Rollback
-    },
-    onSuccess: () => {
-      // Optimistic update handles UI. No need to refetch.
-      // queryClient.invalidateQueries({ queryKey: userQueryKey(userId) });
-      // queryClient.invalidateQueries({ queryKey: ['feeds'] }); 
-      // queryClient.invalidateQueries({ queryKey: ['discovery', 'users'] });
-      // queryClient.invalidateQueries({ queryKey: ['search', 'users'] });
-      // queryClient.invalidateQueries({ queryKey: ['users', 'byUsername'] });
-
-      // We manually update our own profile stats (following count) because `updateUserCache` 
-      // currently only updates the target user's followers count.
-      // We need to update *current user's* following count in the cache.
-      // But we don't have the current user ID easily here unless we use `useAuth` or store.
-      // actually `updateUserCache` does NOT update current user stats. 
-      // Let's add that logic if possible, or just accept that "Following" count on my profile 
-      // might be stale until refresh. 
-      // The request says "shouldn't refetch". So we stop here.
-    },
-  });
-}
-
-export function useUnfollowUser() {
-  const queryClient = useQueryClient();
-  const updateUserCache = useUpdateUserCache();
-
-  return useMutation({
-    mutationFn: (userId: number) =>
-      axiosInstance.delete(`/users/${userId}/follow`),
-    onMutate: async (userId) => {
-      await queryClient.cancelQueries({ queryKey: userQueryKey(userId) });
-      await queryClient.cancelQueries({ queryKey: ['discovery', 'users'] });
-      await queryClient.cancelQueries({ queryKey: ['search', 'users'] });
-      await queryClient.cancelQueries({ queryKey: ['users', 'byUsername'] });
-
-      updateUserCache(userId, false);
-    },
-    onError: (_err, userId) => {
-      updateUserCache(userId, true); // Rollback
-    },
-    onSuccess: () => {
-      // No refetch
-    },
-  });
+    [queryClient, myId],
+  );
 }
 
 export function useUpdateProfile() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ displayName, bio, avatar, banner, removeAvatar, removeBanner }: UpdateProfileInput & { avatar?: File; banner?: File; removeAvatar?: boolean; removeBanner?: boolean }) => {
+    mutationFn: async ({ displayName, bio, location, website, avatar, banner, removeAvatar, removeBanner }: UpdateProfileInput & { avatar?: File; banner?: File; removeAvatar?: boolean; removeBanner?: boolean }) => {
       let avatarKey: string | undefined;
       let bannerKey: string | undefined;
 
@@ -182,6 +110,8 @@ export function useUpdateProfile() {
       const payload = {
         displayName,
         bio,
+        location,
+        website,
         avatarKey,
         bannerKey,
       };
@@ -191,16 +121,16 @@ export function useUpdateProfile() {
     },
 
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: userQueryKey(data.id) });
-      queryClient.invalidateQueries({ queryKey: ['users', 'byUsername', data.username] });
-      queryClient.setQueryData(['auth', 'user'], data);
+      // Name, avatar and bio show up on every tweet of theirs: refresh all copies.
+      updateUser(queryClient, data.id, (u) => ({ ...u, ...data }));
+      queryClient.invalidateQueries({ queryKey: queryKeys.auth.me });
     },
   });
 }
 
 export function useUserFollowers(userId: number | null, pageSize = 20) {
   return useInfiniteQuery({
-    queryKey: ['users', userId, 'followers'],
+    queryKey: queryKeys.users.followers(userId!),
     queryFn: async ({ pageParam = null as string | null }) => {
       const { data } = await axiosInstance.get<PageResponse<UserResponse>>(`/users/${userId}/followers`, {
         params: { cursor: pageParam ?? undefined, size: pageSize },
@@ -215,7 +145,7 @@ export function useUserFollowers(userId: number | null, pageSize = 20) {
 
 export function useUserFollowing(userId: number | null, pageSize = 20) {
   return useInfiniteQuery({
-    queryKey: ['users', userId, 'following'],
+    queryKey: queryKeys.users.following(userId!),
     queryFn: async ({ pageParam = null as string | null }) => {
       const { data } = await axiosInstance.get<PageResponse<UserResponse>>(`/users/${userId}/following`, {
         params: { cursor: pageParam ?? undefined, size: pageSize },

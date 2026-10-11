@@ -1,23 +1,18 @@
 'use client';
 
-import {
-  useQuery,
-  useInfiniteQuery,
-  useQueryClient,
-  useMutation,
-  type QueryKey,
-} from '@tanstack/react-query';
-import { axiosInstance } from '@/api/axiosInstance';
-import type { PageResponse, TweetResponse } from '@/types';
-import type { TweetRequestInput } from '@/lib/validation';
-import { uploadFileWithPresignedUrl } from '@/api/upload';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { toast } from 'sonner';
-
-export const tweetQueryKey = (id: number) => ['tweets', id] as const;
+import { axiosInstance } from '@/api/axiosInstance';
+import { uploadFileWithPresignedUrl } from '@/api/upload';
+import { useAuth } from '@/hooks/useAuth';
+import { snapshotEntities, updateTweet } from '@/lib/query-cache';
+import { PAGE_SIZE, queryKeys } from '@/lib/query-keys';
+import type { TweetRequestInput } from '@/lib/validation';
+import type { FeedItemResponse, PageResponse, TweetResponse } from '@/types';
 
 export function useTweet(tweetId: number | null) {
   return useQuery({
-    queryKey: tweetQueryKey(tweetId!),
+    queryKey: queryKeys.tweets.detail(tweetId!),
     queryFn: async (): Promise<TweetResponse> => {
       const { data } = await axiosInstance.get<TweetResponse>(`/tweets/${tweetId}`);
       return data;
@@ -26,111 +21,53 @@ export function useTweet(tweetId: number | null) {
   });
 }
 
-export function useRepliesInfinite(tweetId: number | null, pageSize = 20) {
+export function useRepliesInfinite(tweetId: number | null, pageSize = PAGE_SIZE) {
   return useInfiniteQuery({
-    queryKey: ['tweets', tweetId, 'replies'],
-    queryFn: async ({
-      pageParam,
-    }: {
-      pageParam: string | null;
-    }): Promise<PageResponse<TweetResponse>> => {
-      const { data } = await axiosInstance.get<PageResponse<TweetResponse>>(
-        `/tweets/${tweetId}/replies`,
-        { params: { cursor: pageParam ?? undefined, size: pageSize } }
-      );
+    queryKey: queryKeys.tweets.replies(tweetId!),
+    queryFn: async ({ pageParam }: { pageParam: string | null }): Promise<PageResponse<TweetResponse>> => {
+      const { data } = await axiosInstance.get<PageResponse<TweetResponse>>(`/tweets/${tweetId}/replies`, {
+        params: { cursor: pageParam ?? undefined, size: pageSize },
+      });
       return data;
     },
     initialPageParam: null as string | null,
-    getNextPageParam: (lastPage) =>
-      lastPage.hasNext ? lastPage.nextCursor : undefined,
+    getNextPageParam: (lastPage) => (lastPage.hasNext ? lastPage.nextCursor : undefined),
     enabled: tweetId != null && tweetId > 0,
   });
 }
 
-export function useInvalidateTweet() {
-  const queryClient = useQueryClient();
-  return (tweetId: number) =>
-    queryClient.invalidateQueries({ queryKey: tweetQueryKey(tweetId) });
-}
-
-import { useAuthStore } from '@/store/useAuthStore';
-import { feedQueryKey } from './useFeed';
-import type { InfiniteData } from '@tanstack/react-query';
-
 export function useCreateTweet() {
   const queryClient = useQueryClient();
-  const { user } = useAuthStore();
+  const { user } = useAuth();
 
   return useMutation({
     mutationFn: async ({ content, media, parentId }: TweetRequestInput & { media?: File }) => {
-      let mediaKey: string | undefined;
-      let mediaType: 'IMAGE' | 'VIDEO' | undefined;
-
-      if (media) {
-        mediaKey = await uploadFileWithPresignedUrl(media, 'tweets');
-        // Determine mediaType based on file MIME type
-        if (media.type.startsWith('image/')) {
-          mediaType = 'IMAGE';
-        } else if (media.type.startsWith('video/')) {
-          mediaType = 'VIDEO';
-        }
-      }
-
-      const payload = {
-        content,
-        parentId,
-        mediaKey,
-        mediaType,
-      };
-
-      const { data } = await axiosInstance.post<TweetResponse>('/tweets', payload);
+      const mediaKey = media ? await uploadFileWithPresignedUrl(media, 'tweets') : undefined;
+      const { data } = await axiosInstance.post<TweetResponse>('/tweets', { content, parentId, mediaKey });
       return data;
     },
-    onMutate: async () => {
-      // Don't cancel queries, we're not doing optimistic updates anymore
-    },
-    onError: (_err, _newTweet) => {
-      // Invalidate replies query
-      if (_newTweet.parentId) {
-        queryClient.invalidateQueries({ queryKey: ['tweets', _newTweet.parentId, 'replies'] });
-      }
-    },
-    onSuccess: (realTweet, variables) => {
-      // Helper to instantly inject the real tweet at the top of a feed
-      const prependToFeed = (key: QueryKey) => {
-        queryClient.setQueryData<InfiniteData<PageResponse<TweetResponse>>>(key, (old) => {
-          if (!old) return old;
-
-          const newPages = old.pages.map(page => ({ ...page }));
-
-          if (newPages.length > 0) {
-            newPages[0] = {
-              ...newPages[0],
-              items: [realTweet, ...newPages[0].items]
-            };
-          }
-
-          return { ...old, pages: newPages };
+    onSuccess: (tweet, { parentId }) => {
+      // Show the new tweet at the top of the lists it belongs to, without refetching (and losing the scroll position).
+      const prepend = <T,>(queryKey: readonly unknown[], item: T) =>
+        queryClient.setQueryData<InfiniteData<PageResponse<T>>>(queryKey, (old) => {
+          if (!old?.pages.length) return old;
+          const [first, ...rest] = old.pages;
+          return { ...old, pages: [{ ...first, items: [item, ...first.items] }, ...rest] };
         });
-      };
+      // Timelines (feeds, profile tabs) hold feed items; a thread's replies hold plain tweets.
+      const feedItem: FeedItemResponse = { kind: 'tweet', tweet, retweet: null };
 
-      if (!variables.parentId) {
-        prependToFeed(feedQueryKey('global'));
-        prependToFeed(feedQueryKey('following'));
-        // Update user's profile feed if viewing their own profile
-        if (user) {
-          prependToFeed(['user-feed', user.id]);
-        }
-      } else {
-        // Also update replies if it was a reply
-        prependToFeed(['tweets', variables.parentId, 'replies']);
-        // Ensure parent tweet reply count is visually incremented
-        queryClient.setQueryData<TweetResponse>(tweetQueryKey(variables.parentId), (old) => {
-          if (!old) return old;
-          return { ...old, replyCount: old.replyCount + 1 };
-        });
+      if (parentId) {
+        prepend(queryKeys.tweets.replies(parentId), tweet);
+        updateTweet(queryClient, parentId, (t) => ({ ...t, replyCount: t.replyCount + 1 }));
+        if (user) prepend(queryKeys.users.timeline(user.id, 'replies'), feedItem);
+        return;
       }
-    }
+      prepend(queryKeys.feeds.global, feedItem);
+      // Not the Following feed: it lists accounts you follow, not your own posts.
+      if (user) prepend(queryKeys.users.timeline(user.id, 'posts'), feedItem);
+      if (user && tweet.mediaUrl) prepend(queryKeys.users.timeline(user.id, 'media'), feedItem);
+    },
   });
 }
 
@@ -138,103 +75,27 @@ export function useDeleteTweet() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (tweetId: number) => {
-      await axiosInstance.delete(`/tweets/${tweetId}`);
+    mutationFn: async (tweet: TweetResponse) => {
+      await axiosInstance.delete(`/tweets/${tweet.id}`);
     },
-    onMutate: async (tweetId) => {
-      // 1. Cancel outgoing refetches
-      await queryClient.cancelQueries({ queryKey: ['feeds'] });
-      await queryClient.cancelQueries({ queryKey: ['tweets'] });
+    onMutate: async (tweet) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.feeds.all });
+      await queryClient.cancelQueries({ queryKey: queryKeys.tweets.all });
+      const rollback = snapshotEntities(queryClient);
 
-      // 2. Snapshot current data for rollback
-      const snapshot: [QueryKey, InfiniteData<PageResponse<TweetResponse>> | TweetResponse][] = [];
-      
-      // Helper to capture and update infinite data
-      const updateInfiniteFeeds = () => {
-        const queries = queryClient.getQueriesData<InfiniteData<PageResponse<TweetResponse>>>({ queryKey: ['feeds'] });
-        queries.forEach(([queryKey, oldData]) => {
-          if (oldData) {
-            snapshot.push([queryKey, oldData]);
-            queryClient.setQueryData<InfiniteData<PageResponse<TweetResponse>>>(queryKey, (old) => {
-                if (!old) return old;
-                return {
-                  ...old,
-                  pages: old.pages.map((page) => ({
-                    ...page,
-                    items: page.items.filter((t) => t.id !== tweetId),
-                  })),
-                };
-            });
-          }
-        });
-      };
-
-      // Helper to capture and update replies lists
-      const updateRepliesLists = () => {
-        // Find all reply queries: ['tweets', number, 'replies']
-        const queries = queryClient.getQueriesData<InfiniteData<PageResponse<TweetResponse>>>({ 
-            predicate: (query) => query.queryKey[0] === 'tweets' && query.queryKey[2] === 'replies'
-        });
-        
-        queries.forEach(([queryKey, oldData]) => {
-            if (oldData) {
-              snapshot.push([queryKey, oldData]);
-              queryClient.setQueryData<InfiniteData<PageResponse<TweetResponse>>>(queryKey, (old) => {
-                  if (!old) return old;
-                  return {
-                    ...old,
-                    pages: old.pages.map((page) => ({
-                      ...page,
-                      items: page.items.filter((t) => t.id !== tweetId),
-                    })),
-                  };
-              });
-            }
-        });
-      };
-
-      // 3. Perform manual updates
-      updateInfiniteFeeds();
-      updateRepliesLists();
-
-      // 4. Handle parent reply counter decrement
-      // We need to find the tweet in cache to see if it has a parentId
-      const allTweets = queryClient.getQueriesData<TweetResponse>({ queryKey: ['tweets'] });
-      let parentId: number | null = null;
-      
-      for (const [, tweet] of allTweets) {
-          if (tweet?.id === tweetId) {
-              parentId = tweet.replyToTweetId ?? null;
-              break;
-          }
+      updateTweet(queryClient, tweet.id, () => null);
+      if (tweet.replyToTweetId) {
+        updateTweet(queryClient, tweet.replyToTweetId, (t) => ({ ...t, replyCount: Math.max(0, t.replyCount - 1) }));
       }
-
-      if (parentId) {
-          const parentKey = tweetQueryKey(parentId);
-          const oldParent = queryClient.getQueryData<TweetResponse>(parentKey);
-          if (oldParent) {
-              snapshot.push([parentKey, oldParent]);
-              queryClient.setQueryData<TweetResponse>(parentKey, {
-                  ...oldParent,
-                  replyCount: Math.max(0, oldParent.replyCount - 1)
-              });
-          }
-      }
-
-      return { snapshot };
+      return { rollback };
     },
-    onError: (_err, _tweetId, context) => {
-      // Rollback
-      if (context?.snapshot) {
-          context.snapshot.forEach(([key, val]) => {
-              queryClient.setQueryData(key, val);
-          });
-      }
+    onError: (_err, _tweet, context) => {
+      context?.rollback();
       toast.error('Failed to delete tweet');
     },
-    onSuccess: () => {
+    onSuccess: (_data, tweet) => {
       toast.success('Tweet deleted');
-      // No global refetch needed! Optimistic update handles it.
+      queryClient.removeQueries({ queryKey: queryKeys.tweets.detail(tweet.id) });
     },
   });
 }

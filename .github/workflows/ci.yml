@@ -1,0 +1,148 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  go-api:
+    name: Go API
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: twitter-go-api
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: twitter_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U test -d twitter_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://test:test@localhost:5432/twitter_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          # Latest 1.26 patch (go.mod's "go 1.26.0" is a minimum, not the toolchain to test with).
+          go-version: "1.26"
+          check-latest: true
+          cache-dependency-path: twitter-go-api/go.sum
+      - name: Check sqlc output is up to date
+        uses: sqlc-dev/setup-sqlc@v4
+        with:
+          sqlc-version: "1.30.0"
+      - run: sqlc diff
+      - name: Check generated test fakes are up to date
+        run: go generate ./internal/db/... && git diff --exit-code
+      - run: go vet ./...
+      - name: Known vulnerabilities in reachable code
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+      - name: Unit + integration tests (against the Postgres service)
+        run: go test -race -count=1 ./...
+
+  java-api:
+    name: Java API (optional backend)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: twitter-java-api
+    steps:
+      - uses: actions/checkout@v4
+      - name: Same schema as the Go API
+        run: diff -u ../twitter-go-api/internal/db/migrations/000001_init_schema.up.sql src/main/resources/db/migration/V1__init_schema.sql
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
+          cache: maven
+      - name: Unit + integration tests (Testcontainers)
+        run: ./mvnw -B verify
+
+  web:
+    name: Next.js web
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: twitter-next-web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: twitter-next-web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npx tsc --noEmit
+      - run: npm test
+      - run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+          NEXT_PUBLIC_API_URL: http://localhost:8080/api/v1
+          NEXT_PUBLIC_GOOGLE_CLIENT_ID: ci-placeholder
+
+  terraform:
+    name: Terraform
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.14.6"
+      - run: terraform fmt -check -recursive
+      - name: Validate and plan against mocked providers (AWS, Grafana)
+        run: |
+          for dir in bootstrap terraform grafana; do
+            terraform -chdir="$dir" init -backend=false -input=false
+            terraform -chdir="$dir" validate
+          done
+          terraform -chdir=terraform test
+          terraform -chdir=grafana test
+
+  ec2-stack:
+    name: EC2 stack (nginx, scripts, Compose, Alloy)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: infra/ec2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shell scripts
+        run: shellcheck -x deploy.sh twitter-deploy certbot.sh nginx/reload-on-cert-change.sh
+      - name: nginx config
+        run: |
+          tls=$(mktemp -d)
+          openssl req -x509 -nodes -newkey rsa:2048 -days 1 -subj /CN=test \
+            -keyout "$tls/privkey.pem" -out "$tls/fullchain.pem" 2>/dev/null
+          docker run --rm -e SITE_DOMAIN=twitter.example.com \
+            -v "$PWD/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro" \
+            -v "$tls:/etc/nginx/tls:ro" nginx:1.28-alpine \
+            sh -c '/docker-entrypoint.sh nginx -v && nginx -t'
+      - name: Compose file
+        run: |
+          mkdir -p "$STATE_DIR" && touch "$STATE_DIR/api.env" "$STATE_DIR/monitoring.env"
+          docker compose --profile monitoring config --quiet
+        env:
+          API_IMAGE: api:test
+          WEB_IMAGE: web:test
+          SITE_DOMAIN: twitter.example.com
+          ACME_EMAIL: ops@example.com
+          STATE_DIR: ${{ runner.temp }}/state
+      - name: Alloy config
+        run: docker run --rm -v "$PWD/config.alloy:/config.alloy:ro" grafana/alloy:v1.14.0 fmt /config.alloy > /dev/null

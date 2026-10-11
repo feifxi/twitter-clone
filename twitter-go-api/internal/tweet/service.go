@@ -1,0 +1,292 @@
+// Package tweet handles posting, deleting and interacting with tweets, and
+// hydrates tweet rows into domain.Tweet for every feature that lists tweets.
+package tweet
+
+import (
+	"context"
+	"strings"
+	"time"
+
+	"github.com/chanombude/twitter-go-api/internal/apperr"
+	"github.com/chanombude/twitter-go-api/internal/db"
+	"github.com/chanombude/twitter-go-api/internal/domain"
+	"github.com/chanombude/twitter-go-api/internal/media"
+	"github.com/chanombude/twitter-go-api/internal/notification"
+	"github.com/chanombude/twitter-go-api/internal/pagination"
+)
+
+type objectStore interface {
+	PublicURL(objectKey string) string
+	KeyFromPublicURL(url string) (string, bool)
+	DeleteObject(ctx context.Context, objectKey string) error
+}
+
+type notifier interface {
+	Dispatch(n db.Notification)
+}
+
+type Config struct {
+	// EmbedTweets queues new tweets for RAG embedding (see package embedding).
+	EmbedTweets bool
+}
+
+type Service struct {
+	cfg      Config
+	store    db.Store
+	storage  objectStore
+	notifier notifier
+}
+
+func New(cfg Config, store db.Store, storage objectStore, notifier notifier) *Service {
+	return &Service{cfg: cfg, store: store, storage: storage, notifier: notifier}
+}
+
+type CreateInput struct {
+	UserID   int64
+	Content  *string
+	ParentID *int64
+	MediaKey *string // object key from a presigned upload; the media type is derived from it
+}
+
+func (s *Service) Create(ctx context.Context, in CreateInput) (domain.Tweet, error) {
+	content := trimmedOrNil(in.Content)
+
+	var mediaKey string
+	var mediaType, mediaURL *string
+	if in.MediaKey != nil && *in.MediaKey != "" {
+		mediaKey = *in.MediaKey
+		if err := media.ValidateOwnedKey(mediaKey, media.FolderTweets, in.UserID); err != nil {
+			return domain.Tweet{}, err
+		}
+		typ, url := media.TypeForKey(mediaKey), s.storage.PublicURL(mediaKey)
+		mediaType, mediaURL = &typ, &url
+	}
+
+	if content == nil && mediaURL == nil {
+		return domain.Tweet{}, apperr.BadRequest("tweet must include text or media")
+	}
+
+	var created db.Tweet
+	var pending db.Notification
+	err := s.store.ExecTxAfterCommit(ctx, func(q db.Querier) error {
+		var err error
+		created, err = q.CreateTweet(ctx, db.CreateTweetParams{
+			UserID:    in.UserID,
+			Content:   content,
+			MediaType: mediaType,
+			MediaURL:  mediaURL,
+			ParentID:  in.ParentID,
+		})
+		if err != nil {
+			return err
+		}
+
+		if in.ParentID != nil {
+			if err := q.IncrementReplyCount(ctx, *in.ParentID); err != nil {
+				return err
+			}
+			parent, err := q.GetTweet(ctx, db.GetTweetParams{ID: *in.ParentID})
+			if err != nil {
+				return db.NotFound(err, "parent tweet")
+			}
+			pending, err = notification.Create(ctx, q, parent.Tweet.UserID, in.UserID, &created.ID, domain.NotificationReply)
+			if err != nil {
+				return err
+			}
+		}
+
+		if content != nil && s.cfg.EmbedTweets {
+			// Same transaction as the tweet: the job exists if and only if the tweet does.
+			if err := q.EnqueueEmbeddingJob(ctx, created.ID); err != nil {
+				return err
+			}
+		}
+
+		if content != nil {
+			for _, tag := range extractHashtags(*content) {
+				h, err := q.UpsertHashtag(ctx, tag)
+				if err != nil {
+					return err
+				}
+				if err := q.LinkTweetHashtag(ctx, db.LinkTweetHashtagParams{TweetID: created.ID, HashtagID: h.ID}); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}, func() { s.notifier.Dispatch(pending) })
+	if err != nil {
+		if mediaKey != "" {
+			_ = s.storage.DeleteObject(ctx, mediaKey)
+		}
+		return domain.Tweet{}, err
+	}
+
+	return s.Get(ctx, created.ID, &in.UserID)
+}
+
+func (s *Service) Delete(ctx context.Context, userID, tweetID int64) error {
+	t, err := s.getTweet(ctx, tweetID, nil)
+	if err != nil {
+		return err
+	}
+	if t.Tweet.UserID != userID {
+		return apperr.Forbidden("you can only delete your own tweets")
+	}
+
+	mediaURLs, err := s.store.ListMediaURLsInThread(ctx, tweetID)
+	if err != nil {
+		return err
+	}
+
+	return s.store.ExecTxAfterCommit(ctx, func(q db.Querier) error {
+		// Read hashtag usage for the whole thread before deleting, because
+		// ON DELETE CASCADE removes the replies' tweet_hashtags rows too.
+		usage, err := q.ListHashtagUsageInThread(ctx, tweetID)
+		if err != nil {
+			return err
+		}
+		if _, err := q.DeleteTweetByOwner(ctx, db.DeleteTweetByOwnerParams{ID: tweetID, UserID: userID}); err != nil {
+			return err
+		}
+		if t.Tweet.ParentID != nil {
+			if err := q.DecrementReplyCount(ctx, *t.Tweet.ParentID); err != nil {
+				return err
+			}
+		}
+		for _, u := range usage {
+			if err := q.DecrementHashtagUsage(ctx, db.DecrementHashtagUsageParams{ID: u.HashtagID, Uses: u.Uses}); err != nil {
+				return err
+			}
+			if err := q.DeleteUnusedHashtag(ctx, u.HashtagID); err != nil {
+				return err
+			}
+		}
+		return nil
+	}, func() { s.deleteMedia(mediaURLs) })
+}
+
+// deleteMedia removes the thread's hosted media after the rows are gone; external URLs are skipped.
+func (s *Service) deleteMedia(urls []*string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	seen := make(map[string]struct{}, len(urls))
+	for _, url := range urls {
+		if url == nil {
+			continue
+		}
+		key, ok := s.storage.KeyFromPublicURL(*url)
+		if !ok {
+			continue
+		}
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		_ = s.storage.DeleteObject(ctx, key)
+	}
+}
+
+func (s *Service) Get(ctx context.Context, tweetID int64, viewerID *int64) (domain.Tweet, error) {
+	row, err := s.getTweet(ctx, tweetID, viewerID)
+	if err != nil {
+		return domain.Tweet{}, err
+	}
+	items, err := Hydrate(ctx, s.store, []Row{Row(row)}, viewerID)
+	if err != nil {
+		return domain.Tweet{}, err
+	}
+	return items[0], nil
+}
+
+// ListReplies pages through a tweet's direct replies, oldest first.
+func (s *Service) ListReplies(ctx context.Context, tweetID int64, req pagination.Request, viewerID *int64) (pagination.Page[domain.Tweet], error) {
+	if _, err := s.getTweet(ctx, tweetID, viewerID); err != nil {
+		return pagination.Page[domain.Tweet]{}, err
+	}
+
+	rows, err := s.store.ListTweetReplies(ctx, db.ListTweetRepliesParams{
+		ParentID:   &tweetID,
+		ViewerID:   viewerID,
+		CursorTime: req.AfterTime(),
+		CursorID:   req.AfterID(),
+		PageLimit:  req.FetchLimit(),
+	})
+	if err != nil {
+		return pagination.Page[domain.Tweet]{}, err
+	}
+	return Page(ctx, s.store, Rows(rows, func(r db.ListTweetRepliesRow) Row { return Row(r) }), req.Limit, viewerID, CreatedCursor)
+}
+
+func (s *Service) Like(ctx context.Context, userID, tweetID int64) error {
+	t, err := s.getTweet(ctx, tweetID, nil)
+	if err != nil {
+		return err
+	}
+
+	var pending db.Notification
+	return s.store.ExecTxAfterCommit(ctx, func(q db.Querier) error {
+		liked, err := q.LikeTweet(ctx, db.LikeTweetParams{UserID: userID, TweetID: tweetID})
+		if err != nil || !liked {
+			return err
+		}
+		pending, err = notification.Create(ctx, q, t.Tweet.UserID, userID, &t.Tweet.ID, domain.NotificationLike)
+		return err
+	}, func() { s.notifier.Dispatch(pending) })
+}
+
+func (s *Service) Unlike(ctx context.Context, userID, tweetID int64) error {
+	if _, err := s.getTweet(ctx, tweetID, nil); err != nil {
+		return err
+	}
+	_, err := s.store.UnlikeTweet(ctx, db.UnlikeTweetParams{UserID: userID, TweetID: tweetID})
+	return err
+}
+
+// Retweet is idempotent and returns the retweeted tweet as the retweeter now sees it.
+func (s *Service) Retweet(ctx context.Context, userID, tweetID int64) (domain.Tweet, error) {
+	t, err := s.getTweet(ctx, tweetID, nil)
+	if err != nil {
+		return domain.Tweet{}, err
+	}
+
+	var pending db.Notification
+	err = s.store.ExecTxAfterCommit(ctx, func(q db.Querier) error {
+		created, err := q.CreateRetweet(ctx, db.CreateRetweetParams{UserID: userID, TweetID: tweetID})
+		if err != nil || !created {
+			return err
+		}
+		pending, err = notification.Create(ctx, q, t.Tweet.UserID, userID, &t.Tweet.ID, domain.NotificationRetweet)
+		return err
+	}, func() { s.notifier.Dispatch(pending) })
+	if err != nil {
+		return domain.Tweet{}, err
+	}
+	return s.Get(ctx, tweetID, &userID)
+}
+
+// UndoRetweet is idempotent: undoing a retweet that doesn't exist succeeds.
+func (s *Service) UndoRetweet(ctx context.Context, userID, tweetID int64) error {
+	if _, err := s.getTweet(ctx, tweetID, nil); err != nil {
+		return err
+	}
+	_, err := s.store.DeleteRetweet(ctx, db.DeleteRetweetParams{UserID: userID, TweetID: tweetID})
+	return err
+}
+
+func (s *Service) getTweet(ctx context.Context, tweetID int64, viewerID *int64) (db.GetTweetRow, error) {
+	row, err := s.store.GetTweet(ctx, db.GetTweetParams{ID: tweetID, ViewerID: viewerID})
+	return row, db.NotFound(err, "tweet")
+}
+
+func trimmedOrNil(s *string) *string {
+	if s == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*s)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
+}

@@ -6,7 +6,6 @@ import { usePathname } from 'next/navigation';
 import { Home, Search, Bell, Mail, Users, LogIn } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ComposeTweetModal } from '@/components/ComposeTweetModal';
 import { useUIStore } from '@/store/useUIStore';
 import {
@@ -16,7 +15,10 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
+import { FILL_WHEN_ACTIVE } from '@/components/AppNav';
+import { ConfirmModal } from '@/components/ConfirmModal';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { UserAvatar } from '@/components/UserAvatar';
 
 type MobileNavProps = {
   unreadCount?: number;
@@ -26,6 +28,7 @@ export function MobileNav({ unreadCount = 0 }: MobileNavProps) {
   const pathname = usePathname();
   const { user, isLoggedIn, logout } = useAuth();
   const [showCompose, setShowCompose] = useState(false);
+  const [confirmLogout, setConfirmLogout] = useState(false);
   const openSignInModal = useUIStore((s) => s.openSignInModal);
 
   const NAV_ITEMS = [
@@ -43,6 +46,7 @@ export function MobileNav({ unreadCount = 0 }: MobileNavProps) {
         {/* More/Profile Actions Menu that floats above the tweet button on mobile if needed, or we just put it in the nav */}
         {isLoggedIn && (
           <Button
+            aria-label="Post"
             className="w-[56px] h-[56px] rounded-full flex items-center justify-center shadow-[0_4px_14px_rgba(0,0,0,0.25)] p-0 bg-primary hover:bg-primary/90 transition-colors"
             size="icon"
             onClick={() => setShowCompose(true)}
@@ -63,10 +67,11 @@ export function MobileNav({ unreadCount = 0 }: MobileNavProps) {
               <button
                 key={item.label}
                 type="button"
+                aria-label={item.label}
                 onClick={item.onClick}
                 className="p-2 relative flex items-center justify-center cursor-pointer"
               >
-                <Icon className={`w-6 h-6 ${isActive ? 'fill-current text-foreground' : 'text-muted-foreground'}`} strokeWidth={isActive ? 2.5 : 2} />
+                <Icon className={`w-6 h-6 ${isActive ? 'text-foreground' : 'text-muted-foreground'} ${isActive && FILL_WHEN_ACTIVE.has(Icon) ? 'fill-current' : ''}`} strokeWidth={isActive ? 2.5 : 2} />
                 {item.label === 'Notifications' && unreadCount > 0 && (
                   <div className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-primary border-2 border-background" />
                 )}
@@ -78,9 +83,11 @@ export function MobileNav({ unreadCount = 0 }: MobileNavProps) {
             <Link
               key={item.label}
               href={item.href}
+              aria-label={item.label}
+              aria-current={isActive ? 'page' : undefined}
               className="p-2 relative flex items-center justify-center cursor-pointer"
             >
-              <Icon className={`w-6 h-6 ${isActive ? 'fill-current text-foreground' : 'text-muted-foreground'}`} strokeWidth={isActive ? 2.5 : 2} />
+              <Icon className={`w-6 h-6 ${isActive ? 'text-foreground' : 'text-muted-foreground'} ${isActive && FILL_WHEN_ACTIVE.has(Icon) ? 'fill-current' : ''}`} strokeWidth={isActive ? 2.5 : 2} />
               {item.label === 'Notifications' && unreadCount > 0 && (
                 <div className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-primary border-2 border-background" />
               )}
@@ -92,16 +99,16 @@ export function MobileNav({ unreadCount = 0 }: MobileNavProps) {
         {isLoggedIn && user ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button type="button" className="p-2 relative flex items-center justify-center cursor-pointer outline-none">
-                <Avatar className="w-6 h-6 border border-border/50">
-                  <AvatarImage src={user.avatarUrl ?? undefined} alt={user.displayName || user.username} />
-                  <AvatarFallback className="text-[10px]">{(user.displayName || user.username)[0]}</AvatarFallback>
-                </Avatar>
+              <button type="button" aria-label="Account menu" className="p-2 relative flex items-center justify-center cursor-pointer outline-none">
+                <UserAvatar user={user} size="xs" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" side="top" className="w-[200px] mb-2 font-bold z-50">
               <DropdownMenuItem asChild className="p-3 text-[15px] cursor-pointer">
                 <Link href={`/${user.username}`}>Profile</Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild className="p-3 text-[15px] cursor-pointer">
+                <Link href="/chanombot">ChanomBot</Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild className="p-3 text-[15px] cursor-pointer">
                 <Link href="/premium">Premium</Link>
@@ -110,22 +117,16 @@ export function MobileNav({ unreadCount = 0 }: MobileNavProps) {
                 <Link href="/brainrot">Brainrot</Link>
               </DropdownMenuItem>
               <ThemeToggle variant="menu-item" />
-              <DropdownMenuItem 
-                className="p-3 text-[15px] cursor-pointer"
-                onClick={() => { logout(); openSignInModal(); }}
-              >
-                Switch account
-              </DropdownMenuItem>
-               <DropdownMenuItem 
+              <DropdownMenuItem
                 className="p-3 text-[15px] cursor-pointer text-destructive focus:text-destructive"
-                onClick={() => logout()}
+                onSelect={() => setConfirmLogout(true)}
               >
                 Log out
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         ) : (
-          <button type="button" className="p-2 relative flex items-center justify-center cursor-pointer" onClick={openSignInModal}>
+          <button type="button" aria-label="Sign in" className="p-2 relative flex items-center justify-center cursor-pointer" onClick={openSignInModal}>
             <LogIn className="w-6 h-6 text-muted-foreground" strokeWidth={2} />
           </button>
         )}
@@ -133,6 +134,17 @@ export function MobileNav({ unreadCount = 0 }: MobileNavProps) {
 
       {/* Global Compose Modal */}
       {isLoggedIn && <ComposeTweetModal isOpen={showCompose} onClose={() => setShowCompose(false)} />}
+      <ConfirmModal
+        open={confirmLogout}
+        title="Log out of Chanom Twitter?"
+        description="You can always log back in at any time."
+        confirmLabel="Log out"
+        onConfirm={() => {
+          setConfirmLogout(false);
+          logout();
+        }}
+        onClose={() => setConfirmLogout(false)}
+      />
     </div>
   );
 }

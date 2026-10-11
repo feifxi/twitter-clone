@@ -3,9 +3,10 @@
 import { GoogleLogin, CredentialResponse } from '@react-oauth/google';
 import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { axiosInstance } from '@/api/axiosInstance';
-import { useAuthStore } from '@/store/useAuthStore';
-import type { AuthResponse } from '@/types';
+import { toast } from 'sonner';
+import { axiosInstance, getErrorMessage } from '@/api/axiosInstance';
+import { queryKeys } from '@/lib/query-keys';
+import type { CurrentUserResponse } from '@/types';
 import type { GoogleAuthRequestInput } from '@/lib/validation';
 
 import { useUIStore } from '@/store/useUIStore';
@@ -14,13 +15,12 @@ import { useQueryClient } from '@tanstack/react-query';
 
 export default function GoogleLoginBtn() {
   const router = useRouter();
-  const setAuth = useAuthStore((s) => s.setAuth);
   const closeSignInModal = useUIStore((s) => s.closeSignInModal);
   const queryClient = useQueryClient();
 
   const [isLoading, setIsLoading] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [buttonWidth, setButtonWidth] = useState<number>(364); // Default to PC width
+  const [buttonWidth, setButtonWidth] = useState<number>(364);
 
   useEffect(() => {
     const updateWidth = () => {
@@ -43,19 +43,17 @@ export default function GoogleLoginBtn() {
     setIsLoading(true);
     try {
       const payload: GoogleAuthRequestInput = { idToken: googleToken };
-      const { data } = await axiosInstance.post<AuthResponse>('/auth/google', payload);
-      setAuth(data.accessToken, data.refreshToken, data.user);
-      
-      await queryClient.invalidateQueries({ queryKey: ['feeds'] });
-      await queryClient.invalidateQueries({ queryKey: ['discovery'] });
-      await queryClient.invalidateQueries({ queryKey: ['users'] });
-      await queryClient.invalidateQueries({ queryKey: ['search'] });
+      // The API sets the session cookies; the body is the signed-in user.
+      const { data } = await axiosInstance.post<CurrentUserResponse>('/auth/google', payload);
+      queryClient.setQueryData(queryKeys.auth.me, data);
+      // Everything else was fetched anonymously (no likes, follows, …).
+      await queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] !== 'auth' });
 
       closeSignInModal();
-      router.push('/');
+      router.push(data.onboarded ? '/' : '/onboarding');
+      router.refresh(); // re-render server components with the new session
     } catch (error) {
-      console.error('Login Failed:', error);
-      alert('Login failed. Please try again.');
+      toast.error(getErrorMessage(error) || 'Sign-in failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -66,7 +64,7 @@ export default function GoogleLoginBtn() {
       <GoogleLogin
         key={buttonWidth}
         onSuccess={handleSuccess}
-        onError={() => console.log('Google Login Failed')}
+        onError={() => toast.error('Google sign-in was cancelled or failed.')}
         theme="filled_black"
         shape="pill"
         size="large"

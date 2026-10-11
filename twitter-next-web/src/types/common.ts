@@ -16,7 +16,8 @@ export type FieldErrors = Record<string, string>;
 export interface PageResponse<T> {
     items: T[];
     hasNext: boolean;
-    nextCursor?: string;
+    /** Opaque; pass back as ?cursor=. null on the last page. */
+    nextCursor: string | null;
 }
 
 export interface ApiResponse {

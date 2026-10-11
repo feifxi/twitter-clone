@@ -1,0 +1,134 @@
+// Ships metrics to Grafana Cloud Prometheus and container logs to Loki.
+// Credentials come from monitoring.env (rendered from SSM by deploy.sh).
+//
+//   metrics: API (/metrics), host (node-exporter), and edge metrics for the whole site
+//            derived from nginx's JSON access logs (nginx_http_*)
+//   logs:    every container of the stack, labelled by service
+
+// ── Metrics ─────────────────────────────────────────
+
+prometheus.scrape "api" {
+  targets    = [{"__address__" = "api:8080", "job" = "twitter-api"}]
+  forward_to = [prometheus.remote_write.grafana_cloud.receiver]
+}
+
+prometheus.scrape "node_exporter" {
+  targets    = [{"__address__" = "node-exporter:9100", "job" = "node-exporter"}]
+  forward_to = [prometheus.remote_write.grafana_cloud.receiver]
+}
+
+// The nginx_http_* metrics below are served on Alloy's own endpoint. Keep only those:
+// Alloy's internal metrics would use up the free tier's series limit.
+prometheus.scrape "edge" {
+  targets    = [{"__address__" = "127.0.0.1:12345", "job" = "nginx"}]
+  forward_to = [prometheus.relabel.edge_only.receiver]
+}
+
+prometheus.relabel "edge_only" {
+  rule {
+    source_labels = ["__name__"]
+    regex         = "nginx_http_.*"
+    action        = "keep"
+  }
+  forward_to = [prometheus.remote_write.grafana_cloud.receiver]
+}
+
+prometheus.remote_write "grafana_cloud" {
+  endpoint {
+    url = sys.env("GRAFANA_PROMETHEUS_URL")
+    basic_auth {
+      username = sys.env("GRAFANA_PROMETHEUS_USER")
+      password = sys.env("GRAFANA_API_TOKEN")
+    }
+  }
+}
+
+// ── Logs ────────────────────────────────────────────
+
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "stack" {
+  targets = discovery.docker.containers.targets
+
+  // Only this Compose project's containers, labelled by service name.
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    regex         = "twitter"
+    action        = "keep"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+}
+
+loki.source.docker "stack" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.stack.output
+  forward_to = [loki.process.stack.receiver]
+}
+
+loki.process "stack" {
+  // nginx access logs → edge metrics (every request to the site, web and API).
+  stage.match {
+    selector = "{service=\"nginx\"}"
+
+    stage.json {
+      expressions = {status = "status", request_time = "request_time", upstream = "service"}
+    }
+    // Only real access log lines (nginx also logs startup notices and errors).
+    stage.match {
+      selector = "{service=\"nginx\"} |~ \"\\\"status\\\":\""
+
+      stage.labels {
+        values = {status = "", upstream = ""}
+      }
+      stage.metrics {
+        metric.counter {
+          name        = "requests_total"
+          prefix      = "nginx_http_"
+          description = "Requests served by nginx, by upstream (api, web) and status code"
+          match_all   = true
+          action      = "inc"
+        }
+        metric.histogram {
+          name        = "request_duration_seconds"
+          prefix      = "nginx_http_"
+          description = "Time nginx took to answer, by upstream and status code"
+          source      = "request_time"
+          buckets     = [0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10]
+        }
+      }
+      // Status codes make good metric labels but poor log stream labels.
+      stage.label_drop {
+        values = ["status"]
+      }
+    }
+  }
+
+  // API logs are JSON (slog): index the level so errors are one click away.
+  stage.match {
+    selector = "{service=\"api\"}"
+
+    stage.json {
+      expressions = {level = "level"}
+    }
+    stage.labels {
+      values = {level = ""}
+    }
+  }
+
+  forward_to = [loki.write.grafana_cloud.receiver]
+}
+
+loki.write "grafana_cloud" {
+  endpoint {
+    url = sys.env("GRAFANA_LOKI_URL")
+    basic_auth {
+      username = sys.env("GRAFANA_LOKI_USER")
+      password = sys.env("GRAFANA_API_TOKEN")
+    }
+  }
+}

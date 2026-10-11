@@ -1,5 +1,6 @@
-'use client'; // Error components must be Client Components
+'use client';
 
+import Link from 'next/link';
 import { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { XLogo } from '@/components/XLogo';
@@ -12,7 +13,6 @@ export default function ErrorBoundary({
   reset: () => void;
 }) {
   useEffect(() => {
-    // Optionally log the error to an error reporting service like Sentry
     console.error('Root Error Boundary caught an error:', error);
   }, [error]);
 
@@ -36,17 +36,13 @@ export default function ErrorBoundary({
           >
             Try again
           </Button>
-          <Button 
-            variant="outline"
-            onClick={() => window.location.href = '/'}
-            className="rounded-full font-bold px-8 h-12 border-border hover:bg-card"
-          >
-            Go to Home
+          <Button asChild variant="outline" className="rounded-full font-bold px-8 h-12 border-border hover:bg-card">
+            <Link href="/">Go to Home</Link>
           </Button>
         </div>
         
         {process.env.NODE_ENV === 'development' && (
-            <div className="mt-8 p-4 bg-red-500/10 border border-destructive/20 rounded-xl text-left overflow-auto max-h-[300px]">
+            <div className="mt-8 p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-left overflow-auto max-h-[300px]">
                 <p className="font-mono text-xs text-destructive wrap-break-word">
                     {error.message || 'Unknown error'}
                 </p>

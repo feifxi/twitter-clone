@@ -9,19 +9,19 @@ import (
 	"context"
 )
 
-const decrementHashtagUsageBy = `-- name: DecrementHashtagUsageBy :exec
+const decrementHashtagUsage = `-- name: DecrementHashtagUsage :exec
 UPDATE hashtags
-SET usage_count = GREATEST(0, usage_count - $2)
-WHERE id = $1
+SET usage_count = GREATEST(0, usage_count - $1::integer)
+WHERE id = $2
 `
 
-type DecrementHashtagUsageByParams struct {
-	ID         int64 `json:"id"`
-	UsageCount int32 `json:"usage_count"`
+type DecrementHashtagUsageParams struct {
+	Uses int32 `json:"uses"`
+	ID   int64 `json:"id"`
 }
 
-func (q *Queries) DecrementHashtagUsageBy(ctx context.Context, arg DecrementHashtagUsageByParams) error {
-	_, err := q.db.Exec(ctx, decrementHashtagUsageBy, arg.ID, arg.UsageCount)
+func (q *Queries) DecrementHashtagUsage(ctx context.Context, arg DecrementHashtagUsageParams) error {
+	_, err := q.db.Exec(ctx, decrementHashtagUsage, arg.Uses, arg.ID)
 	return err
 }
 
@@ -72,7 +72,7 @@ SELECT h.id, h.text, h.usage_count, h.last_used_at, h.created_at
 FROM hashtags h
 JOIN tweet_hashtags th ON th.hashtag_id = h.id
 JOIN tweets t ON t.id = th.tweet_id
-WHERE t.created_at >= NOW() - INTERVAL '24 hours'
+WHERE t.created_at >= now() - INTERVAL '24 hours'
 GROUP BY h.id
 ORDER BY COUNT(th.tweet_id) DESC, MAX(t.created_at) DESC
 LIMIT $1
@@ -120,33 +120,35 @@ func (q *Queries) LinkTweetHashtag(ctx context.Context, arg LinkTweetHashtagPara
 	return err
 }
 
-const listHashtagUsageToDecrementForDeleteRoot = `-- name: ListHashtagUsageToDecrementForDeleteRoot :many
-WITH RECURSIVE tweet_tree AS (
+const listHashtagUsageInThread = `-- name: ListHashtagUsageInThread :many
+WITH RECURSIVE thread AS (
   SELECT t.id FROM tweets t WHERE t.id = $1
   UNION ALL
-  SELECT t.id FROM tweets t INNER JOIN tweet_tree tt ON t.parent_id = tt.id OR t.retweet_id = tt.id
+  SELECT t.id FROM tweets t JOIN thread ON t.parent_id = thread.id
 )
-SELECT th.hashtag_id, COUNT(th.hashtag_id)::integer AS decrement_by
+SELECT th.hashtag_id, COUNT(*)::integer AS uses
 FROM tweet_hashtags th
-JOIN tweet_tree tt ON th.tweet_id = tt.id
+JOIN thread ON th.tweet_id = thread.id
 GROUP BY th.hashtag_id
 `
 
-type ListHashtagUsageToDecrementForDeleteRootRow struct {
-	HashtagID   int64 `json:"hashtag_id"`
-	DecrementBy int32 `json:"decrement_by"`
+type ListHashtagUsageInThreadRow struct {
+	HashtagID int64 `json:"hashtag_id"`
+	Uses      int32 `json:"uses"`
 }
 
-func (q *Queries) ListHashtagUsageToDecrementForDeleteRoot(ctx context.Context, id int64) ([]ListHashtagUsageToDecrementForDeleteRootRow, error) {
-	rows, err := q.db.Query(ctx, listHashtagUsageToDecrementForDeleteRoot, id)
+// Hashtag uses in a tweet and every reply under it. Read before deleting the
+// thread, because ON DELETE CASCADE removes the tweet_hashtags rows.
+func (q *Queries) ListHashtagUsageInThread(ctx context.Context, id int64) ([]ListHashtagUsageInThreadRow, error) {
+	rows, err := q.db.Query(ctx, listHashtagUsageInThread, id)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ListHashtagUsageToDecrementForDeleteRootRow{}
+	items := []ListHashtagUsageInThreadRow{}
 	for rows.Next() {
-		var i ListHashtagUsageToDecrementForDeleteRootRow
-		if err := rows.Scan(&i.HashtagID, &i.DecrementBy); err != nil {
+		var i ListHashtagUsageInThreadRow
+		if err := rows.Scan(&i.HashtagID, &i.Uses); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -159,18 +161,18 @@ func (q *Queries) ListHashtagUsageToDecrementForDeleteRoot(ctx context.Context, 
 
 const searchHashtagsByPrefix = `-- name: SearchHashtagsByPrefix :many
 SELECT id, text, usage_count, last_used_at, created_at FROM hashtags
-WHERE LOWER(text) LIKE LOWER($1 || '%')
+WHERE text LIKE lower($1) || '%'
 ORDER BY usage_count DESC
 LIMIT $2
 `
 
 type SearchHashtagsByPrefixParams struct {
-	Column1 *string `json:"column_1"`
-	Limit   int32   `json:"limit"`
+	Prefix      string `json:"prefix"`
+	ResultLimit int32  `json:"result_limit"`
 }
 
 func (q *Queries) SearchHashtagsByPrefix(ctx context.Context, arg SearchHashtagsByPrefixParams) ([]Hashtag, error) {
-	rows, err := q.db.Query(ctx, searchHashtagsByPrefix, arg.Column1, arg.Limit)
+	rows, err := q.db.Query(ctx, searchHashtagsByPrefix, arg.Prefix, arg.ResultLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -197,10 +199,10 @@ func (q *Queries) SearchHashtagsByPrefix(ctx context.Context, arg SearchHashtags
 
 const upsertHashtag = `-- name: UpsertHashtag :one
 INSERT INTO hashtags (text, usage_count, last_used_at)
-VALUES ($1, 1, CURRENT_TIMESTAMP)
+VALUES ($1, 1, now())
 ON CONFLICT (text) DO UPDATE
 SET usage_count = hashtags.usage_count + 1,
-    last_used_at = CURRENT_TIMESTAMP
+    last_used_at = now()
 RETURNING id, text, usage_count, last_used_at, created_at
 `
 

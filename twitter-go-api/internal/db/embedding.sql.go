@@ -11,16 +11,108 @@ import (
 	"github.com/pgvector/pgvector-go"
 )
 
+const claimEmbeddingJobs = `-- name: ClaimEmbeddingJobs :many
+WITH due AS (
+  SELECT j.tweet_id
+  FROM embedding_jobs j
+  WHERE j.run_after <= now() AND j.attempts < $2::int
+  ORDER BY j.run_after
+  LIMIT $3
+  FOR UPDATE SKIP LOCKED
+)
+UPDATE embedding_jobs j
+SET run_after = now() + make_interval(secs => $1::float8),
+    attempts = j.attempts + 1
+FROM due, tweets t
+WHERE j.tweet_id = due.tweet_id AND t.id = j.tweet_id
+RETURNING j.tweet_id, j.attempts, t.content
+`
+
+type ClaimEmbeddingJobsParams struct {
+	LeaseSeconds float64 `json:"lease_seconds"`
+	MaxAttempts  int32   `json:"max_attempts"`
+	BatchSize    int32   `json:"batch_size"`
+}
+
+type ClaimEmbeddingJobsRow struct {
+	TweetID  int64   `json:"tweet_id"`
+	Attempts int32   `json:"attempts"`
+	Content  *string `json:"content"`
+}
+
+// Leases due jobs: run_after moves past the lease so a crashed worker's jobs
+// become due again (at-least-once). SKIP LOCKED lets several workers share the queue.
+func (q *Queries) ClaimEmbeddingJobs(ctx context.Context, arg ClaimEmbeddingJobsParams) ([]ClaimEmbeddingJobsRow, error) {
+	rows, err := q.db.Query(ctx, claimEmbeddingJobs, arg.LeaseSeconds, arg.MaxAttempts, arg.BatchSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ClaimEmbeddingJobsRow{}
+	for rows.Next() {
+		var i ClaimEmbeddingJobsRow
+		if err := rows.Scan(&i.TweetID, &i.Attempts, &i.Content); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const completeEmbeddingJob = `-- name: CompleteEmbeddingJob :exec
+DELETE FROM embedding_jobs WHERE tweet_id = $1
+`
+
+func (q *Queries) CompleteEmbeddingJob(ctx context.Context, tweetID int64) error {
+	_, err := q.db.Exec(ctx, completeEmbeddingJob, tweetID)
+	return err
+}
+
+const countEmbeddingJobs = `-- name: CountEmbeddingJobs :one
+SELECT
+  count(*) FILTER (WHERE attempts < $1::int)::bigint  AS pending,
+  count(*) FILTER (WHERE attempts >= $1::int)::bigint AS failed
+FROM embedding_jobs
+`
+
+type CountEmbeddingJobsRow struct {
+	Pending int64 `json:"pending"`
+	Failed  int64 `json:"failed"`
+}
+
+// Queue depth for metrics: jobs still to run, and jobs that gave up after max_attempts.
+func (q *Queries) CountEmbeddingJobs(ctx context.Context, maxAttempts int32) (CountEmbeddingJobsRow, error) {
+	row := q.db.QueryRow(ctx, countEmbeddingJobs, maxAttempts)
+	var i CountEmbeddingJobsRow
+	err := row.Scan(&i.Pending, &i.Failed)
+	return i, err
+}
+
+const enqueueEmbeddingJob = `-- name: EnqueueEmbeddingJob :exec
+INSERT INTO embedding_jobs (tweet_id) VALUES ($1)
+ON CONFLICT DO NOTHING
+`
+
+func (q *Queries) EnqueueEmbeddingJob(ctx context.Context, tweetID int64) error {
+	_, err := q.db.Exec(ctx, enqueueEmbeddingJob, tweetID)
+	return err
+}
+
 const listRelatedTweetsByEmbedding = `-- name: ListRelatedTweetsByEmbedding :many
 SELECT tweet_id, content
 FROM tweet_embeddings
-ORDER BY embedding <-> $1::vector ASC
-LIMIT $2
+WHERE embedding <=> $1::vector < $2::float8
+ORDER BY embedding <=> $1::vector
+LIMIT $3
 `
 
 type ListRelatedTweetsByEmbeddingParams struct {
-	Column1 *pgvector.Vector `json:"column_1"`
-	Limit   int32            `json:"limit"`
+	QueryEmbedding *pgvector.Vector `json:"query_embedding"`
+	MaxDistance    float64          `json:"max_distance"`
+	ResultLimit    int32            `json:"result_limit"`
 }
 
 type ListRelatedTweetsByEmbeddingRow struct {
@@ -28,8 +120,9 @@ type ListRelatedTweetsByEmbeddingRow struct {
 	Content string `json:"content"`
 }
 
+// Uses cosine distance (<=>) to match the vector_cosine_ops HNSW index.
 func (q *Queries) ListRelatedTweetsByEmbedding(ctx context.Context, arg ListRelatedTweetsByEmbeddingParams) ([]ListRelatedTweetsByEmbeddingRow, error) {
-	rows, err := q.db.Query(ctx, listRelatedTweetsByEmbedding, arg.Column1, arg.Limit)
+	rows, err := q.db.Query(ctx, listRelatedTweetsByEmbedding, arg.QueryEmbedding, arg.MaxDistance, arg.ResultLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -46,4 +139,40 @@ func (q *Queries) ListRelatedTweetsByEmbedding(ctx context.Context, arg ListRela
 		return nil, err
 	}
 	return items, nil
+}
+
+const retryEmbeddingJob = `-- name: RetryEmbeddingJob :exec
+UPDATE embedding_jobs
+SET run_after = now() + make_interval(secs => $1::float8),
+    last_error = $2
+WHERE tweet_id = $3
+`
+
+type RetryEmbeddingJobParams struct {
+	BackoffSeconds float64 `json:"backoff_seconds"`
+	LastError      *string `json:"last_error"`
+	TweetID        int64   `json:"tweet_id"`
+}
+
+func (q *Queries) RetryEmbeddingJob(ctx context.Context, arg RetryEmbeddingJobParams) error {
+	_, err := q.db.Exec(ctx, retryEmbeddingJob, arg.BackoffSeconds, arg.LastError, arg.TweetID)
+	return err
+}
+
+const upsertTweetEmbedding = `-- name: UpsertTweetEmbedding :exec
+INSERT INTO tweet_embeddings (tweet_id, content, embedding)
+VALUES ($1, $2, $3)
+ON CONFLICT (tweet_id) DO UPDATE
+SET content = EXCLUDED.content, embedding = EXCLUDED.embedding
+`
+
+type UpsertTweetEmbeddingParams struct {
+	TweetID   int64            `json:"tweet_id"`
+	Content   string           `json:"content"`
+	Embedding *pgvector.Vector `json:"embedding"`
+}
+
+func (q *Queries) UpsertTweetEmbedding(ctx context.Context, arg UpsertTweetEmbeddingParams) error {
+	_, err := q.db.Exec(ctx, upsertTweetEmbedding, arg.TweetID, arg.Content, arg.Embedding)
+	return err
 }

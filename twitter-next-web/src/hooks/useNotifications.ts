@@ -1,16 +1,15 @@
 'use client';
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useAuthStore } from '@/store/useAuthStore';
+import { useAuth } from '@/hooks/useAuth';
 import { axiosInstance } from '@/api/axiosInstance';
+import { queryKeys } from '@/lib/query-keys';
 import type { PageResponse, NotificationResponse } from '@/types';
 
-export const notificationQueryKey = ['notifications'] as const;
-export const unreadCountQueryKey = ['notifications', 'unread'] as const;
-
 export function useNotifications(pageSize = 20) {
+    const { isLoggedIn } = useAuth();
     return useInfiniteQuery({
-        queryKey: notificationQueryKey,
+        queryKey: queryKeys.notifications.list,
         queryFn: async ({ pageParam }: { pageParam: string | null }): Promise<PageResponse<NotificationResponse>> => {
             const { data } = await axiosInstance.get<PageResponse<NotificationResponse>>(
                 '/notifications',
@@ -21,62 +20,38 @@ export function useNotifications(pageSize = 20) {
         initialPageParam: null as string | null,
         getNextPageParam: (lastPage) =>
             lastPage.hasNext ? lastPage.nextCursor : undefined,
-        staleTime: 300000, // 5 minutes
+        staleTime: 300000, // 5 minutes; SSE events invalidate it sooner
+        enabled: isLoggedIn,
     });
 }
 
 export function useUnreadCount() {
-    const { accessToken } = useAuthStore();
+    const { isLoggedIn } = useAuth();
     return useQuery({
-        queryKey: unreadCountQueryKey,
+        queryKey: queryKeys.notifications.unreadCount,
         queryFn: async (): Promise<number> => {
-            const { data } = await axiosInstance.get<number>('/notifications/unread-count');
-            return data;
+            const { data } = await axiosInstance.get<{ count: number }>('/notifications/unread-count');
+            return data.count;
         },
         refetchInterval: 300000, // Poll every 5 minutes as fallback, rely on SSE
         staleTime: 30000,
         refetchOnWindowFocus: false,
         refetchOnReconnect: false,
-        enabled: !!accessToken,
+        enabled: isLoggedIn,
     });
 }
 
+/**
+ * Marks everything read on the server and clears the badge. Like X, the list on
+ * screen keeps its unread highlights for this visit; the next visit shows them read.
+ */
 export function useMarkAllRead() {
     const queryClient = useQueryClient();
     return useMutation({
         mutationFn: () => axiosInstance.post('/notifications/mark-read'),
         onSuccess: () => {
-            // Optimistically update unread count to 0
-            queryClient.setQueryData(unreadCountQueryKey, 0);
-
-            // Optimistically mark all loaded notifications as read
-            queryClient.setQueryData<PageResponse<NotificationResponse>>(
-                notificationQueryKey,
-                (old) => {
-                    if (!old) return old;
-                    return {
-                        ...old,
-                        items: old.items.map((n) => ({ ...n, isRead: true })),
-                    };
-                }
-            );
-            // Also need to handle infinite query structure if it's cached as such
-            queryClient.setQueriesData<{ pages: PageResponse<NotificationResponse>[] }>(
-                { queryKey: notificationQueryKey },
-                (old) => {
-                    if (!old) return old;
-                    return {
-                        ...old,
-                        pages: old.pages.map(page => ({
-                            ...page,
-                            items: page.items.map(n => ({ ...n, isRead: true }))
-                        }))
-                    };
-                }
-            );
-
-            // Invalidate gently or not at all if we trust the optimistic update
-            // queryClient.invalidateQueries({ queryKey: unreadCountQueryKey });
+            queryClient.setQueryData(queryKeys.notifications.unreadCount, 0);
+            queryClient.invalidateQueries({ queryKey: queryKeys.notifications.list, refetchType: 'none' });
         },
     });
 }

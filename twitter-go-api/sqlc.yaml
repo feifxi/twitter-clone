@@ -1,8 +1,8 @@
 version: "2"
 sql:
   - engine: "postgresql"
-    queries: "db/query"
-    schema: "db/migration"
+    queries: "internal/db/queries"
+    schema: "internal/db/migrations"
     gen:
       go:
         package: "db"
@@ -12,12 +12,21 @@ sql:
         emit_empty_slices: true
         emit_pointers_for_null_types: true
         emit_interface: true
+        rename:
+          avatar_url: "AvatarURL"
+          banner_url: "BannerURL"
+          media_url: "MediaURL"
         overrides:
+          # Map every timestamp flavour (catalog names and cast names) to time.Time / *time.Time.
           - db_type: "pg_catalog.timestamp"
-            go_type:
-              type: "Time"
-              import: "time"
+            go_type: { type: "Time", import: "time" }
           - db_type: "pg_catalog.timestamptz"
-            go_type:
-              type: "Time"
-              import: "time"
+            go_type: { type: "Time", import: "time" }
+          - db_type: "pg_catalog.timestamptz"
+            nullable: true
+            go_type: { type: "Time", import: "time", pointer: true }
+          - db_type: "timestamptz"
+            go_type: { type: "Time", import: "time" }
+          - db_type: "timestamptz"
+            nullable: true
+            go_type: { type: "Time", import: "time", pointer: true }

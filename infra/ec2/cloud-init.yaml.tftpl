@@ -1,0 +1,57 @@
+#cloud-config
+# First boot only: Docker + Compose, swap, the deploy launcher, then the last release.
+# Everything that changes between releases (compose.yml, nginx config, deploy.sh) is
+# fetched per deploy by twitter-deploy, so editing it doesn't replace the instance.
+# No secrets here (user data is readable through the EC2 API): deploys read them from SSM.
+package_update: true
+packages:
+  - docker
+
+write_files:
+  # Rotate container logs (all services, including ones added later).
+  - path: /etc/docker/daemon.json
+    content: |
+      { "log-driver": "json-file", "log-opts": { "max-size": "10m", "max-file": "3" } }
+  - path: /usr/local/bin/twitter-deploy
+    encoding: b64
+    permissions: "0755"
+    content: ${twitter_deploy}
+  - path: /opt/twitter/deploy.env
+    content: |
+      REGION=${region}
+      DEPLOY_BUCKET=${deploy_bucket}
+      RELEASE_PARAM=${release_param}
+      API_SSM_PATH=${api_ssm_path}
+      MONITORING_SSM_PATH=${monitoring_ssm_path}
+      MONITORING=${monitoring}
+      ECR_API_URL=${ecr_api_url}
+      ECR_WEB_URL=${ecr_web_url}
+      SITE_DOMAIN=${site_domain}
+      ACME_EMAIL=${acme_email}
+  - path: /opt/twitter/first-boot.sh
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      # 2 GB swap: a safety net against out-of-memory kills on a small instance.
+      fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+      echo '/swapfile none swap sw 0 0' >> /etc/fstab
+
+      systemctl enable --now docker
+
+      # Docker Compose plugin, checked against a checksum pinned in Terraform.
+      curl -fsSL -o /tmp/docker-compose \
+        "https://github.com/docker/compose/releases/download/${compose_version}/docker-compose-linux-x86_64"
+      echo "${compose_sha256}  /tmp/docker-compose" | sha256sum -c -
+      install -D -m 0755 /tmp/docker-compose /usr/local/lib/docker/cli-plugins/docker-compose
+
+      # Bring back the last good release (a replaced instance restores itself). On a brand-new
+      # environment there's none yet: the first CI deploy starts the stack.
+      release=$(aws ssm get-parameter --region ${region} --name ${release_param} --query Parameter.Value --output text)
+      if [[ "$release" != "none" ]]; then
+        twitter-deploy "$release"
+      fi
+
+runcmd:
+  - /opt/twitter/first-boot.sh

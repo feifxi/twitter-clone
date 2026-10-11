@@ -10,24 +10,40 @@ import (
 
 type Querier interface {
 	AddConversationParticipant(ctx context.Context, arg AddConversationParticipantParams) error
+	// Leases due jobs: run_after moves past the lease so a crashed worker's jobs
+	// become due again (at-least-once). SKIP LOCKED lets several workers share the queue.
+	ClaimEmbeddingJobs(ctx context.Context, arg ClaimEmbeddingJobsParams) ([]ClaimEmbeddingJobsRow, error)
+	CompleteEmbeddingJob(ctx context.Context, tweetID int64) error
+	// Deletes and returns the token in one statement, so a refresh token works at
+	// most once even when two requests race with it.
+	ConsumeRefreshToken(ctx context.Context, tokenHash string) (RefreshToken, error)
+	// Queue depth for metrics: jobs still to run, and jobs that gave up after max_attempts.
+	CountEmbeddingJobs(ctx context.Context, maxAttempts int32) (CountEmbeddingJobsRow, error)
 	CreateConversation(ctx context.Context) (Conversation, error)
 	CreateDirectMessage(ctx context.Context, arg CreateDirectMessageParams) (DirectMessage, error)
+	// Returns no row when deduped by idx_notifications_dedupe.
 	CreateNotification(ctx context.Context, arg CreateNotificationParams) (Notification, error)
 	CreateRefreshToken(ctx context.Context, arg CreateRefreshTokenParams) (RefreshToken, error)
-	CreateRetweet(ctx context.Context, arg CreateRetweetParams) (CreateRetweetRow, error)
+	// Idempotent: returns false when the user had already retweeted.
+	CreateRetweet(ctx context.Context, arg CreateRetweetParams) (bool, error)
+	// Every tweet-listing query returns the same columns: the tweet, the viewer's
+	// flags, and (for timelines) who retweeted it. That shared shape lets the tweet
+	// package hydrate any of them the same way. Cursors are keyset: they compare the
+	// ORDER BY key of the last row seen instead of using OFFSET.
 	CreateTweet(ctx context.Context, arg CreateTweetParams) (Tweet, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
-	DecrementHashtagUsageBy(ctx context.Context, arg DecrementHashtagUsageByParams) error
-	DecrementParentReplyCount(ctx context.Context, id int64) error
+	DecrementHashtagUsage(ctx context.Context, arg DecrementHashtagUsageParams) error
+	DecrementReplyCount(ctx context.Context, id int64) error
+	DeleteExpiredRefreshTokens(ctx context.Context, userID int64) error
 	DeleteRefreshToken(ctx context.Context, tokenHash string) error
 	DeleteRefreshTokensByUser(ctx context.Context, userID int64) error
-	DeleteRetweetByUser(ctx context.Context, arg DeleteRetweetByUserParams) (DeleteRetweetByUserRow, error)
+	DeleteRetweet(ctx context.Context, arg DeleteRetweetParams) (bool, error)
 	DeleteTweetByOwner(ctx context.Context, arg DeleteTweetByOwnerParams) (Tweet, error)
 	DeleteUnusedHashtag(ctx context.Context, id int64) error
+	EnqueueEmbeddingJob(ctx context.Context, tweetID int64) error
 	FindDirectConversation(ctx context.Context, arg FindDirectConversationParams) (Conversation, error)
+	// Returns false when the follow already existed (counts are only bumped once).
 	FollowUser(ctx context.Context, arg FollowUserParams) (bool, error)
-	GetFollowedUserIDs(ctx context.Context, arg GetFollowedUserIDsParams) ([]int64, error)
-	GetRefreshToken(ctx context.Context, tokenHash string) (RefreshToken, error)
 	GetTopHashtagsAllTime(ctx context.Context, limit int32) ([]Hashtag, error)
 	GetTrendingHashtagsLast24h(ctx context.Context, limit int32) ([]Hashtag, error)
 	GetTweet(ctx context.Context, arg GetTweetParams) (GetTweetRow, error)
@@ -35,40 +51,66 @@ type Querier interface {
 	GetUnreadNotificationCount(ctx context.Context, recipientID int64) (int64, error)
 	GetUser(ctx context.Context, arg GetUserParams) (GetUserRow, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
-	GetUserByUsername(ctx context.Context, username string) (User, error)
-	GetUserRetweet(ctx context.Context, arg GetUserRetweetParams) (Tweet, error)
+	GetUserByUsername(ctx context.Context, arg GetUserByUsernameParams) (GetUserByUsernameRow, error)
 	GetUsersByIDs(ctx context.Context, arg GetUsersByIDsParams) ([]GetUsersByIDsRow, error)
-	IncrementParentReplyCount(ctx context.Context, id int64) error
+	IncrementReplyCount(ctx context.Context, id int64) error
 	IsConversationParticipant(ctx context.Context, arg IsConversationParticipantParams) (bool, error)
-	IsFollowing(ctx context.Context, arg IsFollowingParams) (bool, error)
-	IsTweetLiked(ctx context.Context, arg IsTweetLikedParams) (bool, error)
+	// Returns false when the like already existed (the count is only bumped once).
 	LikeTweet(ctx context.Context, arg LikeTweetParams) (bool, error)
 	LinkTweetHashtag(ctx context.Context, arg LinkTweetHashtagParams) error
+	// Newest first; each page goes further back in time.
 	ListConversationMessages(ctx context.Context, arg ListConversationMessagesParams) ([]DirectMessage, error)
 	ListConversationParticipantIDs(ctx context.Context, conversationID int64) ([]int64, error)
-	ListFollowersUsers(ctx context.Context, arg ListFollowersUsersParams) ([]ListFollowersUsersRow, error)
-	ListFollowingFeed(ctx context.Context, arg ListFollowingFeedParams) ([]ListFollowingFeedRow, error)
-	ListFollowingUsers(ctx context.Context, arg ListFollowingUsersParams) ([]ListFollowingUsersRow, error)
+	// Accounts following @user_id, most recent follow first; the cursor is the follow's time.
+	ListFollowers(ctx context.Context, arg ListFollowersParams) ([]ListFollowersRow, error)
+	// Accounts @user_id follows, most recent follow first.
+	ListFollowing(ctx context.Context, arg ListFollowingParams) ([]ListFollowingRow, error)
+	// Top-level tweets and retweets by accounts the viewer follows, newest first.
+	// Items are ordered by (sort_at, kind, sort_id): kind 0 = tweet, 1 = retweet.
+	ListFollowingTimeline(ctx context.Context, arg ListFollowingTimelineParams) ([]ListFollowingTimelineRow, error)
+	// Top-level tweets ranked by tweet_score as of @anchor. Tweets posted after the
+	// anchor wait for a refresh; counts can still change between pages, so an item
+	// may occasionally shift across a page boundary.
 	ListForYouFeed(ctx context.Context, arg ListForYouFeedParams) ([]ListForYouFeedRow, error)
-	ListHashtagUsageToDecrementForDeleteRoot(ctx context.Context, id int64) ([]ListHashtagUsageToDecrementForDeleteRootRow, error)
-	ListMediaUrlsInThread(ctx context.Context, id int64) ([]*string, error)
+	// Hashtag uses in a tweet and every reply under it. Read before deleting the
+	// thread, because ON DELETE CASCADE removes the tweet_hashtags rows.
+	ListHashtagUsageInThread(ctx context.Context, id int64) ([]ListHashtagUsageInThreadRow, error)
+	// Media of a tweet and every reply under it (all removed by ON DELETE CASCADE).
+	ListMediaURLsInThread(ctx context.Context, id int64) ([]*string, error)
 	ListNotifications(ctx context.Context, arg ListNotificationsParams) ([]Notification, error)
+	// A user's top-level tweets and retweets, newest first. Same ordering as ListFollowingTimeline.
+	ListProfileTimeline(ctx context.Context, arg ListProfileTimelineParams) ([]ListProfileTimelineRow, error)
+	// Uses cosine distance (<=>) to match the vector_cosine_ops HNSW index.
 	ListRelatedTweetsByEmbedding(ctx context.Context, arg ListRelatedTweetsByEmbeddingParams) ([]ListRelatedTweetsByEmbeddingRow, error)
+	// Most-followed accounts the viewer doesn't follow yet (anyone, for anonymous viewers).
+	// Accounts still on their generated handle (not onboarded) aren't suggested.
 	ListSuggestedUsers(ctx context.Context, arg ListSuggestedUsersParams) ([]ListSuggestedUsersRow, error)
-	ListTopUsers(ctx context.Context, arg ListTopUsersParams) ([]User, error)
+	// Oldest first, so a thread reads top to bottom.
 	ListTweetReplies(ctx context.Context, arg ListTweetRepliesParams) ([]ListTweetRepliesRow, error)
 	ListUserConversations(ctx context.Context, arg ListUserConversationsParams) ([]ListUserConversationsRow, error)
-	ListUserTweets(ctx context.Context, arg ListUserTweetsParams) ([]ListUserTweetsRow, error)
+	// Tweets a user liked, most recently liked first; the cursor is the like's time.
+	ListUserLikes(ctx context.Context, arg ListUserLikesParams) ([]ListUserLikesRow, error)
+	ListUserMedia(ctx context.Context, arg ListUserMediaParams) ([]ListUserMediaRow, error)
+	ListUserReplies(ctx context.Context, arg ListUserRepliesParams) ([]ListUserRepliesRow, error)
+	// Serialises "find or create" for one pair of users until the transaction ends,
+	// so two first messages sent at once can't create two conversations.
+	LockDirectConversationPair(ctx context.Context, pairKey string) error
 	MarkAllNotificationsRead(ctx context.Context, recipientID int64) error
+	RetryEmbeddingJob(ctx context.Context, arg RetryEmbeddingJobParams) error
 	SearchHashtagsByPrefix(ctx context.Context, arg SearchHashtagsByPrefixParams) ([]Hashtag, error)
 	SearchTweetsByHashtag(ctx context.Context, arg SearchTweetsByHashtagParams) ([]SearchTweetsByHashtagRow, error)
+	// Relevance-ranked, so it pages by offset: a keyset cursor over ts_rank buys nothing here.
 	SearchTweetsFullText(ctx context.Context, arg SearchTweetsFullTextParams) ([]SearchTweetsFullTextRow, error)
+	// Ranked by popularity, so it pages by offset.
 	SearchUsers(ctx context.Context, arg SearchUsersParams) ([]SearchUsersRow, error)
+	// Marks onboarding complete. A taken username fails on idx_users_username_lower.
+	SetUsername(ctx context.Context, arg SetUsernameParams) (User, error)
 	TouchConversation(ctx context.Context, id int64) error
 	UnfollowUser(ctx context.Context, arg UnfollowUserParams) (bool, error)
 	UnlikeTweet(ctx context.Context, arg UnlikeTweetParams) (bool, error)
 	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error)
 	UpsertHashtag(ctx context.Context, text string) (Hashtag, error)
+	UpsertTweetEmbedding(ctx context.Context, arg UpsertTweetEmbeddingParams) error
 }
 
 var _ Querier = (*Queries)(nil)

@@ -1,4 +1,5 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
+import { queryKeys } from '@/lib/query-keys';
 
 export interface BrainrotItem {
     id: string;
@@ -24,8 +25,6 @@ const MOCK_IMAGES = [
 ];
 
 async function fetchBrainrot(page: number): Promise<{ items: BrainrotItem[]; nextPage: number }> {
-    // No simulated delay for better UX
-
     const items: BrainrotItem[] = Array.from({ length: 10 }).map((_, i) => {
         const index = (page * 10 + i) % MOCK_IMAGES.length;
         return {
@@ -44,7 +43,7 @@ async function fetchBrainrot(page: number): Promise<{ items: BrainrotItem[]; nex
 
 export function useBrainrotFeed() {
     return useInfiniteQuery({
-        queryKey: ['brainrot'],
+        queryKey: queryKeys.brainrot,
         queryFn: ({ pageParam }) => fetchBrainrot(pageParam),
         initialPageParam: 0,
         getNextPageParam: (lastPage) => lastPage.nextPage,

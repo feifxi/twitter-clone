@@ -9,39 +9,16 @@ import (
 	"context"
 )
 
-const isTweetLiked = `-- name: IsTweetLiked :one
-SELECT EXISTS(
-  SELECT 1
-  FROM tweet_likes
-  WHERE user_id = $1 AND tweet_id = $2
-)
-`
-
-type IsTweetLikedParams struct {
-	UserID  int64 `json:"user_id"`
-	TweetID int64 `json:"tweet_id"`
-}
-
-func (q *Queries) IsTweetLiked(ctx context.Context, arg IsTweetLikedParams) (bool, error) {
-	row := q.db.QueryRow(ctx, isTweetLiked, arg.UserID, arg.TweetID)
-	var exists bool
-	err := row.Scan(&exists)
-	return exists, err
-}
-
 const likeTweet = `-- name: LikeTweet :one
 WITH inserted AS (
-  INSERT INTO tweet_likes (user_id, tweet_id)
-  VALUES ($1, $2)
+  INSERT INTO tweet_likes (user_id, tweet_id) VALUES ($1, $2)
   ON CONFLICT DO NOTHING
-  RETURNING user_id, tweet_id
-),
-updated AS (
-  UPDATE tweets
-  SET like_count = like_count + 1
+  RETURNING user_id
+), bumped AS (
+  UPDATE tweets SET like_count = like_count + 1
   WHERE id = $2 AND EXISTS (SELECT 1 FROM inserted)
 )
-SELECT EXISTS(SELECT 1 FROM inserted)
+SELECT EXISTS (SELECT 1 FROM inserted) AS created
 `
 
 type LikeTweetParams struct {
@@ -49,25 +26,23 @@ type LikeTweetParams struct {
 	TweetID int64 `json:"tweet_id"`
 }
 
+// Returns false when the like already existed (the count is only bumped once).
 func (q *Queries) LikeTweet(ctx context.Context, arg LikeTweetParams) (bool, error) {
 	row := q.db.QueryRow(ctx, likeTweet, arg.UserID, arg.TweetID)
-	var exists bool
-	err := row.Scan(&exists)
-	return exists, err
+	var created bool
+	err := row.Scan(&created)
+	return created, err
 }
 
 const unlikeTweet = `-- name: UnlikeTweet :one
 WITH deleted AS (
-DELETE FROM tweet_likes
-WHERE tweet_likes.user_id = $1 AND tweet_likes.tweet_id = $2
-RETURNING user_id, tweet_id
-),
-updated AS (
-  UPDATE tweets
-  SET like_count = GREATEST(0, like_count - 1)
+  DELETE FROM tweet_likes tl WHERE tl.user_id = $1 AND tl.tweet_id = $2
+  RETURNING tl.user_id
+), bumped AS (
+  UPDATE tweets SET like_count = GREATEST(0, like_count - 1)
   WHERE id = $2 AND EXISTS (SELECT 1 FROM deleted)
 )
-SELECT EXISTS(SELECT 1 FROM deleted)
+SELECT EXISTS (SELECT 1 FROM deleted) AS deleted
 `
 
 type UnlikeTweetParams struct {
@@ -77,7 +52,7 @@ type UnlikeTweetParams struct {
 
 func (q *Queries) UnlikeTweet(ctx context.Context, arg UnlikeTweetParams) (bool, error) {
 	row := q.db.QueryRow(ctx, unlikeTweet, arg.UserID, arg.TweetID)
-	var exists bool
-	err := row.Scan(&exists)
-	return exists, err
+	var deleted bool
+	err := row.Scan(&deleted)
+	return deleted, err
 }

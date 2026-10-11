@@ -3,15 +3,20 @@
 Base URL: `/api/v1`
 
 ## Auth & Session
-- Authentication is strictly token-based. No cookies are used.
-- The frontend must store tokens in **LocalStorage**.
-- All private requests must include the header: `Authorization: Bearer <accessToken>`.
-- The `refreshToken` is used via JSON body to obtain new access tokens.
+- Sessions live in two **httpOnly cookies** set by the API: `access_token` (short-lived JWT) and `refresh_token` (rotating, single use). Page scripts never see the tokens.
+- Browsers send them automatically: call the API with credentials (`fetch(..., { credentials: "include" })`, axios `withCredentials: true`, `new EventSource(url, { withCredentials: true })`).
+- Cookies are `HttpOnly; SameSite=Lax; Path=/`, `Secure` in production, host-only by default (production serves the web app and the API on one domain; in dev, `localhost` covers every port). `COOKIE_DOMAIN` scopes them to a parent domain if the two are ever split across subdomains.
+- `401` comes with one of two codes:
+  - `UNAUTHORIZED`: no credentials were sent. The user is signed out; show sign-in.
+  - `TOKEN_EXPIRED`: credentials were sent but are stale (expired access token, or only the refresh cookie is left). Call `POST /auth/refresh` and retry. Share one in-flight refresh between concurrent requests: each refresh token works once. Optional-auth endpoints return this too, so a signed-in user never silently gets anonymous data.
+- Unsafe requests (`POST`/`PUT`/`PATCH`/`DELETE`) from origins outside `ALLOWED_ORIGINS` are refused with `403` (CSRF protection).
+- Non-browser clients (curl, tests) may send `Authorization: Bearer <access token>` instead; the header wins over the cookie.
 
 ## Common Query Params
 - Pagination (where supported):
-  1. `cursor` (opaque token from previous response `nextCursor`)
-  2. `size` (default `20`, max `50`)
+  1. `cursor`: opaque token from the previous response's `nextCursor`. Don't parse or build it.
+  2. `size`: default `20`, max `50`.
+- Chronological lists use keyset cursors (the sort key of the last item seen), so new posts never shift or duplicate items between pages. The ranked "For You" feed fixes its ranking time on the first page. Relevance-ranked search pages by offset.
 
 ## PageResponse<T>
 ```json
@@ -21,11 +26,12 @@ Base URL: `/api/v1`
   "nextCursor": "MTAw"
 }
 ```
+- `nextCursor` is always present: `null` on the last page. Nullable fields are never omitted anywhere in the API; empty lists are `[]`.
 
 ## Common Error Shape
 ```json
 {
-  "code": "BAD_REQUEST|UNAUTHORIZED|FORBIDDEN|NOT_FOUND|CONFLICT|INTERNAL_ERROR|VALIDATION_ERROR|TOO_MANY_REQUESTS",
+  "code": "BAD_REQUEST|UNAUTHORIZED|TOKEN_EXPIRED|FORBIDDEN|NOT_FOUND|CONFLICT|INTERNAL_ERROR|VALIDATION_ERROR|TOO_MANY_REQUESTS",
   "message": "string",
   "details": [
     { "field": "string", "message": "string" }
@@ -40,22 +46,16 @@ Base URL: `/api/v1`
 {
   "id": 1,
   "username": "alice",
-  "email": "alice@example.com",
   "displayName": "Alice",
   "bio": "hello",
-  "avatarUrl": "https://d1234.cloudfront.net/avatars/uuid_photo.jpg",
+  "location": "Bangkok",
+  "website": "https://example.com",
+  "avatarUrl": "https://d1234.cloudfront.net/avatars/1/0b1c....jpg",
+  "bannerUrl": null,
   "isFollowing": false,
   "followersCount": 10,
-  "followingCount": 20
-}
-```
-
-### AuthResponse
-```json
-{
-  "accessToken": "jwt",
-  "refreshToken": "uuid/jwt",
-  "user": { "...UserResponse" }
+  "followingCount": 20,
+  "createdAt": "2026-03-01T00:00:00Z"
 }
 ```
 
@@ -72,12 +72,30 @@ Base URL: `/api/v1`
   "retweetCount": 0,
   "isLiked": false,
   "isRetweeted": false,
-  "retweetedTweet": { "...TweetResponse" },
   "replyToTweetId": 123,
   "replyToUsername": "alice",
   "createdAt": "2026-03-02T00:00:00Z"
 }
 ```
+
+### FeedItemResponse
+Every **timeline** (the feeds and the profile tabs) is a list of feed items. Other tweet lists (a thread's replies, search) are plain `TweetResponse`s.
+```json
+{
+  "kind": "tweet|retweet",
+  "tweet": { "...TweetResponse (always the original)" },
+  "retweet": null
+}
+```
+For `kind: "retweet"` (shown as "bob reposted"), `retweet` says who put the tweet in this timeline and when:
+```json
+{
+  "kind": "retweet",
+  "tweet": { "...the original TweetResponse" },
+  "retweet": { "id": 7, "retweeter": { "...UserResponse" }, "createdAt": "2026-03-02T00:05:00Z" }
+}
+```
+- The same tweet can appear twice in a timeline (as posted and as retweeted): key items by `retweet.id` (or "tweet") + `tweet.id`.
 
 ### HashtagResponse
 ```json
@@ -116,29 +134,23 @@ Body:
 ```json
 { "idToken": "google_id_token" }
 ```
-Response 200: `AuthResponse`
+Response 200: `CurrentUserResponse`, and `Set-Cookie` for both session cookies.
 
 ### POST `/auth/refresh`
-Body:
-```json
-{ "refreshToken": "string" }
-```
-Response 200: `AuthResponse`
+No body; reads the `refresh_token` cookie.
+Response 200: `CurrentUserResponse`, and `Set-Cookie` with a **new** pair. The old refresh token stops working (rotation).
+Response 401 when the cookie is missing, used, expired or revoked. Cookies are left untouched on failure (a concurrent refresh may have just renewed them).
 
 ### POST `/auth/logout`
-Body (Optional):
-```json
-{ "refreshToken": "string" }
-```
-- If `Authorization` header is present, it revokes the session associated with the access token.
-- If `refreshToken` is provided in the body, it explicitly revokes that refresh token.
+No body; reads the `refresh_token` cookie.
+- Ends this browser's session and deletes both cookies. Other devices stay signed in.
 Response 200:
 ```json
 { "success": true }
 ```
 
 ### GET `/auth/me` (private)
-Response 200: `UserResponse`
+Response 200: `CurrentUserResponse`: `UserResponse` plus `"email"` and `"onboarded"` (false until the user has chosen a username). Email is never included in public `UserResponse`s.
 
 ## Uploads
 
@@ -148,25 +160,45 @@ Request a presigned S3 PUT URL. The client then PUTs the file directly to S3.
 Body:
 ```json
 {
-  "filename": "photo.jpg",
   "contentType": "image/jpeg",
-  "folder": "tweets|avatars"
+  "folder": "tweets|avatars|banners",
+  "contentLength": 204800
 }
 ```
 Response 200:
 ```json
 {
-  "presignedUrl": "https://s3.amazonaws.com/...",
-  "objectKey": "tweets/uuid_photo.jpg"
+  "presignedUrl": "https://bucket.s3.amazonaws.com/...",
+  "objectKey": "tweets/42/0b1c4f9e-....jpg"
 }
 ```
 
-Allowed content types: `image/jpeg`, `image/png`, `image/gif`, `image/webp`, `video/mp4`, `video/webm`
+- Allowed content types: `image/jpeg`, `image/png`, `image/gif`, `image/webp`, `video/mp4`, `video/webm` (`avatars`/`banners` accept images only).
+- `contentLength` is required and checked against the folder's size limit. Content type and length are signed into the URL, so the `PUT` must send exactly those `Content-Type` and `Content-Length` values.
+- Object keys are always `{folder}/{userId}/{uuid}{ext}`. Endpoints that accept a key reject keys belonging to another user or folder.
 
 ## Users
 
 ### GET `/users/:id` (optional auth)
 Response 200: `UserResponse`
+
+### GET `/users/by-username/:username` (optional auth)
+Case-insensitive lookup. Response 200: `UserResponse`; 404 when no such user.
+
+### POST `/users/me/onboarding` (private)
+Body:
+```json
+{ "username": "alice_99", "displayName": "Alice" }
+```
+- `username`: 3-20 letters, numbers or underscores; unique regardless of case (409 `CONFLICT` when taken).
+Response 200: `CurrentUserResponse` (with `onboarded: true`)
+
+### Profile tabs (optional auth)
+All take `cursor`, `size` and return `PageResponse<FeedItemResponse>`, newest first.
+- GET `/users/:id/posts`: top-level tweets and retweets
+- GET `/users/:id/replies`: replies the user wrote
+- GET `/users/:id/media`: tweets with an image or video
+- GET `/users/:id/likes` (private): tweets the user liked; 403 for anyone but the user themselves
 
 ### PUT `/users/profile` (private)
 Body:
@@ -174,10 +206,14 @@ Body:
 {
   "displayName": "Alice",
   "bio": "hello world",
-  "avatarKey": "avatars/uuid_photo.jpg"
+  "location": "Bangkok",
+  "website": "https://example.com",
+  "avatarKey": "avatars/42/0b1c....jpg",
+  "bannerKey": ""
 }
 ```
-- `avatarKey`: S3 object key from the presign endpoint (optional)
+- Every field is optional: omit to keep the current value, `""` to clear it. `website` must be an http(s) URL.
+- `avatarKey` / `bannerKey`: omit to keep the current image, `""` to remove it, or an object key from the presign endpoint (must be in `avatars/{yourId}/` or `banners/{yourId}/`).
 
 Response 200: `UserResponse`
 
@@ -189,14 +225,12 @@ Body:
 {
   "content": "tweet text",
   "parentId": 123,
-  "mediaKey": "tweets/uuid_photo.jpg",
-  "mediaType": "IMAGE"
+  "mediaKey": "tweets/42/0b1c....jpg"
 }
 ```
 - `content`: optional (max 280), required when `mediaKey` is not provided
 - `parentId`: optional (reply to tweet)
-- `mediaKey`: S3 object key from the presign endpoint (optional)
-- `mediaType`: required when `mediaKey` is provided, one of `IMAGE` or `VIDEO`
+- `mediaKey`: optional object key from the presign endpoint (must be in `tweets/{yourId}/`). The response's `mediaType` (`IMAGE`/`VIDEO`) is derived from it.
 
 Response 201: `TweetResponse`
 
@@ -226,7 +260,7 @@ Response 200:
 ```
 
 ### POST `/tweets/:id/retweet` (private)
-Response 200: `TweetResponse`
+Idempotent. Response 200: the retweeted `TweetResponse` (with `isRetweeted: true`).
 
 ### DELETE `/tweets/:id/retweet` (private)
 Response 200:
@@ -237,16 +271,14 @@ Response 200:
 ## Feeds
 
 ### GET `/feeds/global` (optional auth)
+The ranked "For you" feed.
 Query: `cursor`, `size`
-Response 200: `PageResponse<TweetResponse>`
-
-### GET `/feeds/user/:id` (optional auth)
-Query: `cursor`, `size`
-Response 200: `PageResponse<TweetResponse>`
+Response 200: `PageResponse<FeedItemResponse>`
 
 ### GET `/feeds/following` (private)
+Tweets and retweets by accounts you follow (not your own posts), newest first.
 Query: `cursor`, `size`
-Response 200: `PageResponse<TweetResponse>`
+Response 200: `PageResponse<FeedItemResponse>`
 
 ## Search
 
@@ -294,18 +326,18 @@ Response 200:
 { "success": true }
 ```
 
-### GET `/notifications/stream` (private, SSE)
-- Content-Type: `text/event-stream`
+## Real-time Events
+
+### GET `/events` (private, SSE)
+One stream per signed-in tab carries every real-time update. Events reach the user on whichever API instance their stream is connected to (Redis pub/sub).
+- Content-Type: `text/event-stream`; the server suggests `retry: 3000`.
 - Events:
-  1. `connected`
-  2. `ping`
-  3. `notification` (payload `NotificationResponse`)
+  1. `connected`: `{ "status": "ok" }`. Sent on every (re)connect; refetch anything you may have missed.
+  2. `notification`: `NotificationResponse`
+  3. `dm`: `MessageResponse`. Sent to every participant, including the sender's other tabs.
+- Comment lines (`: ping`) every 15s are heartbeats.
 
 ## Direct Messages
-
-### GET `/messages/ws` (optional auth, WebSocket)
-- Allows upgrading the connection to WebSocket for real-time messaging.
-- Authentication tokens should be passed in via handshake headers or query parameters if strictly required.
 
 ### GET `/messages/conversations` (private)
 Query: `cursor`, `size`
@@ -348,7 +380,7 @@ Body:
   ]
 }
 ```
-- Stream response over Server-Sent Events (SSE).
-- Events:
-  1. `message` (partial streaming content chunk)
-  2. `error` (if an error occurs connecting to Gemini or processing context)
+- Stream response over Server-Sent Events (SSE). Every `data:` payload is JSON, so newlines in the model output never break framing:
+  1. default event: `data: {"text": "partial chunk"}` (repeated)
+  2. `event: done` with `data: {}` (stream finished)
+  3. `event: error` with `data: {"message": "..."}` (stream aborted)

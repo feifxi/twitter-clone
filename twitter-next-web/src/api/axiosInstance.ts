@@ -1,65 +1,92 @@
-import axios, { type AxiosError } from 'axios';
-import { useAuthStore } from '@/store/useAuthStore';
-import { useUIStore } from '@/store/useUIStore';
-import type { ErrorResponse, FieldErrors, UserResponse } from '@/types';
+import axios, { isAxiosError, type AxiosError, type InternalAxiosRequestConfig } from 'axios';
+import type { ErrorResponse, FieldErrors } from '@/types';
 
 const baseURL = process.env.NEXT_PUBLIC_API_URL;
 
+/**
+ * The session lives in httpOnly cookies set by the API: the browser attaches
+ * them (withCredentials) and page scripts never see the tokens.
+ */
 export const axiosInstance = axios.create({
   baseURL,
+  withCredentials: true,
   headers: { 'Content-Type': 'application/json' },
 });
 
-// Request: inject access token from Zustand store
-axiosInstance.interceptors.request.use(
-  (config) => {
-    const token = useAuthStore.getState().accessToken;
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
+let refreshing: Promise<boolean> | null = null;
 
-// Response: on 401, try refresh then retry; map validation errors for forms
+/**
+ * Renews the session cookies. Concurrent callers share one request, because a
+ * refresh token works only once.
+ */
+export function refreshSession(): Promise<boolean> {
+  refreshing ??= axios
+    .post(`${baseURL}/auth/refresh`, null, { withCredentials: true })
+    .then(
+      () => true,
+      () => false,
+    )
+    .finally(() => {
+      refreshing = null;
+    });
+  return refreshing;
+}
+
+type SessionLostListener = (event: { request: InternalAxiosRequestConfig }) => void;
+const sessionLostListeners = new Set<SessionLostListener>();
+
+/** Called when a request fails for lack of a valid session (after refreshing didn't help). */
+export function onSessionLost(listener: SessionLostListener): () => void {
+  sessionLostListeners.add(listener);
+  return () => sessionLostListeners.delete(listener);
+}
+
+type RetriableRequest = InternalAxiosRequestConfig & { _retried?: boolean };
+
 axiosInstance.interceptors.response.use(
   (response) => response,
   async (error: AxiosError<ErrorResponse>) => {
-    const originalRequest = error.config;
-
-    if (!originalRequest) {
+    const request = error.config as RetriableRequest | undefined;
+    if (error.response?.status !== 401 || !request) {
       return Promise.reject(error);
     }
 
-    // 401: try refresh (refresh endpoint must not send Authorization)
-    if (error.response?.status === 401 && !(originalRequest as { _retry?: boolean })._retry) {
-      (originalRequest as { _retry?: boolean })._retry = true;
-
-      try {
-        const refreshToken = useAuthStore.getState().refreshToken;
-        if (!refreshToken) {
-          throw new Error('No refresh token available');
-        }
-
-        const { data } = await axios.post<{ accessToken: string; refreshToken: string; user: UserResponse }>(
-          `${baseURL}/auth/refresh`,
-          { refreshToken }
-        );
-        useAuthStore.getState().setAuth(data.accessToken, data.refreshToken, data.user);
-        originalRequest.headers.Authorization = `Bearer ${data.accessToken}`;
-        return axiosInstance(originalRequest);
-      } catch {
-        useAuthStore.getState().logout();
-        // Trigger generic Sign In modal instead of hard redirect
-        useUIStore.getState().openSignInModal();
-        return Promise.reject(error);
-      }
+    // TOKEN_EXPIRED: we sent credentials but they're stale. Renew and retry once.
+    // Retry even if this refresh failed: another tab may have just renewed the cookies.
+    const expired = error.response.data?.code === 'TOKEN_EXPIRED';
+    if (expired && !request._retried) {
+      request._retried = true;
+      await refreshSession();
+      return axiosInstance(request);
     }
 
+    if (expired) {
+      // The session is gone for good. Drop its cookies so public pages work anonymously again.
+      await axios.post(`${baseURL}/auth/logout`, null, { withCredentials: true }).catch(() => undefined);
+    }
+    sessionLostListeners.forEach((listener) => listener({ request }));
     return Promise.reject(error);
-  }
+  },
 );
+
+/**
+ * fetch() with the session cookies, renewing them once on TOKEN_EXPIRED. For
+ * streaming responses, which axios can't read incrementally in the browser.
+ */
+export async function fetchWithSession(path: string, init: RequestInit = {}): Promise<Response> {
+  const send = () => fetch(`${baseURL}${path}`, { ...init, credentials: 'include' });
+  const response = await send();
+  if (response.status !== 401) return response;
+
+  const body = (await response.clone().json().catch(() => null)) as ErrorResponse | null;
+  if (body?.code !== 'TOKEN_EXPIRED') return response;
+  await refreshSession();
+  return send();
+}
+
+export function isUnauthorized(error: unknown): boolean {
+  return isAxiosError(error) && error.response?.status === 401;
+}
 
 /**
  * Extract backend validation errors into a field -> message map
