@@ -2,7 +2,6 @@ services:
   # Postgres Database
   database:
     container_name: twitter-dev-postgres-db
-    # Matches RDS (16). An existing pg15 volume won't start: recreate it with `docker compose down -v`.
     image: pgvector/pgvector:pg16
     ports:
       - "5432:5432"
