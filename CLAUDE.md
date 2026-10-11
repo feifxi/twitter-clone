@@ -11,7 +11,6 @@ mainstream best practices, keep things simple, skip production hardening that do
 | `twitter-next-web/` | Next.js (App Router) frontend: TanStack Query, Tailwind v4, Radix/shadcn primitives. |
 | `twitter-java-api/` | Optional Spring Boot backend with the same contract and schema as the Go API (parity verified). Not deployed. |
 | `infra/terraform`, `infra/bootstrap`, `infra/ec2`, `infra/grafana` | AWS and Grafana as code. **Nothing is deployed**: keep it valid offline, don't plan around a live environment. |
-| `docs/MODERNIZATION_PLAN.md` | Findings, decisions and phase checklist. Update it when a phase item lands. |
 
 ## Commands
 

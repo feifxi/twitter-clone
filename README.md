@@ -381,7 +381,7 @@ Then connect your DB tool to `127.0.0.1:5433`, database `twitter_db`, with the c
 │   ├── terraform/       # AWS infrastructure (+ tests/ with a mocked-provider plan)
 │   ├── grafana/         # Grafana Cloud dashboard and alert rules (Terraform)
 │   └── ec2/             # What runs on the host: compose.yml, nginx config, certbot, Alloy config, deploy scripts
-├── docs/                # Modernization plan, screenshots
+├── docs/assets/         # Screenshots used in this README
 ├── .github/workflows/   # CI (tests, lint, Terraform checks) and the deploy pipeline
 ├── .githooks/           # pre-commit: gofmt, terraform fmt, ESLint on staged files
 └── docker-compose.yml   # Local development (Postgres + pgvector, Redis)
