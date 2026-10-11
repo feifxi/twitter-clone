@@ -311,7 +311,7 @@ Terraform checks run in CI without AWS credentials: `terraform fmt -check`, `val
 
 ## Deployment
 
-[`deploy.yml`](.github/workflows/deploy.yml) runs when CI passes on `main`:
+[`deploy.yml`](.github/workflows/deploy.yml) runs when CI passes on `main` (and is skipped until the `AWS_DEPLOY_ROLE_ARN` variable exists, i.e. before the infrastructure is provisioned):
 
 1. **Build & push** the web and API images to ECR, both tagged with the commit SHA
 2. **Upload** that commit's `infra/ec2` files to the releases bucket

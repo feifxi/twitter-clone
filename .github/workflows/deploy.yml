@@ -35,7 +35,8 @@ env:
 
 jobs:
   build:
-    if: ${{ github.event.workflow_run.conclusion == 'success' || (github.event_name == 'workflow_dispatch' && !inputs.image_tag) }}
+    # Skipped (not failed) until the AWS variables exist: nothing is provisioned yet.
+    if: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' && (github.event.workflow_run.conclusion == 'success' || (github.event_name == 'workflow_dispatch' && !inputs.image_tag)) }}
     runs-on: ubuntu-24.04
     strategy:
       matrix:
@@ -74,7 +75,7 @@ jobs:
   deploy:
     needs: build
     # Runs after a successful build, or straight away for a rollback (build skipped).
-    if: ${{ !cancelled() && (needs.build.result == 'success' || inputs.image_tag) }}
+    if: ${{ !cancelled() && vars.AWS_DEPLOY_ROLE_ARN != '' && (needs.build.result == 'success' || inputs.image_tag) }}
     runs-on: ubuntu-24.04
     env:
       IMAGE_TAG: ${{ inputs.image_tag || github.event.workflow_run.head_sha || github.sha }}
