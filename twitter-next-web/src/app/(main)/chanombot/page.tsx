@@ -85,13 +85,11 @@ export default function ChanomBotPage() {
     setMessages((prev: Message[]) => [...prev, newUserMsg]);
     setInput("");
 
-    // Prepare history for Gemini format
     const history = messages.map((m: Message) => ({
       role: m.role === "assistant" ? "model" : "user",
       text: m.content,
     }));
 
-    // Placeholder for bot message
     const botMsgId = (Date.now() + 1).toString();
     const initialBotMsg: Message = {
       id: botMsgId,
@@ -147,7 +145,6 @@ export default function ChanomBotPage() {
         );
       }
 
-      // Finalize streaming state
       setMessages((prev: Message[]) =>
         prev.map((msg: Message) =>
           msg.id === botMsgId ? { ...msg, isStreaming: false } : msg,

@@ -28,7 +28,6 @@ var (
 	)
 )
 
-// Metrics returns a gin.HandlerFunc that records HTTP metrics
 func Metrics() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()

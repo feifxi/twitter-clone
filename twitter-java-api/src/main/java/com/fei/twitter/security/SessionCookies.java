@@ -12,9 +12,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * The session lives in two httpOnly cookies, so page scripts (and XSS) can't read the
- * tokens. With COOKIE_DOMAIN set to the shared registrable domain, the browser sends
- * them to both the web app and the API. SameSite=Lax keeps them off cross-site
- * subrequests; cross-origin writes are refused by {@link CrossOriginProtectionFilter}.
+ * tokens. SameSite=Lax keeps them off cross-site subrequests; cross-origin writes are
+ * refused by {@link CrossOriginProtectionFilter}.
  */
 @Component
 public class SessionCookies {

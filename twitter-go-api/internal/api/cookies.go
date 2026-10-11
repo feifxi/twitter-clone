@@ -10,10 +10,9 @@ import (
 )
 
 // Sessions live in two httpOnly cookies, so page scripts (and any XSS) can't
-// read the tokens. The web app and the API share a registrable domain
-// (twitter.example.com and api.example.com): with CookieDomain set to it, the
-// browser sends the cookies to both, so the API authenticates browser requests
-// and the Next.js server forwards them when it renders pages.
+// read the tokens. The web app and the API share one origin, so the browser
+// sends them on every API request and the Next.js server forwards them when it
+// renders pages.
 //
 // SameSite=Lax keeps the cookies off cross-site subrequests; cross-origin
 // writes are refused separately (see crossOriginProtection).

@@ -44,13 +44,11 @@ func (s *Server) routes() *gin.Engine {
 
 	v1 := r.Group("/api/v1", middleware.RateLimiterWithRedis(s.redis, 20, 60, "rl:api"))
 
-	// Auth
 	v1.POST("/auth/google", authLimit, s.loginGoogle)
 	v1.POST("/auth/refresh", authLimit, s.refreshToken)
 	v1.POST("/auth/logout", authLimit, s.logout)
 	v1.GET("/auth/me", auth, s.getMe)
 
-	// Users and profiles
 	v1.GET("/users/:id", optional, s.getUser)
 	v1.GET("/users/by-username/:username", optional, s.getUserByUsername)
 	v1.GET("/users/:id/posts", optional, s.getUserPosts)
@@ -64,7 +62,6 @@ func (s *Server) routes() *gin.Engine {
 	v1.POST("/users/:id/follow", auth, write, s.followUser)
 	v1.DELETE("/users/:id/follow", auth, write, s.unfollowUser)
 
-	// Tweets
 	v1.GET("/tweets/:id", optional, s.getTweet)
 	v1.GET("/tweets/:id/replies", optional, s.getReplies)
 	v1.POST("/tweets", auth, write, s.createTweet)
@@ -75,29 +72,24 @@ func (s *Server) routes() *gin.Engine {
 	v1.DELETE("/tweets/:id/retweet", auth, write, s.undoRetweet)
 	v1.POST("/uploads/presign", auth, write, s.presignUpload)
 
-	// Timelines
 	v1.GET("/feeds/global", optional, s.getGlobalFeed)
 	v1.GET("/feeds/following", auth, s.getFollowingFeed)
 
-	// Search and discovery
 	v1.GET("/search/users", optional, s.searchUsers)
 	v1.GET("/search/tweets", optional, s.searchTweets)
 	v1.GET("/search/hashtags", optional, s.searchHashtags)
 	v1.GET("/discovery/trending", optional, s.getTrendingHashtags)
 	v1.GET("/discovery/users", optional, s.getSuggestedUsers)
 
-	// Notifications
 	v1.GET("/notifications", auth, s.listNotifications)
 	v1.GET("/notifications/unread-count", auth, s.getUnreadNotificationCount)
 	v1.POST("/notifications/mark-read", auth, write, s.markNotificationRead)
 
-	// Direct messages
 	v1.GET("/messages/conversations", auth, s.listConversations)
 	v1.GET("/messages/conversations/:id/messages", auth, s.listConversationMessages)
 	v1.POST("/messages/conversations/:id/messages", auth, write, s.sendMessageToConversation)
 	v1.POST("/messages/users/:id/messages", auth, write, s.sendMessageToUser)
 
-	// Real-time (SSE) and assistant
 	v1.GET("/events", auth, s.streamEvents)
 	v1.POST("/assistant", auth, aiLimit, s.assistant)
 

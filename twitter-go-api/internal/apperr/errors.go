@@ -96,7 +96,6 @@ type ErrorResponse struct {
 	Details   []FieldError `json:"details,omitempty"`
 }
 
-// FieldError describes a single field-level validation error.
 type FieldError struct {
 	Field   string `json:"field"`
 	Message string `json:"message"`

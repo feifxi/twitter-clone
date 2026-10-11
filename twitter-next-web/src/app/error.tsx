@@ -1,4 +1,4 @@
-'use client'; // Error components must be Client Components
+'use client';
 
 import Link from 'next/link';
 import { useEffect } from 'react';
@@ -13,7 +13,6 @@ export default function ErrorBoundary({
   reset: () => void;
 }) {
   useEffect(() => {
-    // Optionally log the error to an error reporting service like Sentry
     console.error('Root Error Boundary caught an error:', error);
   }, [error]);
 

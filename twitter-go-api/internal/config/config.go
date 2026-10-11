@@ -33,8 +33,8 @@ type Config struct {
 
 	// AllowedOrigins are the web app origins (scheme://host[:port]) allowed to call the API with cookies.
 	AllowedOrigins []string `env:"ALLOWED_ORIGINS" envSeparator:"," envDefault:"http://localhost:3000"`
-	// CookieDomain is the domain the session cookies are scoped to, e.g. example.com so that
-	// twitter.example.com and api.example.com both receive them. Empty = API host only (local dev).
+	// CookieDomain scopes the session cookies to a parent domain, needed only if the web app and
+	// the API run on different subdomains. Empty = host-only (production behind nginx, local dev).
 	CookieDomain string `env:"COOKIE_DOMAIN"`
 
 	TokenSymmetricKey string        `env:"TOKEN_SYMMETRIC_KEY,required,notEmpty"`

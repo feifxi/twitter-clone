@@ -30,7 +30,6 @@ public class HealthController {
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
     record HealthResponse(String status, Map<String, String> checks) {}
 
-    /** The process is up. */
     @GetMapping("/healthz")
     HealthResponse healthz() {
         return new HealthResponse("ok", null);

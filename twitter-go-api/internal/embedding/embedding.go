@@ -27,7 +27,6 @@ type Embedder interface {
 	Embed(ctx context.Context, text string) ([]float32, error)
 }
 
-// Gemini embeds text with a Gemini embedding model.
 type Gemini struct {
 	client *genai.Client
 	model  string

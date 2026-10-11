@@ -15,7 +15,6 @@ import (
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
-// Migrate applies all pending up migrations.
 func Migrate(databaseURL string) error {
 	source, err := iofs.New(migrationsFS, "migrations")
 	if err != nil {

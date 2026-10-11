@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter, usePathname } from 'next/navigation'; // Added usePathname
+import { useRouter, usePathname } from 'next/navigation';
 import { useState, useRef, useEffect } from 'react';
 import { Search } from 'lucide-react';
 import { useTrendingHashtags, useSuggestedUsers, useSearchUsers, useSearchHashtags } from '@/hooks/useDiscovery';
@@ -27,7 +27,6 @@ export function Sidebar() {
   const { data: suggested, isLoading: suggestedLoading } = useSuggestedUsers(3);
   const { user: currentUser } = useAuth();
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
@@ -45,7 +44,7 @@ export function Sidebar() {
     if (query.trim()) {
       router.push(`/search?q=${encodeURIComponent(query)}`);
       setIsFocused(false);
-      setQuery(''); // Clear input after search
+      setQuery('');
     }
   };
 
@@ -163,7 +162,6 @@ export function Sidebar() {
   );
 }
 
-// Helper Components
 function Footer() {
   return (
     <div className="px-4 text-[13px] text-muted-foreground space-x-2 leading-4">

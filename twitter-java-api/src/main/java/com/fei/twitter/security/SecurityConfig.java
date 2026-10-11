@@ -29,13 +29,11 @@ public class SecurityConfig {
         SessionTokenResolver tokenResolver = new SessionTokenResolver();
 
         http.authorizeHttpRequests(routes -> routes
-                        // Operations
                         .requestMatchers(GET, "/healthz", "/readyz", "/metrics", "/swagger/**").permitAll()
                         // Sign-in: these manage the session cookies themselves
                         .requestMatchers(POST, "/api/v1/auth/google", "/api/v1/auth/refresh", "/api/v1/auth/logout").permitAll()
                         // Likes are private to their owner
                         .requestMatchers(GET, "/api/v1/users/*/likes").authenticated()
-                        // Public reads
                         .requestMatchers(GET,
                                 "/api/v1/users/**", "/api/v1/tweets/**", "/api/v1/feeds/global",
                                 "/api/v1/search/**", "/api/v1/discovery/**").permitAll()
@@ -49,8 +47,7 @@ public class SecurityConfig {
                 .exceptionHandling(e -> e.authenticationEntryPoint(entryPoint))
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .cors(AbstractHttpConfigurer::disable) // replaced by the CorsFilter below (JSON rejections)
-                // Token-based CSRF doesn't fit a cookie API called from another subdomain;
-                // SameSite=Lax cookies plus the Origin check below do the job (as in the Go API).
+                // No CSRF tokens: SameSite=Lax cookies plus the Origin check below do the job (as in the Go API).
                 .csrf(AbstractHttpConfigurer::disable)
                 .addFilterBefore(corsFilter(corsConfigurationSource, json), BearerTokenAuthenticationFilter.class)
                 .addFilterBefore(new CrossOriginProtectionFilter(props.allowedOrigins(), json), BearerTokenAuthenticationFilter.class)

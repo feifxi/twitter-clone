@@ -1,6 +1,5 @@
 'use client';
 
-/** X (Twitter) style logo - thick angular strokes, high-contrast */
 export function XLogo({ className }: { className?: string }) {
   return (
     <svg

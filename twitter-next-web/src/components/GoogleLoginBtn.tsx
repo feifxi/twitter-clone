@@ -20,7 +20,7 @@ export default function GoogleLoginBtn() {
 
   const [isLoading, setIsLoading] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [buttonWidth, setButtonWidth] = useState<number>(364); // Default to PC width
+  const [buttonWidth, setButtonWidth] = useState<number>(364);
 
   useEffect(() => {
     const updateWidth = () => {

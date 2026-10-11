@@ -18,7 +18,7 @@ export function FollowButton({ userId, isFollowing }: FollowButtonProps) {
 
   const handleFollow = (e: React.MouseEvent) => {
     e.stopPropagation();
-    e.preventDefault(); // Prevent link navigation if inside a link
+    e.preventDefault(); // the button can sit inside a link (UserRow)
     if (!isLoggedIn) {
       openSignInModal();
       return;

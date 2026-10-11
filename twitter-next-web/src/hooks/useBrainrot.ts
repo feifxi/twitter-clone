@@ -25,8 +25,6 @@ const MOCK_IMAGES = [
 ];
 
 async function fetchBrainrot(page: number): Promise<{ items: BrainrotItem[]; nextPage: number }> {
-    // No simulated delay for better UX
-
     const items: BrainrotItem[] = Array.from({ length: 10 }).map((_, i) => {
         const index = (page * 10 + i) % MOCK_IMAGES.length;
         return {

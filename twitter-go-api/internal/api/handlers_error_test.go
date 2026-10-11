@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-
-	// "net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -19,8 +17,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
 )
-
-// --- Additional mocks for error-path testing ---
 
 type fakeTweetsNotFound struct{ TweetService }
 
@@ -48,8 +44,6 @@ func TestGetTweet_NotFoundReturns404(t *testing.T) {
 		t.Fatalf("expected NOT_FOUND code, got %v", out["code"])
 	}
 }
-
-// --- createTweet error paths ---
 
 func TestCreateTweet_UsecaseErrorReturnsInternalError(t *testing.T) {
 	t.Parallel()
@@ -113,8 +107,6 @@ func TestCreateTweetWithoutMedia_SuccessPath(t *testing.T) {
 	}
 }
 
-// --- followUser guard ---
-
 func TestFollowUser_CannotFollowSelf(t *testing.T) {
 	t.Parallel()
 
@@ -140,8 +132,6 @@ func TestFollowUser_CannotFollowSelf(t *testing.T) {
 		t.Fatalf("unexpected body: %s", rec.Body.String())
 	}
 }
-
-// --- unauthenticated protected routes ---
 
 func TestDeleteTweet_MissingAuth(t *testing.T) {
 	t.Parallel()
@@ -183,8 +173,6 @@ func TestMarkNotificationRead_MissingAuth(t *testing.T) {
 	}
 }
 
-// --- feed error propagation ---
-
 func TestGetGlobalFeed_UsecaseErrorPropagates(t *testing.T) {
 	t.Parallel()
 
@@ -202,8 +190,6 @@ func TestGetGlobalFeed_UsecaseErrorPropagates(t *testing.T) {
 		t.Fatalf("expected 500 for feed error, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
-
-// --- search hashtags ---
 
 func TestSearchHashtags_ReturnsResults(t *testing.T) {
 	t.Parallel()
