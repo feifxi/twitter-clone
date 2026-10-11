@@ -7,10 +7,10 @@ mainstream best practices, keep things simple, skip production hardening that do
 
 | Path | What |
 |---|---|
-| `twitter-go-api/` | Primary backend: Go, Gin, PostgreSQL (sqlc, pgvector), Redis. See its README's "Where things live" table. |
+| `twitter-go-api/` | Primary backend: Go, Gin, PostgreSQL (sqlc, pgvector), optional Redis. See its README's "Where things live" table; the client contract is `docs/api-contract.md`. |
 | `twitter-next-web/` | Next.js (App Router) frontend: TanStack Query, Tailwind v4, Radix/shadcn primitives. |
-| `twitter-java-api/` | Legacy Spring backend. Kept on purpose; being brought to parity with the Go API last. |
-| `infra/terraform`, `infra/bootstrap`, `infra/ec2` | AWS as code. **Nothing is deployed**: keep it valid offline, don't plan around a live environment. |
+| `twitter-java-api/` | Optional Spring Boot backend with the same contract and schema as the Go API (parity verified). Not deployed. |
+| `infra/terraform`, `infra/bootstrap`, `infra/ec2`, `infra/grafana` | AWS and Grafana as code. **Nothing is deployed**: keep it valid offline, don't plan around a live environment. |
 | `docs/MODERNIZATION_PLAN.md` | Findings, decisions and phase checklist. Update it when a phase item lands. |
 
 ## Commands
@@ -25,9 +25,12 @@ make test                                  # go test -race; integration tests ne
 make sqlc                                  # after editing internal/db/queries or migrations: regenerates code + MockStore
 make swagger                               # after changing handler annotations or DTOs
 # Web
-npm run lint && npx tsc --noEmit && npm test
-# Terraform (no AWS credentials needed)
+npm run lint && npx tsc --noEmit && npm test && npm run build
+# Java (needs Docker: Testcontainers)
+cd twitter-java-api && ./mvnw verify
+# Terraform (mocked providers: no AWS or Grafana credentials needed)
 cd infra/terraform && terraform init -backend=false && terraform validate && terraform test
+cd infra/grafana && terraform init -backend=false && terraform validate && terraform test
 ```
 
 Enable the pre-commit hook once per clone: `git config core.hooksPath .githooks`.

@@ -13,12 +13,11 @@ A full-stack Twitter/X clone: a Next.js frontend and a Go API (with an optional 
 - **Feeds** — "For You" global feed with **time-decay gravity algorithm** (weighing likes, retweets, and replies), following-only feed, and per-user profile feed
 - **Follow / Unfollow** — Follow users with follower & following lists
 - **Media Uploads** — S3 presigned-URL uploads served via CloudFront CDN
-- **Real-time Updates** — one Server-Sent Events (SSE) stream for notifications and direct messages, fanned out across instances via Redis
+- **Real-time Updates** — one Server-Sent Events (SSE) stream for notifications and direct messages (fanned out across instances via Redis when several run)
 - **Direct Messages** — one-to-one conversations, delivered in real time over the same SSE stream
 - **Search** — Search users, tweets, and hashtags
 - **Trending & Discovery** — Trending hashtags and suggested users
-- **AI Assistant** — Context-aware chat powered by Gemini 2.5 Flash with personal timeline knowledge
-- **RAG (Retrieval-Augmented Generation)** — new tweets are queued in Postgres (same transaction as the tweet) and embedded in the background with Gemini; the assistant retrieves related tweets with pgvector
+- **AI Assistant (RAG)** — streaming chat with Gemini that answers using related tweets: new tweets are queued in Postgres (same transaction as the tweet), embedded in the background, and retrieved with pgvector
 - **Observability** — Real-time metrics (Prometheus) and log aggregation (Loki) via Grafana Cloud
 
 ## Tech Stack
@@ -103,21 +102,23 @@ Everything is code and every alert arrives by email.
 
 ## Prerequisites
 
-| Tool | Purpose |
+| Tool | Needed for |
 |---|---|
-| [Go](https://go.dev/dl/) | Backend API development |
-| [Node.js](https://nodejs.org/) (v18+) | Frontend development |
-| [Docker](https://www.docker.com/) | Local Postgres + Redis, and production deployment |
-| [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) | AWS resource management, Session Manager access |
-| [Terraform](https://developer.hashicorp.com/terraform/install) (v1.5+) | Infrastructure provisioning |
-| [Make](https://www.gnu.org/software/make/) | Running Go API tasks (migrations, etc.) |
-| [Google Cloud Console](https://console.cloud.google.com/) | Google OAuth 2.0 Client ID for authentication |
-| [Google AI Studio](https://aistudio.google.com/) | Gemini API Key for Assistant & RAG |
+| [Docker](https://www.docker.com/) | Local Postgres + Redis; the Java tests; building images |
+| [Go](https://go.dev/dl/) 1.26+ | The Go API |
+| [Node.js](https://nodejs.org/) 22+ | The web app |
+| [Make](https://www.gnu.org/software/make/) | Go API tasks (`make run`, `make test`, `make sqlc`) |
+| [Google Cloud Console](https://console.cloud.google.com/) | A Google OAuth Client ID for sign-in |
+| [Google AI Studio](https://aistudio.google.com/) (optional) | A Gemini API key for the assistant |
+| JDK 25 (optional) | Only for the Java API |
+| [Terraform](https://developer.hashicorp.com/terraform/install) 1.10+ (optional) | Checking or provisioning the infrastructure |
+| [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) (optional) | Only for a real AWS deployment |
 
 **Install via Homebrew (macOS):**
 
 ```bash
-brew install go node docker awscli hashicorp/tap/terraform make
+brew install go node make hashicorp/tap/terraform
+brew install --cask docker
 ```
 
 ## Third-Party Setup
@@ -140,9 +141,8 @@ This project uses Google OAuth for authentication. You need to create a Client I
     - **Authorized JavaScript origins**:
       - `http://localhost:3000` (Local)
       - `https://twitter.<domain>` (Production)
-    - **Authorized redirect URIs**:
-      - `http://localhost:3000/api/auth/callback/google`
-5.  **Copy Client ID**: Save the **Client ID**. You will need this for your `.env` files and Terraform variables.
+    - No redirect URI is needed: the app signs in with Google ID tokens.
+5.  **Copy Client ID**: Save the **Client ID**. You will need it in `twitter-go-api/app.env`, `twitter-next-web/.env.local` and the Terraform variables.
 
 ### 2. Google Gemini Setup (AI & RAG)
 
@@ -169,30 +169,32 @@ This project supports centralized logging and metrics via [Grafana Cloud](https:
 
 ## Local Development
 
-### 1. Start infra (Postgres + Redis)
+### 1. Start Postgres + Redis
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
-### 2. Run Go API
+### 2. Run the Go API
 
 ```bash
 cd twitter-go-api
-cp app.env.example app.env  # then fill in values
-make run                    # migrations run automatically at startup
+cp app.env.example app.env   # set TOKEN_SYMMETRIC_KEY (openssl rand -base64 48) and GOOGLE_CLIENT_ID
+make run                     # http://localhost:8080; migrations run at startup
 ```
 
-### 3. Run Next.js Web
+Swagger UI: http://localhost:8080/swagger/index.html (outside production). The optional Java API runs from the same `app.env` instead (see [`twitter-java-api/README.md`](twitter-java-api/README.md)); run one backend at a time.
+
+### 3. Run the web app
 
 ```bash
 cd twitter-next-web
+cp .example.env .env.local   # set NEXT_PUBLIC_GOOGLE_CLIENT_ID
 npm install
-npm run dev
+npm run dev                  # http://localhost:3000
 ```
 
-Web: `http://localhost:3000`
-API: `http://localhost:8080`
+Photo/video uploads also need an S3 bucket (`S3_BUCKET_NAME` + AWS credentials); everything else works without AWS. The assistant needs `GEMINI_API_KEY`.
 
 ## Contributing
 
@@ -201,18 +203,28 @@ API: `http://localhost:8080`
 
 ## Validation Commands
 
-The same checks CI runs (`.github/workflows/ci.yml`):
+The same checks CI runs ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)):
 
 ```bash
-# Go API (integration tests run when TEST_DATABASE_URL points at a disposable Postgres)
-cd twitter-go-api && go vet ./... && go test -race ./...
+# Go API: integration tests need a throwaway Postgres (skipped without TEST_DATABASE_URL)
+docker run -d --name twitter-test-pg -p 55432:5432 -e POSTGRES_USER=test -e POSTGRES_PASSWORD=test \
+  -e POSTGRES_DB=twitter_test pgvector/pgvector:pg16
+cd twitter-go-api && go vet ./... && \
+  TEST_DATABASE_URL='postgres://test:test@localhost:55432/twitter_test?sslmode=disable' go test -race ./...
 
 # Web
 cd twitter-next-web && npm run lint && npx tsc --noEmit && npm test && npm run build
 
-# Terraform (mocked AWS provider, no credentials)
-cd infra/terraform && terraform fmt -check -recursive .. && terraform init -backend=false && terraform validate && terraform test
+# Java API (starts its own containers; needs Docker)
+cd twitter-java-api && ./mvnw verify
+
+# Terraform: all three modules, against mocked providers (no AWS or Grafana account)
+cd infra && terraform fmt -check -recursive && \
+  for d in bootstrap terraform grafana; do terraform -chdir=$d init -backend=false && terraform -chdir=$d validate; done && \
+  terraform -chdir=terraform test && terraform -chdir=grafana test
 ```
+
+CI also lints the EC2 stack (`shellcheck`, `nginx -t`, `docker compose config`, Alloy config) and checks that generated code (sqlc, test fakes) is up to date.
 
 ## AWS Infrastructure
 
@@ -369,7 +381,8 @@ Then connect your DB tool to `127.0.0.1:5433`, database `twitter_db`, with the c
 │   ├── terraform/       # AWS infrastructure (+ tests/ with a mocked-provider plan)
 │   ├── grafana/         # Grafana Cloud dashboard and alert rules (Terraform)
 │   └── ec2/             # What runs on the host: compose.yml, nginx config, certbot, Alloy config, deploy scripts
-├── docs/                # Modernization plan, review notes, diagrams
-├── .github/workflows/   # CI (tests, lint, Terraform checks) and deploy pipelines
+├── docs/                # Modernization plan, screenshots
+├── .github/workflows/   # CI (tests, lint, Terraform checks) and the deploy pipeline
+├── .githooks/           # pre-commit: gofmt, terraform fmt, ESLint on staged files
 └── docker-compose.yml   # Local development (Postgres + pgvector, Redis)
 ```

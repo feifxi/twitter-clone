@@ -4,30 +4,26 @@ Frontend for the Twitter clone, built with Next.js App Router.
 
 ## Stack
 
-- Next.js 16
-- React 19
-- TypeScript
-- Tailwind CSS
-- TanStack Query
-- Zustand
-- Zod
+- Next.js 16 (App Router), React 19, TypeScript
+- Tailwind CSS v4, Radix / shadcn primitives
+- TanStack Query, Zustand (UI state only), Zod
+- Vitest
 
 ## API Expectations
 
-This frontend expects the Go API (`/api/v1`) and cursor-based pagination:
+This frontend talks to the Go API (or the Java one; same contract), described in
+[`../twitter-go-api/docs/api-contract.md`](../twitter-go-api/docs/api-contract.md):
 
-- Request params: `cursor`, `size`
-- Response model:
-  - `items`
-  - `hasNext`
-  - `nextCursor`
+- Lists page with `cursor` + `size` and return `{ items, hasNext, nextCursor }` (`nextCursor` is `null` on the last page).
+- Timelines (feeds, profile tabs) return `{ kind, tweet, retweet }` feed items; search and thread replies return plain tweets.
 
 ## Local Setup
 
 ### Prerequisites
 
-- Node.js 20+
+- Node.js 22+
 - npm
+- The API running on `http://localhost:8080` (see the root README)
 
 ### Install + Run
 
@@ -40,18 +36,24 @@ Open: `http://localhost:3000`
 
 ### Environment
 
-Create `.env.local`:
-
-```env
-NEXT_PUBLIC_API_URL=http://localhost:8080/api/v1
-NEXT_PUBLIC_GOOGLE_CLIENT_ID=your-google-client-id
+```bash
+cp .example.env .env.local   # then set NEXT_PUBLIC_GOOGLE_CLIENT_ID
 ```
+
+| Variable | Purpose |
+|---|---|
+| `NEXT_PUBLIC_API_URL` | API base URL for the browser (`http://localhost:8080/api/v1` locally, `/api/v1` in production) |
+| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Google OAuth client ID for sign-in |
+| `API_INTERNAL_URL` (optional) | API base URL for server rendering; defaults to `NEXT_PUBLIC_API_URL` |
+
+`NEXT_PUBLIC_*` values are compiled into the browser bundle at build time.
 
 ## Quality Checks
 
+The same checks CI runs:
+
 ```bash
-npx tsc --noEmit
-npm run lint
+npm run lint && npx tsc --noEmit && npm test && npm run build
 ```
 
 ## Auth
@@ -66,14 +68,8 @@ The Go API keeps the session in two **httpOnly cookies** (`access_token`, `refre
 ## Data fetching
 
 - Query keys: all in `src/lib/query-keys.ts`; never inline arrays.
-- Optimistic updates: `src/lib/query-cache.ts` updates every cached copy of a tweet or user (feeds, profile tabs, search, details, tweet authors).
+- Optimistic updates: `src/lib/query-cache.ts` updates every cached copy of a tweet or user (feeds, profile tabs, search, details, tweet authors and retweeters), whether it's cached as a plain tweet or inside a feed item.
 - Like / retweet / follow: the cache flips on click and `src/lib/debounced-toggle.ts` sends one request for the final state (none if toggled back), even if the component unmounts.
-
-## Tests
-
-```bash
-npm test   # Vitest: src/**/*.test.ts
-```
 
 ## Main Directories
 
