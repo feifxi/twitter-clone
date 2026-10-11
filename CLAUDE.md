@@ -53,8 +53,9 @@ Enable the pre-commit hook once per clone: `git config core.hooksPath .githooks`
 ## Web conventions
 
 - **Query keys only from `src/lib/query-keys.ts`.** Never inline key arrays.
-- **Optimistic updates go through `src/lib/query-cache.ts`** (`updateTweet`, `updateUser`): one call
-  updates every cached copy, whatever the cache shape. Like/retweet/follow use the module-level
+- **Optimistic updates go through `src/lib/query-cache.ts`** (`updateTweet`, `updateUser`,
+  `removeFeedItems`): one call updates every cached copy, whatever the cache shape (plain tweets or
+  the `{ kind, tweet, retweet }` feed items that timelines return). Like/retweet/follow use the module-level
   `src/lib/debounced-toggle.ts` (one request for the final state).
 - **API access:** browser code uses `src/api/axiosInstance.ts` (cookies, single-flight refresh);
   server components use `src/api/server.ts` (forwards the visitor's cookies). Pages that matter for

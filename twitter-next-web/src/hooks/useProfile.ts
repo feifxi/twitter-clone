@@ -10,7 +10,7 @@ import { debouncedToggle } from '@/lib/debounced-toggle';
 import { invalidateEntities, updateUser } from '@/lib/query-cache';
 import { PAGE_SIZE, queryKeys, type ProfileTab } from '@/lib/query-keys';
 import type { UpdateProfileInput } from '@/lib/validation';
-import type { PageResponse, TweetResponse, UserResponse } from '@/types';
+import type { FeedItemResponse, PageResponse, UserResponse } from '@/types';
 
 export function useUserProfile(userId: number | null) {
   return useQuery({
@@ -38,8 +38,8 @@ export function useUserProfileByUsername(username: string) {
 export function useUserTimeline(userId: number | null, tab: ProfileTab = 'posts', { enabled = true, pageSize = PAGE_SIZE } = {}) {
   return useInfiniteQuery({
     queryKey: queryKeys.users.timeline(userId!, tab),
-    queryFn: async ({ pageParam }: { pageParam: string | null }): Promise<PageResponse<TweetResponse>> => {
-      const { data } = await axiosInstance.get<PageResponse<TweetResponse>>(`/users/${userId}/${tab}`, {
+    queryFn: async ({ pageParam }: { pageParam: string | null }): Promise<PageResponse<FeedItemResponse>> => {
+      const { data } = await axiosInstance.get<PageResponse<FeedItemResponse>>(`/users/${userId}/${tab}`, {
         params: { cursor: pageParam ?? undefined, size: pageSize },
       });
       return data;

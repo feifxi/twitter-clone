@@ -1,12 +1,13 @@
 import type { QueryClient, QueryKey } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/query-keys';
-import type { TweetResponse, UserResponse } from '@/types';
+import type { FeedItemResponse, TweetResponse, UserResponse } from '@/types';
 
 /*
  * Optimistic updates for entities that are cached in many places. One tweet can
  * sit in a feed, a profile tab, search results and its detail page (and twice
- * in a timeline when someone retweeted it), in caches of different shapes. These
- * helpers update every copy in one pass.
+ * in a timeline when someone retweeted it), in caches of different shapes:
+ * plain tweets, or feed items that wrap one. These helpers update every copy in
+ * one pass.
  */
 
 type Updater<T> = (item: T) => T | null;
@@ -17,28 +18,43 @@ const isTweet = (x: unknown): x is TweetResponse =>
 const isUser = (x: unknown): x is UserResponse =>
   typeof x === 'object' && x !== null && 'followersCount' in x && 'username' in x;
 
-/**
- * Maps the matching items of a cached value, whatever its shape: one entity, an
- * array, a page (`{ items }`) or infinite pages (`{ pages }`). Returning null
- * removes the item from lists; a single cached entity is left as is.
- */
-function mapCached<T>(data: unknown, isItem: (x: unknown) => x is T, fn: Updater<T>): unknown {
+const isFeedItem = (x: unknown): x is FeedItemResponse =>
+  typeof x === 'object' && x !== null && 'kind' in x && 'tweet' in x && isTweet(x.tweet);
+
+/** A timeline entry or a plain tweet (search results), as a feed item. */
+export const asFeedItem = (x: FeedItemResponse | TweetResponse): FeedItemResponse =>
+  isFeedItem(x) ? x : { kind: 'tweet', tweet: x, retweet: null };
+
+const REMOVED = Symbol('removed');
+
+function mapDeep<T>(data: unknown, isItem: (x: unknown) => x is T, fn: Updater<T>): unknown {
   if (data === null || typeof data !== 'object') return data;
-  if (Array.isArray(data)) {
-    return data.flatMap((item) => {
-      if (!isItem(item)) return [mapCached(item, isItem, fn)];
-      const next = fn(item);
-      return next === null ? [] : [next];
-    });
-  }
+  if (isItem(data)) return fn(data) ?? REMOVED;
+  if (Array.isArray(data)) return data.map((item) => mapDeep(item, isItem, fn)).filter((item) => item !== REMOVED);
   if ('pages' in data && Array.isArray(data.pages)) {
-    return { ...data, pages: data.pages.map((page: unknown) => mapCached(page, isItem, fn)) };
+    return { ...data, pages: data.pages.map((page: unknown) => mapDeep(page, isItem, fn)) };
   }
   if ('items' in data && Array.isArray(data.items)) {
-    return { ...data, items: mapCached(data.items, isItem, fn) };
+    return { ...data, items: mapDeep(data.items, isItem, fn) };
   }
-  if (isItem(data)) return fn(data) ?? data;
+  // A feed item goes (or stays) with its tweet.
+  if (isFeedItem(data)) {
+    const tweet = mapDeep(data.tweet, isItem, fn);
+    if (tweet === REMOVED) return REMOVED;
+    return tweet === data.tweet ? data : { ...data, tweet };
+  }
   return data;
+}
+
+/**
+ * Maps the matching items of a cached value, whatever its shape: one entity, an
+ * array, a page (`{ items }`), infinite pages (`{ pages }`), or feed items that
+ * wrap a tweet. Returning null removes the item from lists (with the feed items
+ * wrapping it); a single cached entity is left as is.
+ */
+function mapCached<T>(data: unknown, isItem: (x: unknown) => x is T, fn: Updater<T>): unknown {
+  const next = mapDeep(data, isItem, fn);
+  return next === REMOVED ? data : next;
 }
 
 const TWEET_ROOTS: readonly QueryKey[] = [queryKeys.feeds.all, queryKeys.tweets.all, queryKeys.users.all, queryKeys.search.all];
@@ -57,12 +73,20 @@ export function updateTweet(queryClient: QueryClient, tweetId: number, fn: Updat
   );
 }
 
-/** Updates every cached copy of a user, including authors embedded in tweets. */
+/** Removes timeline entries (e.g. my retweet of a tweet, once I undo it). */
+export function removeFeedItems(queryClient: QueryClient, matches: (item: FeedItemResponse) => boolean) {
+  setEverywhere(queryClient, TWEET_ROOTS, (data) => mapCached(data, isFeedItem, (item) => (matches(item) ? null : item)));
+}
+
+/** Updates every cached copy of a user, including tweet authors and retweeters. */
 export function updateUser(queryClient: QueryClient, userId: number, fn: (u: UserResponse) => UserResponse) {
-  const apply = <U extends UserResponse | null>(u: U): U => (u && u.id === userId ? (fn(u) as U) : u);
+  const apply = (u: UserResponse): UserResponse => (u.id === userId ? fn(u) : u);
   setEverywhere(queryClient, USER_ROOTS, (data) => {
-    const users = mapCached(data, isUser, (u) => apply(u));
-    return mapCached(users, isTweet, (t) => ({ ...t, user: apply(t.user), retweetedBy: apply(t.retweetedBy) }));
+    const users = mapCached(data, isUser, apply);
+    const tweets = mapCached(users, isTweet, (t) => ({ ...t, user: apply(t.user) }));
+    return mapCached(tweets, isFeedItem, (item) =>
+      item.retweet ? { ...item, retweet: { ...item.retweet, retweeter: apply(item.retweet.retweeter) } } : item,
+    );
   });
 }
 

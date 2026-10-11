@@ -18,7 +18,7 @@ import { useToggleLike, useToggleRetweet } from '@/hooks/useTweetActions';
 import { displayNameOf, formatFullTime, formatRelativeTime } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { useUIStore } from '@/store/useUIStore';
-import type { TweetResponse } from '@/types';
+import type { RetweetResponse, TweetResponse } from '@/types';
 
 export function TweetSkeleton() {
   return (
@@ -62,11 +62,13 @@ function TweetMedia({ tweet, onOpenImage }: { tweet: TweetResponse; onOpenImage:
 
 interface TweetProps {
   tweet: TweetResponse;
+  /** Set when the tweet is in a timeline because someone retweeted it ("X reposted"). */
+  retweet?: RetweetResponse | null;
   /** The tweet detail page: larger text, full timestamp, no click-through. */
   variant?: 'feed' | 'detail';
 }
 
-export function Tweet({ tweet, variant = 'feed' }: TweetProps) {
+export function Tweet({ tweet, retweet, variant = 'feed' }: TweetProps) {
   const router = useRouter();
   const toggleLike = useToggleLike();
   const toggleRetweet = useToggleRetweet();
@@ -145,13 +147,13 @@ export function Tweet({ tweet, variant = 'feed' }: TweetProps) {
         onClick={isDetail ? undefined : () => router.push(href)}
         className={cn('border-b border-border px-4', isDetail ? 'pt-3' : 'cursor-pointer py-3 transition-colors hover:bg-foreground/[0.03]')}
       >
-        {tweet.retweetedBy && (
+        {retweet && (
           <div className="mb-1 flex items-center gap-3 text-[13px] font-bold text-muted-foreground">
             <div className="flex w-10 justify-end">
               <Repeat2 className="size-4" />
             </div>
-            <Link href={`/${tweet.retweetedBy.username}`} onClick={stop} className="truncate hover:underline">
-              {me?.id === tweet.retweetedBy.id ? 'You' : displayNameOf(tweet.retweetedBy)} reposted
+            <Link href={`/${retweet.retweeter.username}`} onClick={stop} className="truncate hover:underline">
+              {me?.id === retweet.retweeter.id ? 'You' : displayNameOf(retweet.retweeter)} reposted
             </Link>
           </div>
         )}

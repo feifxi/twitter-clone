@@ -19,25 +19,25 @@ public class TweetFeeds {
         this.hydrator = hydrator;
     }
 
-    public Page<TweetView> forYou(Instant anchor, PageRequest page, Long viewerId, Function<TweetRow, Cursor> cursorOf) {
-        return hydrator.page(queries.forYou(anchor, page, viewerId), page, viewerId, cursorOf);
+    public Page<FeedItem> forYou(Instant anchor, PageRequest page, Long viewerId, Function<TweetRow, Cursor> cursorOf) {
+        return hydrator.itemPage(queries.forYou(anchor, page, viewerId), page, viewerId, cursorOf);
     }
 
     /** {@code profile}: one user's tweets and retweets; otherwise those of the accounts {@code owner} follows. */
-    public Page<TweetView> timeline(boolean profile, long owner, PageRequest page, Long viewerId) {
-        return hydrator.page(queries.timeline(profile, owner, page, viewerId), page, viewerId, TweetRow::timelineCursor);
+    public Page<FeedItem> timeline(boolean profile, long owner, PageRequest page, Long viewerId) {
+        return hydrator.itemPage(queries.timeline(profile, owner, page, viewerId), page, viewerId, TweetRow::timelineCursor);
     }
 
-    public Page<TweetView> userReplies(long userId, PageRequest page, Long viewerId) {
-        return hydrator.page(queries.userReplies(userId, page, viewerId), page, viewerId, TweetRow::createdCursor);
+    public Page<FeedItem> userReplies(long userId, PageRequest page, Long viewerId) {
+        return hydrator.itemPage(queries.userReplies(userId, page, viewerId), page, viewerId, TweetRow::createdCursor);
     }
 
-    public Page<TweetView> userMedia(long userId, PageRequest page, Long viewerId) {
-        return hydrator.page(queries.userMedia(userId, page, viewerId), page, viewerId, TweetRow::createdCursor);
+    public Page<FeedItem> userMedia(long userId, PageRequest page, Long viewerId) {
+        return hydrator.itemPage(queries.userMedia(userId, page, viewerId), page, viewerId, TweetRow::createdCursor);
     }
 
-    public Page<TweetView> userLikes(long userId, PageRequest page, Long viewerId, Function<TweetRow, Cursor> cursorOf) {
-        return hydrator.page(queries.userLikes(userId, page, viewerId), page, viewerId, cursorOf);
+    public Page<FeedItem> userLikes(long userId, PageRequest page, Long viewerId, Function<TweetRow, Cursor> cursorOf) {
+        return hydrator.itemPage(queries.userLikes(userId, page, viewerId), page, viewerId, cursorOf);
     }
 
     public Page<TweetView> searchFullText(String tsQuery, PageRequest page, Long viewerId) {

@@ -16,8 +16,9 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 
 /**
- * Turns {@link TweetRow}s into {@link TweetView}s for any list: authors, retweeters and
- * the handles of replied-to authors are loaded in two batch queries per page.
+ * Turns {@link TweetRow}s into {@link TweetView}s (or, for timelines, {@link FeedItem}s
+ * with the retweet that put a tweet there): authors, retweeters and the handles of
+ * replied-to authors are loaded in two batch queries per page.
  */
 @Component
 public class TweetHydrator {
@@ -31,6 +32,10 @@ public class TweetHydrator {
     }
 
     public List<TweetView> hydrate(List<TweetRow> rows, Long viewerId) {
+        return hydrateItems(rows, viewerId).stream().map(FeedItem::tweet).toList();
+    }
+
+    public List<FeedItem> hydrateItems(List<TweetRow> rows, Long viewerId) {
         if (rows.isEmpty()) {
             return List.of();
         }
@@ -51,10 +56,12 @@ public class TweetHydrator {
 
         return rows.stream().map(r -> {
             Long parentAuthor = r.parentId() == null ? null : parentAuthors.get(r.parentId());
-            return new TweetView(r.id(), r.content(), r.mediaType(), r.mediaUrl(), loaded.get(r.userId()),
+            var tweet = new TweetView(r.id(), r.content(), r.mediaType(), r.mediaUrl(), loaded.get(r.userId()),
                     r.replyCount(), r.likeCount(), r.retweetCount(), r.liked(), r.retweeted(),
-                    r.parentId(), parentAuthor == null ? null : loaded.get(parentAuthor).username(), r.createdAt(),
-                    r.retweetedById() == null ? null : loaded.get(r.retweetedById()), r.retweetedAt());
+                    r.parentId(), parentAuthor == null ? null : loaded.get(parentAuthor).username(), r.createdAt());
+            var retweet = r.retweetId() == null ? null
+                    : new FeedItem.Retweet(r.retweetId(), loaded.get(r.retweetedById()), r.retweetedAt());
+            return new FeedItem(tweet, retweet);
         }).toList();
     }
 
@@ -62,5 +69,11 @@ public class TweetHydrator {
     public Page<TweetView> page(List<TweetRow> rows, PageRequest request, Long viewerId, Function<TweetRow, Cursor> cursorOf) {
         Page<TweetRow> page = Page.fromRows(rows, request, cursorOf);
         return new Page<>(hydrate(page.items(), viewerId), page.next());
+    }
+
+    /** {@link #page} for timelines: the items keep the retweet that put a tweet there. */
+    public Page<FeedItem> itemPage(List<TweetRow> rows, PageRequest request, Long viewerId, Function<TweetRow, Cursor> cursorOf) {
+        Page<TweetRow> page = Page.fromRows(rows, request, cursorOf);
+        return new Page<>(hydrateItems(page.items(), viewerId), page.next());
     }
 }

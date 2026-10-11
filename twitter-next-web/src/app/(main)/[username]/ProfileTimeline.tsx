@@ -32,7 +32,7 @@ export function ProfileTimeline({ username, tab }: { username: string; tab: Prof
 /** The Media tab: a 3-column grid of thumbnails linking to their tweets. */
 function MediaGrid({ query, handle }: { query: ReturnType<typeof useUserTimeline>; handle: string }) {
   const sentinel = useInfiniteScroll(query);
-  const tweets = query.data?.pages.flatMap((page) => page.items).filter((t) => t.mediaUrl) ?? [];
+  const tweets = query.data?.pages.flatMap((page) => page.items.map((item) => item.tweet)).filter((t) => t.mediaUrl) ?? [];
 
   if (query.isPending) {
     return (

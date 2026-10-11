@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { axiosInstance } from '@/api/axiosInstance';
 import { useAuth } from '@/hooks/useAuth';
 import { debouncedToggle } from '@/lib/debounced-toggle';
-import { invalidateEntities, updateTweet } from '@/lib/query-cache';
+import { invalidateEntities, removeFeedItems, updateTweet } from '@/lib/query-cache';
 import { queryKeys } from '@/lib/query-keys';
 import type { TweetResponse } from '@/types';
 
@@ -52,10 +52,14 @@ export function useToggleRetweet() {
   return useCallback(
     (tweet: TweetResponse) => {
       const retweeted = !tweet.isRetweeted;
-      updateTweet(queryClient, tweet.id, (t) => {
-        if (!retweeted && t.retweetedBy?.id === myId) return null;
-        return { ...t, isRetweeted: retweeted, retweetCount: Math.max(0, t.retweetCount + (retweeted ? 1 : -1)) };
-      });
+      if (!retweeted) {
+        removeFeedItems(queryClient, (item) => item.tweet.id === tweet.id && item.retweet?.retweeter.id === myId);
+      }
+      updateTweet(queryClient, tweet.id, (t) => ({
+        ...t,
+        isRetweeted: retweeted,
+        retweetCount: Math.max(0, t.retweetCount + (retweeted ? 1 : -1)),
+      }));
 
       debouncedToggle(`retweet:${tweet.id}`, tweet.isRetweeted, retweeted, async (state) => {
         try {

@@ -13,9 +13,9 @@ import (
 )
 
 // collect pages through a list until the cursor runs out.
-func collect(t *testing.T, limit int32, fetch func(pagination.Request) (pagination.Page[domain.Tweet], error)) []domain.Tweet {
+func collect(t *testing.T, limit int32, fetch func(pagination.Request) (pagination.Page[domain.FeedItem], error)) []domain.FeedItem {
 	t.Helper()
-	var all []domain.Tweet
+	var all []domain.FeedItem
 	req := pagination.Request{Limit: limit}
 	for range 100 {
 		page, err := fetch(req)
@@ -55,17 +55,18 @@ func TestFollowingTimeline_PagesTweetsAndRetweetsInOrder(t *testing.T) {
 	require.NoError(t, err)
 
 	svc := feed.New(store)
-	items := collect(t, 2, func(req pagination.Request) (pagination.Page[domain.Tweet], error) {
+	items := collect(t, 2, func(req pagination.Request) (pagination.Page[domain.FeedItem], error) {
 		return svc.Following(ctx, viewer.ID, req)
 	})
 
 	require.Len(t, items, 6)
-	require.Equal(t, tweets[1].ID, items[0].ID)
-	require.NotNil(t, items[0].RetweetedBy)
-	require.Equal(t, retweeter.ID, items[0].RetweetedBy.ID)
+	require.Equal(t, tweets[1].ID, items[0].Tweet.ID)
+	require.NotNil(t, items[0].Retweet)
+	require.Equal(t, retweeter.ID, items[0].Retweet.By.ID)
+	require.Equal(t, author.ID, items[0].Tweet.Author.ID, "the item carries the original tweet")
 	for i, want := range []int64{tweets[4].ID, tweets[3].ID, tweets[2].ID, tweets[1].ID, tweets[0].ID} {
-		require.Equal(t, want, items[i+1].ID, "position %d", i+1)
-		require.Nil(t, items[i+1].RetweetedBy)
+		require.Equal(t, want, items[i+1].Tweet.ID, "position %d", i+1)
+		require.Nil(t, items[i+1].Retweet)
 	}
 }
 
@@ -82,21 +83,21 @@ func TestForYou_PagesWithoutDuplicatesAndRanksByEngagement(t *testing.T) {
 	require.NoError(t, err)
 
 	svc := feed.New(store)
-	items := collect(t, 3, func(req pagination.Request) (pagination.Page[domain.Tweet], error) {
+	items := collect(t, 3, func(req pagination.Request) (pagination.Page[domain.FeedItem], error) {
 		return svc.Global(ctx, req, &fan.ID)
 	})
 
 	seen := map[int64]int{}
 	for i, it := range items {
-		_, dup := seen[it.ID]
-		require.False(t, dup, "tweet %d appears twice", it.ID)
-		seen[it.ID] = i
+		_, dup := seen[it.Tweet.ID]
+		require.False(t, dup, "tweet %d appears twice", it.Tweet.ID)
+		seen[it.Tweet.ID] = i
 	}
 	require.Contains(t, seen, quiet.ID)
 	require.Contains(t, seen, popular.ID)
 	require.Less(t, seen[popular.ID], seen[quiet.ID], "engagement ranks the popular tweet higher")
-	require.True(t, items[seen[popular.ID]].IsLiked)
-	require.True(t, items[seen[popular.ID]].IsRetweeted)
+	require.True(t, items[seen[popular.ID]].Tweet.IsLiked)
+	require.True(t, items[seen[popular.ID]].Tweet.IsRetweeted)
 }
 
 func TestProfileTabs(t *testing.T) {
@@ -114,33 +115,33 @@ func TestProfileTabs(t *testing.T) {
 	require.NoError(t, err)
 
 	svc := feed.New(store)
-	ids := func(items []domain.Tweet) []int64 {
+	ids := func(items []domain.FeedItem) []int64 {
 		out := make([]int64, len(items))
 		for i, it := range items {
-			out[i] = it.ID
+			out[i] = it.Tweet.ID
 		}
 		return out
 	}
 
-	posts := collect(t, 10, func(req pagination.Request) (pagination.Page[domain.Tweet], error) {
+	posts := collect(t, 10, func(req pagination.Request) (pagination.Page[domain.FeedItem], error) {
 		return svc.Posts(ctx, owner.ID, req, nil)
 	})
 	require.Equal(t, []int64{media.ID, post.ID}, ids(posts), "posts exclude replies")
 
-	replies := collect(t, 10, func(req pagination.Request) (pagination.Page[domain.Tweet], error) {
+	replies := collect(t, 10, func(req pagination.Request) (pagination.Page[domain.FeedItem], error) {
 		return svc.Replies(ctx, owner.ID, req, nil)
 	})
 	require.Equal(t, []int64{reply.ID}, ids(replies))
-	require.Equal(t, owner.Username, *replies[0].ParentUsername)
+	require.Equal(t, owner.Username, *replies[0].Tweet.ParentUsername)
 
-	mediaTab := collect(t, 10, func(req pagination.Request) (pagination.Page[domain.Tweet], error) {
+	mediaTab := collect(t, 10, func(req pagination.Request) (pagination.Page[domain.FeedItem], error) {
 		return svc.Media(ctx, owner.ID, req, nil)
 	})
 	require.Equal(t, []int64{media.ID}, ids(mediaTab))
 
-	likes := collect(t, 10, func(req pagination.Request) (pagination.Page[domain.Tweet], error) {
+	likes := collect(t, 10, func(req pagination.Request) (pagination.Page[domain.FeedItem], error) {
 		return svc.Likes(ctx, owner.ID, req, &owner.ID)
 	})
 	require.Equal(t, []int64{othersTweet.ID}, ids(likes))
-	require.True(t, likes[0].IsLiked)
+	require.True(t, likes[0].Tweet.IsLiked)
 }

@@ -16,15 +16,11 @@ public record TweetResponse(
         boolean isRetweeted,
         Long replyToTweetId,
         String replyToUsername,
-        Instant createdAt,
-        /** Set when the tweet is in a timeline because this user retweeted it. */
-        UserResponse retweetedBy,
-        Instant retweetedAt) {
+        Instant createdAt) {
 
     public static TweetResponse of(TweetView t) {
         return new TweetResponse(t.id(), t.content(), t.mediaType(), t.mediaUrl(), UserResponse.of(t.author()),
                 t.replyCount(), t.likeCount(), t.retweetCount(), t.liked(), t.retweeted(),
-                t.parentId(), t.parentUsername(), t.createdAt(),
-                t.retweetedBy() == null ? null : UserResponse.of(t.retweetedBy()), t.retweetedAt());
+                t.parentId(), t.parentUsername(), t.createdAt());
     }
 }

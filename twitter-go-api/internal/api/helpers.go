@@ -12,11 +12,12 @@ import (
 )
 
 // PageResponse is the envelope of every paginated list. nextCursor is opaque:
-// clients pass it back as ?cursor= and must not interpret it.
+// clients pass it back as ?cursor= and must not interpret it. It is null on the
+// last page (always present, like every nullable field).
 type PageResponse[T any] struct {
 	Items      []T     `json:"items"`
 	HasNext    bool    `json:"hasNext"`
-	NextCursor *string `json:"nextCursor,omitempty"`
+	NextCursor *string `json:"nextCursor"`
 }
 
 func newPageResponse[T, R any](page pagination.Page[T], toResponse func(T) R) PageResponse[R] {

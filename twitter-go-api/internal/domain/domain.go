@@ -63,9 +63,19 @@ type Tweet struct {
 	IsRetweeted    bool
 	IsFollowing    bool
 	ParentUsername *string
-	// RetweetedBy is set when the tweet appears in a timeline because someone retweeted it.
-	RetweetedBy *User
-	RetweetedAt *time.Time
+}
+
+// FeedItem is one entry of a timeline: a tweet, plus the retweet that put it there
+// when it appears because someone retweeted it.
+type FeedItem struct {
+	Tweet   Tweet
+	Retweet *Retweet
+}
+
+type Retweet struct {
+	ID        int64
+	By        User
+	CreatedAt time.Time
 }
 
 type Hashtag struct {

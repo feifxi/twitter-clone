@@ -38,11 +38,26 @@ func CreatedCursor(r Row) pagination.Cursor {
 	return pagination.Cursor{Time: r.Tweet.CreatedAt, ID: r.Tweet.ID}
 }
 
-// Hydrate turns rows into domain tweets with authors, retweeters and reply
-// targets filled in, using a fixed number of batch queries (no N+1).
+// Hydrate turns rows into domain tweets with authors and reply targets filled in.
+// For timelines (which can contain retweets), use HydrateItems.
 func Hydrate(ctx context.Context, store db.Querier, rows []Row, viewerID *int64) ([]domain.Tweet, error) {
+	items, err := HydrateItems(ctx, store, rows, viewerID)
+	if err != nil {
+		return nil, err
+	}
+	tweets := make([]domain.Tweet, len(items))
+	for i, item := range items {
+		tweets[i] = item.Tweet
+	}
+	return tweets, nil
+}
+
+// HydrateItems turns rows into feed items: tweets with authors and reply targets,
+// plus the retweet (and retweeter) for rows that are retweets. It uses a fixed
+// number of batch queries (no N+1).
+func HydrateItems(ctx context.Context, store db.Querier, rows []Row, viewerID *int64) ([]domain.FeedItem, error) {
 	if len(rows) == 0 {
-		return []domain.Tweet{}, nil
+		return []domain.FeedItem{}, nil
 	}
 
 	userIDs := make([]int64, 0, len(rows))
@@ -75,7 +90,7 @@ func Hydrate(ctx context.Context, store db.Querier, rows []Row, viewerID *int64)
 		return nil, err
 	}
 
-	result := make([]domain.Tweet, 0, len(rows))
+	result := make([]domain.FeedItem, 0, len(rows))
 	for _, r := range rows {
 		t := domain.NewTweet(r.Tweet)
 		t.Author = users[r.Tweet.UserID]
@@ -88,24 +103,33 @@ func Hydrate(ctx context.Context, store db.Querier, rows []Row, viewerID *int64)
 				t.ParentUsername = &username
 			}
 		}
-		if r.RetweetedByID != nil {
-			retweeter := users[*r.RetweetedByID]
-			t.RetweetedBy = &retweeter
-			t.RetweetedAt = r.RetweetedAt
+		item := domain.FeedItem{Tweet: t}
+		if r.RetweetID != nil && r.RetweetedByID != nil && r.RetweetedAt != nil {
+			item.Retweet = &domain.Retweet{ID: *r.RetweetID, By: users[*r.RetweetedByID], CreatedAt: *r.RetweetedAt}
 		}
-		result = append(result, t)
+		result = append(result, item)
 	}
 	return result, nil
 }
 
 // Page trims a FetchLimit-sized result, hydrates it and derives the next cursor.
 func Page(ctx context.Context, store db.Querier, rows []Row, limit int32, viewerID *int64, cursorOf func(Row) pagination.Cursor) (pagination.Page[domain.Tweet], error) {
+	return page(ctx, store, rows, limit, viewerID, cursorOf, Hydrate)
+}
+
+// ItemPage is Page for timelines: the items keep the retweet that put a tweet there.
+func ItemPage(ctx context.Context, store db.Querier, rows []Row, limit int32, viewerID *int64, cursorOf func(Row) pagination.Cursor) (pagination.Page[domain.FeedItem], error) {
+	return page(ctx, store, rows, limit, viewerID, cursorOf, HydrateItems)
+}
+
+func page[T any](ctx context.Context, store db.Querier, rows []Row, limit int32, viewerID *int64, cursorOf func(Row) pagination.Cursor,
+	hydrate func(context.Context, db.Querier, []Row, *int64) ([]T, error)) (pagination.Page[T], error) {
 	rows, more := pagination.Trim(rows, limit)
-	items, err := Hydrate(ctx, store, rows, viewerID)
+	items, err := hydrate(ctx, store, rows, viewerID)
 	if err != nil {
-		return pagination.Page[domain.Tweet]{}, err
+		return pagination.Page[T]{}, err
 	}
-	return pagination.Page[domain.Tweet]{Items: items, Next: pagination.NextFrom(rows, more, cursorOf)}, nil
+	return pagination.Page[T]{Items: items, Next: pagination.NextFrom(rows, more, cursorOf)}, nil
 }
 
 // Rows converts any sqlc row type that shares Row's columns.

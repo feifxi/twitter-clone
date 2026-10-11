@@ -189,8 +189,8 @@ func TestGetGlobalFeed_UsecaseErrorPropagates(t *testing.T) {
 	t.Parallel()
 
 	mock := &fakeFeeds{
-		globalFn: func(context.Context, pagination.Request, *int64) (pagination.Page[domain.Tweet], error) {
-			return pagination.Page[domain.Tweet]{}, apperr.Internal("feed failure", errors.New("db error"))
+		globalFn: func(context.Context, pagination.Request, *int64) (pagination.Page[domain.FeedItem], error) {
+			return pagination.Page[domain.FeedItem]{}, apperr.Internal("feed failure", errors.New("db error"))
 		},
 	}
 

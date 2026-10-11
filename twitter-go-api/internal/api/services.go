@@ -46,12 +46,12 @@ type TweetService interface {
 }
 
 type FeedService interface {
-	Global(ctx context.Context, req pagination.Request, viewerID *int64) (pagination.Page[domain.Tweet], error)
-	Following(ctx context.Context, userID int64, req pagination.Request) (pagination.Page[domain.Tweet], error)
-	Posts(ctx context.Context, userID int64, req pagination.Request, viewerID *int64) (pagination.Page[domain.Tweet], error)
-	Replies(ctx context.Context, userID int64, req pagination.Request, viewerID *int64) (pagination.Page[domain.Tweet], error)
-	Media(ctx context.Context, userID int64, req pagination.Request, viewerID *int64) (pagination.Page[domain.Tweet], error)
-	Likes(ctx context.Context, userID int64, req pagination.Request, viewerID *int64) (pagination.Page[domain.Tweet], error)
+	Global(ctx context.Context, req pagination.Request, viewerID *int64) (pagination.Page[domain.FeedItem], error)
+	Following(ctx context.Context, userID int64, req pagination.Request) (pagination.Page[domain.FeedItem], error)
+	Posts(ctx context.Context, userID int64, req pagination.Request, viewerID *int64) (pagination.Page[domain.FeedItem], error)
+	Replies(ctx context.Context, userID int64, req pagination.Request, viewerID *int64) (pagination.Page[domain.FeedItem], error)
+	Media(ctx context.Context, userID int64, req pagination.Request, viewerID *int64) (pagination.Page[domain.FeedItem], error)
+	Likes(ctx context.Context, userID int64, req pagination.Request, viewerID *int64) (pagination.Page[domain.FeedItem], error)
 }
 
 type SearchService interface {

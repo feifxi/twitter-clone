@@ -49,10 +49,10 @@ func (f *fakeUsers) Follow(ctx context.Context, followerID, targetID int64) (boo
 
 type fakeFeeds struct {
 	FeedService
-	globalFn func(ctx context.Context, req pagination.Request, viewerID *int64) (pagination.Page[domain.Tweet], error)
+	globalFn func(ctx context.Context, req pagination.Request, viewerID *int64) (pagination.Page[domain.FeedItem], error)
 }
 
-func (f *fakeFeeds) Global(ctx context.Context, req pagination.Request, viewerID *int64) (pagination.Page[domain.Tweet], error) {
+func (f *fakeFeeds) Global(ctx context.Context, req pagination.Request, viewerID *int64) (pagination.Page[domain.FeedItem], error) {
 	return f.globalFn(ctx, req, viewerID)
 }
 

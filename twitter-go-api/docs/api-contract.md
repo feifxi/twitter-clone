@@ -26,6 +26,7 @@ Base URL: `/api/v1`
   "nextCursor": "MTAw"
 }
 ```
+- `nextCursor` is always present: `null` on the last page. Nullable fields are never omitted anywhere in the API; empty lists are `[]`.
 
 ## Common Error Shape
 ```json
@@ -73,12 +74,28 @@ Base URL: `/api/v1`
   "isRetweeted": false,
   "replyToTweetId": 123,
   "replyToUsername": "alice",
-  "createdAt": "2026-03-02T00:00:00Z",
-  "retweetedBy": null,
-  "retweetedAt": null
+  "createdAt": "2026-03-02T00:00:00Z"
 }
 ```
-- In timelines (following feed, profile posts) a retweet appears as the **original tweet** with `retweetedBy` (UserResponse) and `retweetedAt` set: "bob reposted". The same tweet can therefore appear twice in a list (as posted and as retweeted), so key list items by `retweetedBy.id` + `id`.
+
+### FeedItemResponse
+Every **timeline** (the feeds and the profile tabs) is a list of feed items. Other tweet lists (a thread's replies, search) are plain `TweetResponse`s.
+```json
+{
+  "kind": "tweet|retweet",
+  "tweet": { "...TweetResponse (always the original)" },
+  "retweet": null
+}
+```
+For `kind: "retweet"` (shown as "bob reposted"), `retweet` says who put the tweet in this timeline and when:
+```json
+{
+  "kind": "retweet",
+  "tweet": { "...the original TweetResponse" },
+  "retweet": { "id": 7, "retweeter": { "...UserResponse" }, "createdAt": "2026-03-02T00:05:00Z" }
+}
+```
+- The same tweet can appear twice in a timeline (as posted and as retweeted): key items by `retweet.id` (or "tweet") + `tweet.id`.
 
 ### HashtagResponse
 ```json
@@ -177,7 +194,7 @@ Body:
 Response 200: `CurrentUserResponse` (with `onboarded: true`)
 
 ### Profile tabs (optional auth)
-All take `cursor`, `size` and return `PageResponse<TweetResponse>`, newest first.
+All take `cursor`, `size` and return `PageResponse<FeedItemResponse>`, newest first.
 - GET `/users/:id/posts`: top-level tweets and retweets
 - GET `/users/:id/replies`: replies the user wrote
 - GET `/users/:id/media`: tweets with an image or video
@@ -254,13 +271,14 @@ Response 200:
 ## Feeds
 
 ### GET `/feeds/global` (optional auth)
+The ranked "For you" feed.
 Query: `cursor`, `size`
-Response 200: `PageResponse<TweetResponse>`
+Response 200: `PageResponse<FeedItemResponse>`
 
 ### GET `/feeds/following` (private)
-Tweets and retweets by accounts you follow, newest first.
+Tweets and retweets by accounts you follow (not your own posts), newest first.
 Query: `cursor`, `size`
-Response 200: `PageResponse<TweetResponse>`
+Response 200: `PageResponse<FeedItemResponse>`
 
 ## Search
 

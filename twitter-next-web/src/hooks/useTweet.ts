@@ -8,7 +8,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { snapshotEntities, updateTweet } from '@/lib/query-cache';
 import { PAGE_SIZE, queryKeys } from '@/lib/query-keys';
 import type { TweetRequestInput } from '@/lib/validation';
-import type { PageResponse, TweetResponse } from '@/types';
+import type { FeedItemResponse, PageResponse, TweetResponse } from '@/types';
 
 export function useTweet(tweetId: number | null) {
   return useQuery({
@@ -48,23 +48,25 @@ export function useCreateTweet() {
     },
     onSuccess: (tweet, { parentId }) => {
       // Show the new tweet at the top of the lists it belongs to, without refetching (and losing the scroll position).
-      const prepend = (queryKey: readonly unknown[]) =>
-        queryClient.setQueryData<InfiniteData<PageResponse<TweetResponse>>>(queryKey, (old) => {
+      const prepend = <T,>(queryKey: readonly unknown[], item: T) =>
+        queryClient.setQueryData<InfiniteData<PageResponse<T>>>(queryKey, (old) => {
           if (!old?.pages.length) return old;
           const [first, ...rest] = old.pages;
-          return { ...old, pages: [{ ...first, items: [tweet, ...first.items] }, ...rest] };
+          return { ...old, pages: [{ ...first, items: [item, ...first.items] }, ...rest] };
         });
+      // Timelines (feeds, profile tabs) hold feed items; a thread's replies hold plain tweets.
+      const feedItem: FeedItemResponse = { kind: 'tweet', tweet, retweet: null };
 
       if (parentId) {
-        prepend(queryKeys.tweets.replies(parentId));
+        prepend(queryKeys.tweets.replies(parentId), tweet);
         updateTweet(queryClient, parentId, (t) => ({ ...t, replyCount: t.replyCount + 1 }));
-        if (user) prepend(queryKeys.users.timeline(user.id, 'replies'));
+        if (user) prepend(queryKeys.users.timeline(user.id, 'replies'), feedItem);
         return;
       }
-      prepend(queryKeys.feeds.global);
-      prepend(queryKeys.feeds.following);
-      if (user) prepend(queryKeys.users.timeline(user.id, 'posts'));
-      if (user && tweet.mediaUrl) prepend(queryKeys.users.timeline(user.id, 'media'));
+      prepend(queryKeys.feeds.global, feedItem);
+      // Not the Following feed: it lists accounts you follow, not your own posts.
+      if (user) prepend(queryKeys.users.timeline(user.id, 'posts'), feedItem);
+      if (user && tweet.mediaUrl) prepend(queryKeys.users.timeline(user.id, 'media'), feedItem);
     },
   });
 }

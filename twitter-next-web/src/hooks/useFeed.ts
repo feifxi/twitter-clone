@@ -3,16 +3,16 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { axiosInstance } from '@/api/axiosInstance';
 import { PAGE_SIZE, queryKeys } from '@/lib/query-keys';
-import type { PageResponse, TweetResponse } from '@/types';
+import type { FeedItemResponse, PageResponse } from '@/types';
 
 export type FeedKind = 'global' | 'following';
 
 async function fetchFeed(
   kind: FeedKind,
   cursor: string | null
-): Promise<PageResponse<TweetResponse>> {
+): Promise<PageResponse<FeedItemResponse>> {
   const path = kind === 'global' ? '/feeds/global' : '/feeds/following';
-  const { data } = await axiosInstance.get<PageResponse<TweetResponse>>(path, {
+  const { data } = await axiosInstance.get<PageResponse<FeedItemResponse>>(path, {
     params: { cursor: cursor ?? undefined, size: PAGE_SIZE },
   });
   return data;

@@ -297,3 +297,11 @@ Decided 2026-10-11: switch Caddy → nginx (more common in jobs), automate as mu
 - [x] Observability: logs from every container labelled by service, edge metrics derived from nginx logs in Alloy, embedding queue metrics in the Go API
 - [x] CI: shellcheck, `nginx -t`, `docker compose config`, Alloy fmt, Grafana module validate + mocked test
 - [x] Rehearsed locally end to end (local registry as ECR, fake `aws`, Pebble as Let's Encrypt, Prometheus/Loki/Grafana): first deploy, certificate issue + renewal + reload, all browser suites through nginx, broken release → automatic rollback, deploy lock on Amazon Linux 2023, Grafana module applied to a real Grafana, alert drill with the API stopped
+
+### Phase 10: API contract polish (ideas from the microservices repo) ✅
+Decided 2026-10-11 after comparing both API designs: keep this API, adopt two of the microservices conventions.
+- [x] Timelines (feeds and profile tabs) return `{ kind, tweet, retweet }` feed items instead of `retweetedBy`/`retweetedAt` fields on the tweet; `tweet` is always the original in the plain `TweetResponse` shape. Search and thread replies stay plain tweets. Go, Java and the web (types, `FeedList`, the "reposted" banner, cache helpers incl. `removeFeedItems`) updated
+- [x] `nextCursor` is always present (`null` on the last page), matching the rule that nullable fields are never omitted
+- [x] Fixed on the way: a new post was inserted into the cached Following feed, which (by API design) lists only accounts you follow, so it vanished on reload
+- [x] Verified: Go/Java/web suites, a browser run (retweet banner, like updates both copies, undo removes only my retweet entry, posting), and Go vs Java identical on every timeline endpoint
+- Not adopted: string IDs (large change for little gain here)

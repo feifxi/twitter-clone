@@ -3,7 +3,7 @@ package com.fei.twitter.tweet;
 import com.fei.twitter.user.UserView;
 import java.time.Instant;
 
-/** A tweet as a viewer sees it: author and retweeter loaded, viewer flags set. */
+/** A tweet as a viewer sees it: author loaded, viewer flags set. */
 public record TweetView(
         long id,
         String content,
@@ -17,6 +17,4 @@ public record TweetView(
         boolean retweeted,
         Long parentId,
         String parentUsername,
-        Instant createdAt,
-        UserView retweetedBy,
-        Instant retweetedAt) {}
+        Instant createdAt) {}

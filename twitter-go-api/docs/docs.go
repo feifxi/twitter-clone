@@ -314,7 +314,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/api.PageResponse-api_TweetResponse"
+                            "$ref": "#/definitions/api.PageResponse-api_FeedItemResponse"
                         }
                     },
                     "401": {
@@ -354,7 +354,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/api.PageResponse-api_TweetResponse"
+                            "$ref": "#/definitions/api.PageResponse-api_FeedItemResponse"
                         }
                     }
                 }
@@ -1578,7 +1578,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/api.PageResponse-api_TweetResponse"
+                            "$ref": "#/definitions/api.PageResponse-api_FeedItemResponse"
                         }
                     },
                     "403": {
@@ -1625,7 +1625,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/api.PageResponse-api_TweetResponse"
+                            "$ref": "#/definitions/api.PageResponse-api_FeedItemResponse"
                         }
                     }
                 }
@@ -1666,7 +1666,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/api.PageResponse-api_TweetResponse"
+                            "$ref": "#/definitions/api.PageResponse-api_FeedItemResponse"
                         }
                     }
                 }
@@ -1707,7 +1707,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/api.PageResponse-api_TweetResponse"
+                            "$ref": "#/definitions/api.PageResponse-api_FeedItemResponse"
                         }
                     }
                 }
@@ -1797,6 +1797,24 @@ const docTemplate = `{
                 },
                 "requestId": {
                     "type": "string"
+                }
+            }
+        },
+        "api.FeedItemResponse": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "enum": [
+                        "tweet",
+                        "retweet"
+                    ]
+                },
+                "retweet": {
+                    "$ref": "#/definitions/api.RetweetResponse"
+                },
+                "tweet": {
+                    "$ref": "#/definitions/api.TweetResponse"
                 }
             }
         },
@@ -1910,6 +1928,23 @@ const docTemplate = `{
                 }
             }
         },
+        "api.PageResponse-api_FeedItemResponse": {
+            "type": "object",
+            "properties": {
+                "hasNext": {
+                    "type": "boolean"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.FeedItemResponse"
+                    }
+                },
+                "nextCursor": {
+                    "type": "string"
+                }
+            }
+        },
         "api.PageResponse-api_MessageResponse": {
             "type": "object",
             "properties": {
@@ -1989,6 +2024,20 @@ const docTemplate = `{
                 }
             }
         },
+        "api.RetweetResponse": {
+            "type": "object",
+            "properties": {
+                "createdAt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "retweeter": {
+                    "$ref": "#/definitions/api.UserResponse"
+                }
+            }
+        },
         "api.SuccessResponse": {
             "type": "object",
             "properties": {
@@ -2035,17 +2084,6 @@ const docTemplate = `{
                 },
                 "retweetCount": {
                     "type": "integer"
-                },
-                "retweetedAt": {
-                    "type": "string"
-                },
-                "retweetedBy": {
-                    "description": "RetweetedBy is set when the tweet is in a timeline because this user retweeted it.",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/api.UserResponse"
-                        }
-                    ]
                 },
                 "user": {
                     "$ref": "#/definitions/api.UserResponse"
@@ -2116,7 +2154,8 @@ const docTemplate = `{
                     ]
                 },
                 "text": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 4000
                 }
             }
         },

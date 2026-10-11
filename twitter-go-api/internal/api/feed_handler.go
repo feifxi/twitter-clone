@@ -16,7 +16,7 @@ import (
 // @Produce		json
 // @Param			cursor	query		string	false	"Pagination cursor"
 // @Param			size	query		int		false	"Number of items per page"
-// @Success		200		{object}	PageResponse[TweetResponse]
+// @Success		200		{object}	PageResponse[FeedItemResponse]
 // @Router			/feeds/global [get]
 func (s *Server) getGlobalFeed(c *gin.Context) {
 	req, ok := parsePageRequest(c)
@@ -29,7 +29,7 @@ func (s *Server) getGlobalFeed(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, newPageResponse(tweets, newTweetResponse))
+	c.JSON(http.StatusOK, newPageResponse(tweets, newFeedItemResponse))
 }
 
 // getFollowingFeed godoc
@@ -39,7 +39,7 @@ func (s *Server) getGlobalFeed(c *gin.Context) {
 // @Produce		json
 // @Param			cursor	query		string	false	"Pagination cursor"
 // @Param			size	query		int		false	"Number of items per page"
-// @Success		200		{object}	PageResponse[TweetResponse]
+// @Success		200		{object}	PageResponse[FeedItemResponse]
 // @Security		BearerAuth
 // @Failure		401		{object}	ErrorResponse
 // @Router			/feeds/following [get]
@@ -57,11 +57,11 @@ func (s *Server) getFollowingFeed(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, newPageResponse(tweets, newTweetResponse))
+	c.JSON(http.StatusOK, newPageResponse(tweets, newFeedItemResponse))
 }
 
 // The profile tabs share one shape: GET /users/{id}/<tab>?cursor=&size=.
-type profileTab func(ctx context.Context, userID int64, req pagination.Request, viewerID *int64) (pagination.Page[domain.Tweet], error)
+type profileTab func(ctx context.Context, userID int64, req pagination.Request, viewerID *int64) (pagination.Page[domain.FeedItem], error)
 
 func (s *Server) serveProfileTab(c *gin.Context, tab profileTab) {
 	var path idURIRequest
@@ -78,7 +78,7 @@ func (s *Server) serveProfileTab(c *gin.Context, tab profileTab) {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, newPageResponse(page, newTweetResponse))
+	c.JSON(http.StatusOK, newPageResponse(page, newFeedItemResponse))
 }
 
 // getUserPosts godoc
@@ -89,7 +89,7 @@ func (s *Server) serveProfileTab(c *gin.Context, tab profileTab) {
 // @Param			id		path		int		true	"User ID"
 // @Param			cursor	query		string	false	"Pagination cursor"
 // @Param			size	query		int		false	"Number of items per page"
-// @Success		200		{object}	PageResponse[TweetResponse]
+// @Success		200		{object}	PageResponse[FeedItemResponse]
 // @Router			/users/{id}/posts [get]
 func (s *Server) getUserPosts(c *gin.Context) { s.serveProfileTab(c, s.svc.Feeds.Posts) }
 
@@ -101,7 +101,7 @@ func (s *Server) getUserPosts(c *gin.Context) { s.serveProfileTab(c, s.svc.Feeds
 // @Param			id		path		int		true	"User ID"
 // @Param			cursor	query		string	false	"Pagination cursor"
 // @Param			size	query		int		false	"Number of items per page"
-// @Success		200		{object}	PageResponse[TweetResponse]
+// @Success		200		{object}	PageResponse[FeedItemResponse]
 // @Router			/users/{id}/replies [get]
 func (s *Server) getUserReplies(c *gin.Context) { s.serveProfileTab(c, s.svc.Feeds.Replies) }
 
@@ -113,7 +113,7 @@ func (s *Server) getUserReplies(c *gin.Context) { s.serveProfileTab(c, s.svc.Fee
 // @Param			id		path		int		true	"User ID"
 // @Param			cursor	query		string	false	"Pagination cursor"
 // @Param			size	query		int		false	"Number of items per page"
-// @Success		200		{object}	PageResponse[TweetResponse]
+// @Success		200		{object}	PageResponse[FeedItemResponse]
 // @Router			/users/{id}/media [get]
 func (s *Server) getUserMedia(c *gin.Context) { s.serveProfileTab(c, s.svc.Feeds.Media) }
 
@@ -125,7 +125,7 @@ func (s *Server) getUserMedia(c *gin.Context) { s.serveProfileTab(c, s.svc.Feeds
 // @Param			id		path		int		true	"User ID"
 // @Param			cursor	query		string	false	"Pagination cursor"
 // @Param			size	query		int		false	"Number of items per page"
-// @Success		200		{object}	PageResponse[TweetResponse]
+// @Success		200		{object}	PageResponse[FeedItemResponse]
 // @Failure		403		{object}	ErrorResponse
 // @Security		BearerAuth
 // @Router			/users/{id}/likes [get]

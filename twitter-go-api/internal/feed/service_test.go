@@ -46,7 +46,7 @@ func TestGlobal_KeepsTheAnchorAcrossPages(t *testing.T) {
 	require.Equal(t, 4.0, *got.CursorScore)
 	require.Equal(t, int32(2), got.PageLimit, "fetches one extra row to detect the next page")
 	require.Len(t, page.Items, 1)
-	require.Equal(t, "alice", page.Items[0].Author.Username)
+	require.Equal(t, "alice", page.Items[0].Tweet.Author.Username)
 	require.Equal(t, &pagination.Cursor{Anchor: anchor, Score: 3.5, ID: 10}, page.Next)
 }
 
@@ -67,8 +67,9 @@ func TestFollowing_HydratesRetweetsAndBuildsTimelineCursor(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Len(t, page.Items, 1)
-	require.Equal(t, "author", page.Items[0].Author.Username)
-	require.Equal(t, "retweeter", page.Items[0].RetweetedBy.Username)
+	require.Equal(t, "author", page.Items[0].Tweet.Author.Username)
+	require.Equal(t, "retweeter", page.Items[0].Retweet.By.Username)
+	require.Equal(t, int64(7), page.Items[0].Retweet.ID)
 	require.Equal(t, &pagination.Cursor{Time: retweetedAt, Kind: 1, ID: 7}, page.Next, "retweets page by the retweet, not the tweet")
 }
 

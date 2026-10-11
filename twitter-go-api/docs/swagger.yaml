@@ -56,6 +56,18 @@ definitions:
       requestId:
         type: string
     type: object
+  api.FeedItemResponse:
+    properties:
+      kind:
+        enum:
+        - tweet
+        - retweet
+        type: string
+      retweet:
+        $ref: '#/definitions/api.RetweetResponse'
+      tweet:
+        $ref: '#/definitions/api.TweetResponse'
+    type: object
   api.HashtagResponse:
     properties:
       createdAt:
@@ -129,6 +141,17 @@ definitions:
       nextCursor:
         type: string
     type: object
+  api.PageResponse-api_FeedItemResponse:
+    properties:
+      hasNext:
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/api.FeedItemResponse'
+        type: array
+      nextCursor:
+        type: string
+    type: object
   api.PageResponse-api_MessageResponse:
     properties:
       hasNext:
@@ -180,6 +203,15 @@ definitions:
       presignedUrl:
         type: string
     type: object
+  api.RetweetResponse:
+    properties:
+      createdAt:
+        type: string
+      id:
+        type: integer
+      retweeter:
+        $ref: '#/definitions/api.UserResponse'
+    type: object
   api.SuccessResponse:
     properties:
       success:
@@ -211,13 +243,6 @@ definitions:
         type: string
       retweetCount:
         type: integer
-      retweetedAt:
-        type: string
-      retweetedBy:
-        allOf:
-        - $ref: '#/definitions/api.UserResponse'
-        description: RetweetedBy is set when the tweet is in a timeline because this
-          user retweeted it.
       user:
         $ref: '#/definitions/api.UserResponse'
     type: object
@@ -262,6 +287,7 @@ definitions:
         - assistant
         type: string
       text:
+        maxLength: 4000
         type: string
     required:
     - role
@@ -568,7 +594,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/api.PageResponse-api_TweetResponse'
+            $ref: '#/definitions/api.PageResponse-api_FeedItemResponse'
         "401":
           description: Unauthorized
           schema:
@@ -596,7 +622,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/api.PageResponse-api_TweetResponse'
+            $ref: '#/definitions/api.PageResponse-api_FeedItemResponse'
       summary: Global Feed
       tags:
       - Feeds
@@ -1296,7 +1322,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/api.PageResponse-api_TweetResponse'
+            $ref: '#/definitions/api.PageResponse-api_FeedItemResponse'
         "403":
           description: Forbidden
           schema:
@@ -1329,7 +1355,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/api.PageResponse-api_TweetResponse'
+            $ref: '#/definitions/api.PageResponse-api_FeedItemResponse'
       summary: 'Profile: Media'
       tags:
       - Users
@@ -1356,7 +1382,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/api.PageResponse-api_TweetResponse'
+            $ref: '#/definitions/api.PageResponse-api_FeedItemResponse'
       summary: 'Profile: Posts'
       tags:
       - Users
@@ -1383,7 +1409,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/api.PageResponse-api_TweetResponse'
+            $ref: '#/definitions/api.PageResponse-api_FeedItemResponse'
       summary: 'Profile: Replies'
       tags:
       - Users

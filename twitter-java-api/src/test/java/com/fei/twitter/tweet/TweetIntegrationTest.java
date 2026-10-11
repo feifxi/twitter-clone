@@ -5,6 +5,7 @@ import static com.fei.twitter.support.Api.id;
 import static com.fei.twitter.support.Api.reply;
 import static com.fei.twitter.support.Api.send;
 import static com.fei.twitter.support.Api.tweet;
+import static com.fei.twitter.support.Api.tweets;
 import static com.fei.twitter.support.Sessions.signIn;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -42,10 +43,11 @@ class TweetIntegrationTest {
 
         List<Map<String, Object>> items = collect(mvc, viewer, "/api/v1/feeds/following", 2);
         assertThat(items).hasSize(6);
-        assertThat(id(items.get(0))).isEqualTo(tweets[1]);
-        assertThat(((Map<?, ?>) items.get(0).get("retweetedBy")).get("id")).isEqualTo((int) retweeter.id());
-        assertThat(items.subList(1, 6)).extracting(m -> id(m)).containsExactly(tweets[4], tweets[3], tweets[2], tweets[1], tweets[0]);
-        assertThat(items.subList(1, 6)).allMatch(m -> m.get("retweetedBy") == null);
+        assertThat(items.get(0).get("kind")).isEqualTo("retweet");
+        assertThat(id(tweets(items).get(0))).isEqualTo(tweets[1]);
+        assertThat(((Map<?, ?>) ((Map<?, ?>) items.get(0).get("retweet")).get("retweeter")).get("id")).isEqualTo((int) retweeter.id());
+        assertThat(tweets(items.subList(1, 6))).extracting(m -> id(m)).containsExactly(tweets[4], tweets[3], tweets[2], tweets[1], tweets[0]);
+        assertThat(items.subList(1, 6)).allMatch(m -> m.get("kind").equals("tweet") && m.containsKey("retweet") && m.get("retweet") == null);
     }
 
     @Test
@@ -56,7 +58,7 @@ class TweetIntegrationTest {
         send(mvc, fan, "POST", "/api/v1/tweets/" + popular + "/like");
         send(mvc, fan, "POST", "/api/v1/tweets/" + popular + "/retweet");
 
-        List<Map<String, Object>> items = collect(mvc, fan, "/api/v1/feeds/global", 3);
+        List<Map<String, Object>> items = tweets(collect(mvc, fan, "/api/v1/feeds/global", 3));
         List<Long> ids = items.stream().map(m -> id(m)).toList();
         assertThat(ids).doesNotHaveDuplicates().contains(quiet, popular);
         assertThat(ids.indexOf(popular)).isLessThan(ids.indexOf(quiet));
@@ -74,16 +76,17 @@ class TweetIntegrationTest {
         send(mvc, owner, "POST", "/api/v1/tweets/" + othersTweet + "/like");
 
         String base = "/api/v1/users/" + owner.id();
-        assertThat(collect(mvc, null, base + "/posts", 10)).extracting(m -> id(m)).containsExactly(post);
-        List<Map<String, Object>> replies = collect(mvc, null, base + "/replies", 10);
+        assertThat(tweets(collect(mvc, null, base + "/posts", 10))).extracting(m -> id(m)).containsExactly(post);
+        List<Map<String, Object>> replies = tweets(collect(mvc, null, base + "/replies", 10));
         assertThat(replies).extracting(m -> id(m)).containsExactly(replyId);
         assertThat(replies.getFirst().get("replyToUsername")).isEqualTo(owner.username());
         assertThat(replies.getFirst().get("replyToTweetId")).isEqualTo((int) post);
-        assertThat(collect(mvc, owner, base + "/likes", 10)).extracting(m -> id(m)).containsExactly(othersTweet);
+        assertThat(tweets(collect(mvc, owner, base + "/likes", 10))).extracting(m -> id(m)).containsExactly(othersTweet);
 
         assertThat(mvc.get().uri(base + "/likes").cookie(other.cookie())).hasStatus(403);
         assertThat(mvc.get().uri(base + "/likes")).as("anonymous").hasStatus(401);
         assertThat(mvc.get().uri("/api/v1/users/999999999/posts")).hasStatus(404);
+        assertThat(mvc.get().uri(base + "/posts")).bodyText().as("last page").contains("\"nextCursor\":null");
     }
 
     @Test

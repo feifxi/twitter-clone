@@ -70,6 +70,12 @@ public final class Api {
         throw new IllegalStateException("pagination did not terminate");
     }
 
+    /** The tweets inside timeline feed items ({@code {kind, tweet, retweet}}). */
+    @SuppressWarnings("unchecked")
+    public static List<Map<String, Object>> tweets(List<Map<String, Object>> feedItems) {
+        return feedItems.stream().map(item -> (Map<String, Object>) item.get("tweet")).toList();
+    }
+
     public static long id(Map<String, Object> item) {
         return ((Number) item.get("id")).longValue();
     }

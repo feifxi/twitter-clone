@@ -68,18 +68,38 @@ type TweetResponse struct {
 	ReplyToTweetID  *int64       `json:"replyToTweetId"`
 	ReplyToUsername *string      `json:"replyToUsername"`
 	CreatedAt       time.Time    `json:"createdAt"`
-	// RetweetedBy is set when the tweet is in a timeline because this user retweeted it.
-	RetweetedBy *UserResponse `json:"retweetedBy"`
-	RetweetedAt *time.Time    `json:"retweetedAt"`
+}
+
+// FeedItemResponse is one entry of a timeline (feeds and profile tabs). kind is
+// "retweet" when the tweet is there because someone retweeted it; retweet is then
+// set (and null otherwise). The tweet is always the original, in the same shape as
+// GET /tweets/{id}.
+type FeedItemResponse struct {
+	Kind    string           `json:"kind" enums:"tweet,retweet"`
+	Tweet   TweetResponse    `json:"tweet"`
+	Retweet *RetweetResponse `json:"retweet"`
+}
+
+type RetweetResponse struct {
+	ID        int64        `json:"id"`
+	Retweeter UserResponse `json:"retweeter"`
+	CreatedAt time.Time    `json:"createdAt"`
+}
+
+func newFeedItemResponse(item domain.FeedItem) FeedItemResponse {
+	resp := FeedItemResponse{Kind: "tweet", Tweet: newTweetResponse(item.Tweet)}
+	if item.Retweet != nil {
+		resp.Kind = "retweet"
+		resp.Retweet = &RetweetResponse{
+			ID:        item.Retweet.ID,
+			Retweeter: newUserResponse(item.Retweet.By),
+			CreatedAt: item.Retweet.CreatedAt,
+		}
+	}
+	return resp
 }
 
 func newTweetResponse(tweet domain.Tweet) TweetResponse {
-	var retweetedBy *UserResponse
-	if tweet.RetweetedBy != nil {
-		r := newUserResponse(*tweet.RetweetedBy)
-		retweetedBy = &r
-	}
-
 	return TweetResponse{
 		ID:              tweet.ID,
 		Content:         tweet.Content,
@@ -94,8 +114,6 @@ func newTweetResponse(tweet domain.Tweet) TweetResponse {
 		ReplyToTweetID:  tweet.ParentID,
 		ReplyToUsername: tweet.ParentUsername,
 		CreatedAt:       tweet.CreatedAt,
-		RetweetedBy:     retweetedBy,
-		RetweetedAt:     tweet.RetweetedAt,
 	}
 }
 
