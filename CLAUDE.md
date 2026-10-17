@@ -23,7 +23,7 @@ cd twitter-next-web && npm run dev         # web on :3000
 make test                                  # go test -race; integration tests need TEST_DATABASE_URL (see README)
 make sqlc                                  # after editing internal/db/queries or migrations: regenerates code + MockStore
 make swagger                               # after changing handler annotations or DTOs
-# Web
+# Webx
 npm run lint && npx tsc --noEmit && npm test && npm run build
 # Java (needs Docker: Testcontainers)
 cd twitter-java-api && ./mvnw verify
