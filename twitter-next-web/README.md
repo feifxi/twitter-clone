@@ -11,7 +11,7 @@ Frontend for the Twitter clone, built with Next.js App Router.
 
 ## API Expectations
 
-This frontend talks to the Go API (or the Java one; same contract), described in
+This frontend talks to the Go API, described in
 [`../twitter-go-api/docs/api-contract.md`](../twitter-go-api/docs/api-contract.md):
 
 - Lists page with `cursor` + `size` and return `{ items, hasNext, nextCursor }` (`nextCursor` is `null` on the last page).

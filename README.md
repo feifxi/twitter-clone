@@ -1,6 +1,6 @@
 # Twitter Clone
 
-A full-stack Twitter/X clone: a Next.js frontend and a Go API (with an optional Spring Boot API that serves the same contract), PostgreSQL with pgvector, real-time notifications and direct messages, and an AI assistant that answers from recent posts (RAG with Gemini). AWS infrastructure is defined in Terraform, with monitoring through Grafana Cloud.
+A full-stack Twitter/X clone: a Next.js frontend and a Go API, PostgreSQL with pgvector, real-time notifications and direct messages, and an AI assistant that answers from recent posts (RAG with Gemini). AWS infrastructure is defined in Terraform, with monitoring through Grafana Cloud.
 
 <p align="center">
   <img src="docs/assets/app-preview.png" alt="App Preview" width="100%" style="border-radius: 8px;">
@@ -25,7 +25,7 @@ A full-stack Twitter/X clone: a Next.js frontend and a Go API (with an optional 
 | Layer | Technologies |
 |---|---|
 | Frontend | Next.js (App Router), TypeScript, Tailwind CSS, TanStack Query, Zustand |
-| Backend | Go, Gin, PostgreSQL + sqlc + pgvector, Redis (optional); optional Spring Boot API |
+| Backend | Go, Gin, PostgreSQL + sqlc + pgvector, Redis (optional) |
 | Infrastructure | AWS (EC2 + Docker Compose + nginx, RDS, S3, CloudFront, ECR, SSM, CloudWatch), Let's Encrypt (certbot), Terraform, GitHub Actions |
 | Observability | Grafana Cloud (Loki, Prometheus), Grafana Alloy, Node Exporter |
 
@@ -104,13 +104,12 @@ Everything is code and every alert arrives by email.
 
 | Tool | Needed for |
 |---|---|
-| [Docker](https://www.docker.com/) | Local Postgres + Redis; the Java tests; building images |
+| [Docker](https://www.docker.com/) | Local Postgres + Redis; building images |
 | [Go](https://go.dev/dl/) 1.26+ | The Go API |
 | [Node.js](https://nodejs.org/) 22+ | The web app |
 | [Make](https://www.gnu.org/software/make/) | Go API tasks (`make run`, `make test`, `make sqlc`) |
 | [Google Cloud Console](https://console.cloud.google.com/) | A Google OAuth Client ID for sign-in |
 | [Google AI Studio](https://aistudio.google.com/) (optional) | A Gemini API key for the assistant |
-| JDK 25 (optional) | Only for the Java API |
 | [Terraform](https://developer.hashicorp.com/terraform/install) 1.10+ (optional) | Checking or provisioning the infrastructure |
 | [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) (optional) | Only for a real AWS deployment |
 
@@ -183,7 +182,7 @@ cp app.env.example app.env   # set TOKEN_SYMMETRIC_KEY (openssl rand -base64 48)
 make run                     # http://localhost:8080; migrations run at startup
 ```
 
-Swagger UI: http://localhost:8080/swagger/index.html (outside production). The optional Java API runs from the same `app.env` instead (see [`twitter-java-api/README.md`](twitter-java-api/README.md)); run one backend at a time.
+Swagger UI: http://localhost:8080/swagger/index.html (outside production).
 
 ### 3. Run the web app
 
@@ -214,9 +213,6 @@ cd twitter-go-api && go vet ./... && \
 
 # Web
 cd twitter-next-web && npm run lint && npx tsc --noEmit && npm test && npm run build
-
-# Java API (starts its own containers; needs Docker)
-cd twitter-java-api && ./mvnw verify
 
 # Terraform: all three modules, against mocked providers (no AWS or Grafana account)
 cd infra && terraform fmt -check -recursive && \
@@ -375,7 +371,6 @@ Then connect your DB tool to `127.0.0.1:5433`, database `twitter_db`, with the c
 ```
 ├── twitter-next-web/    # Next.js frontend
 ├── twitter-go-api/      # Go backend (primary)
-├── twitter-java-api/    # Optional Spring Boot backend: same API and schema as the Go one
 ├── infra/
 │   ├── bootstrap/       # One-time: S3 bucket for Terraform state
 │   ├── terraform/       # AWS infrastructure (+ tests/ with a mocked-provider plan)

@@ -9,7 +9,6 @@ mainstream best practices, keep things simple, skip production hardening that do
 |---|---|
 | `twitter-go-api/` | Primary backend: Go, Gin, PostgreSQL (sqlc, pgvector), optional Redis. See its README's "Where things live" table; the client contract is `docs/api-contract.md`. |
 | `twitter-next-web/` | Next.js (App Router) frontend: TanStack Query, Tailwind v4, Radix/shadcn primitives. |
-| `twitter-java-api/` | Optional Spring Boot backend with the same contract and schema as the Go API (parity verified). Not deployed. |
 | `infra/terraform`, `infra/bootstrap`, `infra/ec2`, `infra/grafana` | AWS and Grafana as code. **Nothing is deployed**: keep it valid offline, don't plan around a live environment. |
 
 ## Commands
@@ -25,8 +24,6 @@ make sqlc                                  # after editing internal/db/queries o
 make swagger                               # after changing handler annotations or DTOs
 # Webx
 npm run lint && npx tsc --noEmit && npm test && npm run build
-# Java (needs Docker: Testcontainers)
-cd twitter-java-api && ./mvnw verify
 # Terraform (mocked providers: no AWS or Grafana credentials needed)
 cd infra/terraform && terraform init -backend=false && terraform validate && terraform test
 cd infra/grafana && terraform init -backend=false && terraform validate && terraform test

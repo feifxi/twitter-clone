@@ -36,12 +36,6 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# Java
-twitter-java-api/target/
-twitter-java-api/.mvn/wrapper/maven-wrapper.jar
-**/*.class
-**/out/
-
 # Python
 __pycache__/
 *.pyc
