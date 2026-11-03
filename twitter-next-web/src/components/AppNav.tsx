@@ -19,7 +19,7 @@ import { useUIStore } from '@/store/useUIStore';
 export const FILL_WHEN_ACTIVE = new Set<LucideIcon>([Home, Bell, User]);
 
 /** "20+" past twenty, like X. */
-export function badgeText(count: number) {
+function badgeText(count: number) {
   return count > 20 ? '20+' : String(count);
 }
 
