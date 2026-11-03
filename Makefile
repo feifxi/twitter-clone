@@ -2,12 +2,16 @@
 # npm scripts, infra/scripts), so running those directly works the same.
 .DEFAULT_GOAL := help
 SCRIPTS := scripts/*.sh compose/*.sh terraform/app/twitter-deploy
-.PHONY: help db monitoring stop api web check check-api check-web check-infra gen infra-up deploy infra-down
+.PHONY: help dev db monitoring stop api web check check-api check-web check-infra gen infra-up deploy infra-down
 
 help: ## List the targets
 	@grep -hE '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-12s %s\n", $$1, $$2}'
 
 # Local development
+dev: db ## Start Postgres + Redis, then the API and the web app together (Ctrl+C stops both)
+	@$(MAKE) -s -C twitter-go-api db-wait
+	@$(MAKE) -j2 api web
+
 db: ## Start Postgres + Redis
 	docker compose up -d
 

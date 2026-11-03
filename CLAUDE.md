@@ -15,6 +15,7 @@ mainstream best practices, keep things simple, skip production hardening that do
 
 ```bash
 make                                       # list the root shortcuts below (they call the commands in each app)
+make dev                                   # db, then api + web in one terminal (Ctrl+C stops both)
 make db                                    # Postgres (pgvector, pg16) + Redis for local dev
 make monitoring                            # + local monitoring (Grafana :3001, Prometheus :9090)
 make api                                   # API on :8080, migrations run at startup

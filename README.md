@@ -152,7 +152,7 @@ This project uses Google Gemini for the AI Assistant and tweet embeddings.
 
 ## Local Development
 
-The root `Makefile` has a shortcut for each step (`make` lists them): `make db`, `make api`, `make web`, `make monitoring`, `make check`.
+`make dev` runs steps 1–3 in one terminal (once `app.env` and `.env.local` exist); the root `Makefile` also has a shortcut for each step (`make` lists them).
 
 ### 1. Start Postgres + Redis
 
