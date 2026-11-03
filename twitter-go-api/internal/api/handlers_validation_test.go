@@ -125,3 +125,31 @@ func TestLogoutWithoutSessionStillSucceeds(t *testing.T) {
 		t.Fatalf("unexpected response body: %s", rec.Body.String())
 	}
 }
+
+func TestUpdateProfileRequestValidation(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		body  string
+		valid bool
+	}{
+		"nothing to change":     {`{}`, true},
+		"clear the website":     {`{"website":""}`, true},
+		"a website":             {`{"website":"https://example.com"}`, true},
+		"a website without URL": {`{"website":"example"}`, false},
+		"clear the bio":         {`{"bio":"","location":""}`, true},
+		"blank name":            {`{"displayName":""}`, false},
+		"a name":                {`{"displayName":"Chanom"}`, true},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			ctx, _ := newHandlerTestContext(http.MethodPut, "/api/v1/users/profile", bytes.NewBufferString(tc.body), "application/json")
+			var req updateProfileRequest
+			err := ctx.ShouldBindJSON(&req)
+			if (err == nil) != tc.valid {
+				t.Fatalf("valid = %v, want %v (err %v)", err == nil, tc.valid, err)
+			}
+		})
+	}
+}

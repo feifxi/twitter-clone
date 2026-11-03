@@ -7,12 +7,13 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Omitted fields are left unchanged; "" clears a field.
+// Omitted fields are left unchanged; "" clears a field (except the name, which can't be blank).
+// omitempty only skips a nil pointer, so the website allows "" explicitly.
 type updateProfileRequest struct {
-	DisplayName *string `json:"displayName" binding:"omitempty,max=50"`
+	DisplayName *string `json:"displayName" binding:"omitnil,min=1,max=50"`
 	Bio         *string `json:"bio" binding:"omitempty,max=160"`
 	Location    *string `json:"location" binding:"omitempty,max=30"`
-	Website     *string `json:"website" binding:"omitempty,max=100,http_url"`
+	Website     *string `json:"website" binding:"omitempty,max=100,len=0|http_url"`
 	AvatarKey   *string `json:"avatarKey" binding:"omitempty,max=200"`
 	BannerKey   *string `json:"bannerKey" binding:"omitempty,max=200"`
 }
