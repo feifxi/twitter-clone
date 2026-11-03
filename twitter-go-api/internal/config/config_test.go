@@ -45,7 +45,7 @@ func TestLoad_RequiresDatabaseURL(t *testing.T) {
 func TestValidate(t *testing.T) {
 	prod := Config{
 		Environment:       "production",
-		DatabaseURL:       "postgres://user:pass@host:5432/db?sslmode=require",
+		DatabaseURL:       "postgres://user:pass@db.example.com:5432/db?sslmode=require",
 		AllowedOrigins:    []string{"https://twitter.example.com"},
 		TokenSymmetricKey: validKey,
 		S3Bucket:          "bucket",
@@ -57,14 +57,14 @@ func TestValidate(t *testing.T) {
 	}
 
 	cases := map[string]func(c *Config){
-		"short token key":        func(c *Config) { c.TokenSymmetricKey = "short" },
-		"origin with a path":     func(c *Config) { c.AllowedOrigins = []string{"https://twitter.example.com/app"} },
-		"origin without scheme":  func(c *Config) { c.AllowedOrigins = []string{"twitter.example.com"} },
-		"insecure database":      func(c *Config) { c.DatabaseURL += "&sslmode=disable" },
-		"missing bucket":         func(c *Config) { c.S3Bucket = "" },
-		"localhost origin":       func(c *Config) { c.AllowedOrigins = append(c.AllowedOrigins, "http://localhost:3000") },
-		"missing google client":  func(c *Config) { c.GoogleClientID = " " },
-		"missing cloudfront cdn": func(c *Config) { c.CloudFrontDomain = "" },
+		"short token key":          func(c *Config) { c.TokenSymmetricKey = "short" },
+		"origin with a path":       func(c *Config) { c.AllowedOrigins = []string{"https://twitter.example.com/app"} },
+		"origin without scheme":    func(c *Config) { c.AllowedOrigins = []string{"twitter.example.com"} },
+		"insecure remote database": func(c *Config) { c.DatabaseURL += "&sslmode=disable" },
+		"missing bucket":           func(c *Config) { c.S3Bucket = "" },
+		"localhost origin":         func(c *Config) { c.AllowedOrigins = append(c.AllowedOrigins, "http://localhost:3000") },
+		"missing google client":    func(c *Config) { c.GoogleClientID = " " },
+		"missing cloudfront cdn":   func(c *Config) { c.CloudFrontDomain = "" },
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -75,6 +75,12 @@ func TestValidate(t *testing.T) {
 				t.Fatal("expected validation error")
 			}
 		})
+	}
+
+	sameHost := prod
+	sameHost.DatabaseURL = "postgres://user:pass@postgres:5432/db?sslmode=disable"
+	if err := sameHost.Validate(); err != nil {
+		t.Fatalf("a database on the same Docker network needs no TLS: %v", err)
 	}
 
 	dev := Config{Environment: "development", TokenSymmetricKey: validKey, DatabaseURL: "postgres://localhost/db?sslmode=disable"}

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Bell, BotMessageSquare, Home, LogIn, Mail, MoreHorizontal, Search, TvMinimalPlay, User, Users, type LucideIcon } from 'lucide-react';
+import { Bell, BotMessageSquare, Home, LogIn, LogOut, Mail, MoreHorizontal, Search, TvMinimalPlay, User, Users, type LucideIcon } from 'lucide-react';
 import { ComposeTweetModal } from '@/components/ComposeTweetModal';
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { ThemeToggle } from '@/components/ThemeToggle';
@@ -19,7 +19,7 @@ import { useUIStore } from '@/store/useUIStore';
 export const FILL_WHEN_ACTIVE = new Set<LucideIcon>([Home, Bell, User]);
 
 /** "20+" past twenty, like X. */
-export function badgeText(count: number) {
+function badgeText(count: number) {
   return count > 20 ? '20+' : String(count);
 }
 
@@ -102,7 +102,8 @@ export function AppNav({ unreadCount = 0 }: { unreadCount?: number }) {
                 Brainrot
               </Link>
             </DropdownMenuItem>
-            <ThemeToggle variant="menu-item" />
+            {/* Signed in, the theme lives in the account menu */}
+            {!user && <ThemeToggle />}
           </DropdownMenuContent>
         </DropdownMenu>
 
@@ -135,7 +136,9 @@ export function AppNav({ unreadCount = 0 }: { unreadCount?: number }) {
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent side="top" align="center" className="w-[300px] rounded-xl py-2 font-bold">
-              <DropdownMenuItem className="cursor-pointer p-3 text-[15px]" onSelect={() => setConfirmLogout(true)}>
+              <ThemeToggle />
+              <DropdownMenuItem className="cursor-pointer gap-4 p-3 text-[15px]" onSelect={() => setConfirmLogout(true)}>
+                <LogOut className="size-5" />
                 Log out @{user.username}
               </DropdownMenuItem>
             </DropdownMenuContent>

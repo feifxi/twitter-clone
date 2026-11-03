@@ -116,7 +116,7 @@ export function useUpdateProfile() {
         bannerKey,
       };
 
-      const { data } = await axiosInstance.put<UserResponse>('/users/profile', payload);
+      const { data } = await axiosInstance.patch<UserResponse>('/users/me', payload);
       return data;
     },
 

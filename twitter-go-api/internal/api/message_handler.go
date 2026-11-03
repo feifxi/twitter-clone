@@ -20,7 +20,7 @@ type sendMessageRequest struct {
 // @Success		200		{object}	PageResponse[ConversationResponse]
 // @Security		BearerAuth
 // @Failure		401		{object}	ErrorResponse
-// @Router			/messages/conversations [get]
+// @Router			/conversations [get]
 func (s *Server) listConversations(c *gin.Context) {
 	userID, ok := requireUserID(c)
 	if !ok {
@@ -52,7 +52,7 @@ func (s *Server) listConversations(c *gin.Context) {
 // @Success		200		{object}	PageResponse[MessageResponse]
 // @Security		BearerAuth
 // @Failure		401		{object}	ErrorResponse
-// @Router			/messages/conversations/{id}/messages [get]
+// @Router			/conversations/{id}/messages [get]
 func (s *Server) listConversationMessages(c *gin.Context) {
 	var path idURIRequest
 	if err := c.ShouldBindUri(&path); err != nil {
@@ -90,7 +90,7 @@ func (s *Server) listConversationMessages(c *gin.Context) {
 // @Success		201		{object}	MessageResponse
 // @Security		BearerAuth
 // @Failure		401		{object}	ErrorResponse
-// @Router			/messages/users/{id}/messages [post]
+// @Router			/conversations/with/{id}/messages [post]
 func (s *Server) sendMessageToUser(c *gin.Context) {
 	senderID, ok := requireUserID(c)
 	if !ok {
@@ -129,7 +129,7 @@ func (s *Server) sendMessageToUser(c *gin.Context) {
 // @Success		201		{object}	MessageResponse
 // @Security		BearerAuth
 // @Failure		401		{object}	ErrorResponse
-// @Router			/messages/conversations/{id}/messages [post]
+// @Router			/conversations/{id}/messages [post]
 func (s *Server) sendMessageToConversation(c *gin.Context) {
 	senderID, ok := requireUserID(c)
 	if !ok {

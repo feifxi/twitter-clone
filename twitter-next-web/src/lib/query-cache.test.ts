@@ -82,7 +82,7 @@ describe('updateTweet', () => {
     const qc = new QueryClient();
     const other = pages([item(tweet(2))]);
     qc.setQueryData(queryKeys.feeds.following, other);
-    qc.setQueryData(queryKeys.discovery.users(5), page([user(1)]));
+    qc.setQueryData(queryKeys.users.suggestions(5), page([user(1)]));
 
     updateTweet(qc, 1, (t) => ({ ...t, isLiked: true }));
 
@@ -106,7 +106,7 @@ describe('updateUser', () => {
   it('updates profiles, user lists, the current user and tweet authors', () => {
     const qc = new QueryClient();
     qc.setQueryData(queryKeys.users.byUsername('u100'), user(100));
-    qc.setQueryData(queryKeys.discovery.users(5), page([user(100), user(101)]));
+    qc.setQueryData(queryKeys.users.suggestions(5), page([user(100), user(101)]));
     qc.setQueryData(queryKeys.search.users('u', 10), page([user(100)]));
     qc.setQueryData(queryKeys.auth.me, { ...user(100), email: 'me@example.com', onboarded: true });
     qc.setQueryData(queryKeys.feeds.global, pages([item(tweet(1)), item(tweet(2, { user: user(101) }), user(100))]));
@@ -114,7 +114,7 @@ describe('updateUser', () => {
     updateUser(qc, 100, (u) => ({ ...u, isFollowing: true, followersCount: u.followersCount + 1 }));
 
     expect(qc.getQueryData<UserResponse>(queryKeys.users.byUsername('u100'))!.followersCount).toBe(11);
-    expect(qc.getQueryData<PageResponse<UserResponse>>(queryKeys.discovery.users(5))!.items.map((u) => u.isFollowing)).toEqual([true, false]);
+    expect(qc.getQueryData<PageResponse<UserResponse>>(queryKeys.users.suggestions(5))!.items.map((u) => u.isFollowing)).toEqual([true, false]);
     expect(qc.getQueryData<PageResponse<UserResponse>>(queryKeys.search.users('u', 10))!.items[0].isFollowing).toBe(true);
     const me = qc.getQueryData<UserResponse & { email: string }>(queryKeys.auth.me)!;
     expect([me.isFollowing, me.email]).toEqual([true, 'me@example.com']); // private fields survive

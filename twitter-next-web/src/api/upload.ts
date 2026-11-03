@@ -10,7 +10,7 @@ export async function uploadFileWithPresignedUrl(
   folder: 'tweets' | 'avatars' | 'banners'
 ): Promise<string> {
   const { data } = await axiosInstance.post<{ presignedUrl: string; objectKey: string }>(
-    '/uploads/presign',
+    '/uploads',
     {
       contentType: file.type,
       folder,

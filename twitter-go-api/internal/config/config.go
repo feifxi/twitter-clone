@@ -1,5 +1,5 @@
 // Package config loads runtime settings from environment variables. Values are
-// injected by the environment (Docker, systemd, CI); app.env is only a local-dev
+// injected by the environment (Docker Compose, CI); app.env is only a local-dev
 // convenience and never overrides variables that are already set.
 package config
 
@@ -34,7 +34,7 @@ type Config struct {
 	// AllowedOrigins are the web app origins (scheme://host[:port]) allowed to call the API with cookies.
 	AllowedOrigins []string `env:"ALLOWED_ORIGINS" envSeparator:"," envDefault:"http://localhost:3000"`
 	// CookieDomain scopes the session cookies to a parent domain, needed only if the web app and
-	// the API run on different subdomains. Empty = host-only (production behind nginx, local dev).
+	// the API run on different subdomains. Empty = host-only (production behind Caddy, local dev).
 	CookieDomain string `env:"COOKIE_DOMAIN"`
 
 	TokenSymmetricKey string        `env:"TOKEN_SYMMETRIC_KEY,required,notEmpty"`
@@ -45,9 +45,11 @@ type Config struct {
 	S3Bucket         string `env:"S3_BUCKET_NAME"`
 	S3Region         string `env:"S3_REGION" envDefault:"ap-southeast-1"`
 	CloudFrontDomain string `env:"CLOUDFRONT_DOMAIN"`
-	MaxMediaBytes    int64  `env:"MAX_MEDIA_BYTES" envDefault:"104857600"` // 100 MiB
-	MaxAvatarBytes   int64  `env:"MAX_AVATAR_BYTES" envDefault:"5242880"`  // 5 MiB
-	MaxBannerBytes   int64  `env:"MAX_BANNER_BYTES" envDefault:"10485760"` // 10 MiB
+	// S3Endpoint points at an S3-compatible server instead of AWS (the local storage container).
+	S3Endpoint     string `env:"S3_ENDPOINT"`
+	MaxMediaBytes  int64  `env:"MAX_MEDIA_BYTES" envDefault:"104857600"` // 100 MiB
+	MaxAvatarBytes int64  `env:"MAX_AVATAR_BYTES" envDefault:"5242880"`  // 5 MiB
+	MaxBannerBytes int64  `env:"MAX_BANNER_BYTES" envDefault:"10485760"` // 10 MiB
 
 	GeminiAPIKey         string `env:"GEMINI_API_KEY"`
 	GeminiChatModel      string `env:"GEMINI_CHAT_MODEL" envDefault:"gemini-2.5-flash"`
@@ -97,8 +99,10 @@ func (c Config) Validate() error {
 	}
 
 	if c.Production() {
-		if strings.Contains(strings.ToLower(c.DatabaseURL), "sslmode=disable") {
-			errs = append(errs, errors.New("DATABASE_URL must not disable TLS in production"))
+		// Plain text is fine to a database on the same Docker network (a host name without
+		// dots, such as the compose service "postgres"): the traffic never leaves the machine.
+		if strings.Contains(strings.ToLower(c.DatabaseURL), "sslmode=disable") && !sameHostDatabase(c.DatabaseURL) {
+			errs = append(errs, errors.New("DATABASE_URL must not disable TLS for a remote database in production"))
 		}
 		for _, field := range []struct{ name, value string }{
 			{"GOOGLE_CLIENT_ID", c.GoogleClientID},
@@ -116,4 +120,9 @@ func (c Config) Validate() error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+func sameHostDatabase(databaseURL string) bool {
+	u, err := url.Parse(databaseURL)
+	return err == nil && u.Hostname() != "" && !strings.Contains(u.Hostname(), ".")
 }

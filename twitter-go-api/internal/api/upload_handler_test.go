@@ -10,7 +10,7 @@ import (
 	"github.com/chanombude/twitter-go-api/internal/media"
 )
 
-func TestPresignUpload_Success(t *testing.T) {
+func TestCreateUpload_Success(t *testing.T) {
 	t.Parallel()
 
 	mock := &fakeMedia{
@@ -23,18 +23,18 @@ func TestPresignUpload_Success(t *testing.T) {
 	}
 
 	reqBody := `{"contentType":"image/png","folder":"banners","contentLength":1024}`
-	ctx, rec := newHandlerTestContext(http.MethodPost, "/api/v1/uploads/presign", bytes.NewBufferString(reqBody), "application/json")
+	ctx, rec := newHandlerTestContext(http.MethodPost, "/api/v1/uploads", bytes.NewBufferString(reqBody), "application/json")
 	setAuthorizedUser(ctx, 1)
 
 	s := &Server{svc: Services{Media: mock}}
-	s.presignUpload(ctx)
+	s.createUpload(ctx)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d, body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d, body=%s", rec.Code, rec.Body.String())
 	}
 }
 
-func TestPresignUpload_UsecaseError(t *testing.T) {
+func TestCreateUpload_ServiceError(t *testing.T) {
 	t.Parallel()
 
 	mock := &fakeMedia{
@@ -44,29 +44,29 @@ func TestPresignUpload_UsecaseError(t *testing.T) {
 	}
 
 	reqBody := `{"contentType":"image/png","folder":"banners","contentLength":999999999}`
-	ctx, rec := newHandlerTestContext(http.MethodPost, "/api/v1/uploads/presign", bytes.NewBufferString(reqBody), "application/json")
+	ctx, rec := newHandlerTestContext(http.MethodPost, "/api/v1/uploads", bytes.NewBufferString(reqBody), "application/json")
 	setAuthorizedUser(ctx, 1)
 
 	s := &Server{svc: Services{Media: mock}}
-	s.presignUpload(ctx)
+	s.createUpload(ctx)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for bad request from service, got %d, body=%s", rec.Code, rec.Body.String())
 	}
 }
 
-func TestPresignUpload_RequiresContentLengthAndKnownFolder(t *testing.T) {
+func TestCreateUpload_RequiresContentLengthAndKnownFolder(t *testing.T) {
 	t.Parallel()
 
 	for _, body := range []string{
 		`{"contentType":"image/png","folder":"banners"}`,
 		`{"contentType":"image/png","folder":"malicious","contentLength":10}`,
 	} {
-		ctx, rec := newHandlerTestContext(http.MethodPost, "/api/v1/uploads/presign", bytes.NewBufferString(body), "application/json")
+		ctx, rec := newHandlerTestContext(http.MethodPost, "/api/v1/uploads", bytes.NewBufferString(body), "application/json")
 		setAuthorizedUser(ctx, 1)
 
 		s := &Server{}
-		s.presignUpload(ctx)
+		s.createUpload(ctx)
 
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400 for %s, got %d, body=%s", body, rec.Code, rec.Body.String())

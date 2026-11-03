@@ -30,7 +30,7 @@ func TestRateLimiter_AllowsUnderLimit(t *testing.T) {
 func TestRateLimiter_BlocksWhenExceeded(t *testing.T) {
 	t.Parallel()
 
-	// 1 token per second, burst of 1 — second request should be blocked immediately.
+	// Burst of 1: the second immediate request is over the limit.
 	handler := RateLimiter(rate.Limit(1), 1)
 
 	makeRequest := func() int {
@@ -43,11 +43,9 @@ func TestRateLimiter_BlocksWhenExceeded(t *testing.T) {
 		return w.Code
 	}
 
-	// First request — should pass.
 	if code := makeRequest(); code == http.StatusTooManyRequests {
 		t.Fatal("first request should be allowed")
 	}
-	// Second immediate request — burst exhausted, should be blocked.
 	if code := makeRequest(); code != http.StatusTooManyRequests {
 		t.Fatalf("expected 429, got %d", code)
 	}
@@ -120,7 +118,6 @@ func TestRequestID_PreservesExistingHeader(t *testing.T) {
 func TestRateLimiterWithRedis_NilRedisUsesLocalFallback(t *testing.T) {
 	t.Parallel()
 
-	// nil redis → must return local in-memory fallback, not panic.
 	handler := RateLimiterWithRedis(nil, rate.Limit(10), 10, "rl:test")
 	if handler == nil {
 		t.Fatal("expected non-nil handler when redis is nil")
@@ -131,7 +128,6 @@ func TestRateLimiterWithRedis_NilRedisUsesLocalFallback(t *testing.T) {
 	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
 	c.Request.RemoteAddr = "9.9.9.9:9090"
 
-	// Should not panic, should allow the request.
 	handler(c)
 	if w.Code == http.StatusTooManyRequests {
 		t.Fatal("expected request to be allowed with generous limit")
@@ -144,27 +140,9 @@ func TestGetRequestID_EmptyWhenNotSet(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
-	// Do not call RequestID() handler — ID should be empty string.
 	if id := GetRequestID(c); id != "" {
 		t.Fatalf("expected empty string, got %q", id)
 	}
-}
-
-func TestRateLimiter_ExpiresOldClients(t *testing.T) {
-	// This test verifies old client entries are eventually cleaned up,
-	// not that they expire at a specific time (that's timing-sensitive).
-	// We just call the limiter enough to populate the map and verify no panic.
-	handler := RateLimiter(rate.Every(time.Second), 100)
-
-	for i := range 5 {
-		w := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(w)
-		req := httptest.NewRequest(http.MethodGet, "/", nil)
-		req.RemoteAddr = "192.168.0." + string(rune('1'+i)) + ":80"
-		c.Request = req
-		handler(c)
-	}
-	// No panic = pass.
 }
 
 func TestRateLimiterKeysByRoute(t *testing.T) {

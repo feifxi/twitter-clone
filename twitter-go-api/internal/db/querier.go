@@ -36,7 +36,6 @@ type Querier interface {
 	DecrementReplyCount(ctx context.Context, id int64) error
 	DeleteExpiredRefreshTokens(ctx context.Context, userID int64) error
 	DeleteRefreshToken(ctx context.Context, tokenHash string) error
-	DeleteRefreshTokensByUser(ctx context.Context, userID int64) error
 	DeleteRetweet(ctx context.Context, arg DeleteRetweetParams) (bool, error)
 	DeleteTweetByOwner(ctx context.Context, arg DeleteTweetByOwnerParams) (Tweet, error)
 	DeleteUnusedHashtag(ctx context.Context, id int64) error

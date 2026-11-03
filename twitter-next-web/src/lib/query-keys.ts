@@ -32,6 +32,7 @@ export const queryKeys = {
     timeline: (id: number, tab: ProfileTab) => ['users', id, 'timeline', tab] as const,
     followers: (id: number) => ['users', id, 'followers'] as const,
     following: (id: number) => ['users', id, 'following'] as const,
+    suggestions: (size: number) => ['users', 'suggestions', size] as const,
   },
   search: {
     all: ['search'] as const,
@@ -40,10 +41,8 @@ export const queryKeys = {
     people: (q: string) => ['search', 'people', q] as const,
     hashtags: (q: string) => ['search', 'hashtags', q] as const,
   },
-  discovery: {
-    all: ['discovery'] as const,
-    trending: (limit: number) => ['discovery', 'trending', limit] as const,
-    users: (size: number) => ['discovery', 'users', size] as const,
+  hashtags: {
+    trending: (limit: number) => ['hashtags', 'trending', limit] as const,
   },
   notifications: {
     all: ['notifications'] as const,

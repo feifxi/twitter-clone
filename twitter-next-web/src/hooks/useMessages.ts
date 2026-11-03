@@ -9,7 +9,7 @@ export function useConversations(pageSize = 20) {
   return useInfiniteQuery({
     queryKey: queryKeys.messages.conversations,
     queryFn: async ({ pageParam }: { pageParam: string | null }): Promise<PageResponse<ConversationResponse>> => {
-      const { data } = await axiosInstance.get<PageResponse<ConversationResponse>>('/messages/conversations', {
+      const { data } = await axiosInstance.get<PageResponse<ConversationResponse>>('/conversations', {
         params: { cursor: pageParam ?? undefined, size: pageSize },
       });
       return data;
@@ -27,7 +27,7 @@ export function useConversationMessages(conversationId: number | null, pageSize 
     queryKey: queryKeys.messages.conversation(conversationId ?? 0),
     queryFn: async ({ pageParam }: { pageParam: string | null }): Promise<PageResponse<MessageResponse>> => {
       const { data } = await axiosInstance.get<PageResponse<MessageResponse>>(
-        `/messages/conversations/${conversationId}/messages`,
+        `/conversations/${conversationId}/messages`,
         { params: { cursor: pageParam ?? undefined, size: pageSize } },
       );
       return data;
@@ -44,7 +44,7 @@ export function useSendMessageToConversation() {
   return useMutation({
     mutationFn: async (payload: { conversationId: number; content: string }): Promise<MessageResponse> => {
       const { data } = await axiosInstance.post<MessageResponse>(
-        `/messages/conversations/${payload.conversationId}/messages`,
+        `/conversations/${payload.conversationId}/messages`,
         { content: payload.content },
       );
       return data;
@@ -61,7 +61,7 @@ export function useSendMessageToUser() {
   return useMutation({
     mutationFn: async (payload: { userId: number; content: string }): Promise<MessageResponse> => {
       const { data } = await axiosInstance.post<MessageResponse>(
-        `/messages/users/${payload.userId}/messages`,
+        `/conversations/with/${payload.userId}/messages`,
         { content: payload.content },
       );
       return data;

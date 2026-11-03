@@ -17,9 +17,7 @@ sql:
           banner_url: "BannerURL"
           media_url: "MediaURL"
         overrides:
-          # Map every timestamp flavour (catalog names and cast names) to time.Time / *time.Time.
-          - db_type: "pg_catalog.timestamp"
-            go_type: { type: "Time", import: "time" }
+          # Map timestamptz (catalog and cast names) to time.Time / *time.Time.
           - db_type: "pg_catalog.timestamptz"
             go_type: { type: "Time", import: "time" }
           - db_type: "pg_catalog.timestamptz"

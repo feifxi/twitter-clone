@@ -15,7 +15,7 @@ const (
 	MaxLimit     int32 = 50
 )
 
-var ErrInvalidCursor = errors.New("invalid cursor")
+var errInvalidCursor = errors.New("invalid cursor")
 
 // Cursor holds whichever sort key the endpoint orders by; unused fields stay zero.
 type Cursor struct {
@@ -24,7 +24,7 @@ type Cursor struct {
 	Kind   int32     `json:"k,omitempty"` // timelines mixing tweets (0) and retweets (1)
 	Score  float64   `json:"s,omitempty"` // ranked feeds
 	Anchor time.Time `json:"a,omitzero"`  // ranked feeds: the time scores were computed at
-	Offset int32     `json:"o,omitempty"` // relevance-ranked lists (search)
+	Offset int32     `json:"o,omitempty"` // ranked lists paged by offset (search, suggestions)
 }
 
 // Request asks for the page after After (nil = first page).
@@ -41,7 +41,7 @@ type Page[T any] struct {
 // FetchLimit is the row count to query: one extra row reveals whether another page exists.
 func (r Request) FetchLimit() int32 { return r.Limit + 1 }
 
-// Offset is the row offset for offset-paged (relevance-ranked) lists.
+// Offset is the row offset for offset-paged (ranked) lists.
 func (r Request) Offset() int32 {
 	if r.After == nil {
 		return 0
@@ -104,11 +104,11 @@ func Encode(c Cursor) string {
 func Decode(s string) (*Cursor, error) {
 	data, err := base64.RawURLEncoding.DecodeString(s)
 	if err != nil {
-		return nil, ErrInvalidCursor
+		return nil, errInvalidCursor
 	}
 	var c Cursor
 	if err := json.Unmarshal(data, &c); err != nil || c.Offset < 0 {
-		return nil, ErrInvalidCursor
+		return nil, errInvalidCursor
 	}
 	return &c, nil
 }

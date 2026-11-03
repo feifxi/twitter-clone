@@ -61,10 +61,6 @@ func New(cfg Config, svc Services, tokens token.Maker, hub *realtime.Hub, db pin
 	return s, nil
 }
 
-func (s *Server) Handler() http.Handler {
-	return s.router
-}
-
 // HTTPServer returns a server with conservative timeouts. WriteTimeout is
 // disabled because SSE and assistant streams stay open longer than any fixed
 // limit; instead every request context derives from baseCtx, so cancelling it

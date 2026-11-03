@@ -18,7 +18,6 @@ type Row struct {
 	Tweet         db.Tweet
 	IsLiked       bool
 	IsRetweeted   bool
-	IsFollowing   bool
 	RetweetID     *int64
 	RetweetedByID *int64
 	RetweetedAt   *time.Time
@@ -96,7 +95,6 @@ func HydrateItems(ctx context.Context, store db.Querier, rows []Row, viewerID *i
 		t.Author = users[r.Tweet.UserID]
 		t.IsLiked = r.IsLiked
 		t.IsRetweeted = r.IsRetweeted
-		t.IsFollowing = r.IsFollowing
 		if r.Tweet.ParentID != nil {
 			if authorID, ok := parentAuthors[*r.Tweet.ParentID]; ok {
 				username := users[authorID].Username

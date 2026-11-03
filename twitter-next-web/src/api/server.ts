@@ -8,7 +8,7 @@ import type { CurrentUserResponse, PageResponse, TweetResponse, UserResponse } f
 // API_INTERNAL_URL=http://api:8080/api/v1); browsers use NEXT_PUBLIC_API_URL ("/api/v1").
 const baseURL = process.env.API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_API_URL;
 
-export const SESSION_COOKIES = ['access_token', 'refresh_token'] as const;
+const SESSION_COOKIES = ['access_token', 'refresh_token'] as const;
 
 /** The session cookies of the incoming request, as a Cookie header for the API. */
 async function sessionCookieHeader(): Promise<string> {
@@ -20,7 +20,7 @@ async function sessionCookieHeader(): Promise<string> {
 }
 
 async function get(path: string, cookie: string): Promise<Response> {
-  // Pass the visitor's IP along (nginx sets it), so the API rate-limits per visitor
+  // Pass the visitor's IP along (Caddy sets it), so the API rate-limits per visitor
   // rather than treating every server-rendered request as coming from this server.
   const forwardedFor = (await headers()).get('x-forwarded-for');
   return fetch(`${baseURL}${path}`, {
@@ -35,7 +35,7 @@ async function get(path: string, cookie: string): Promise<Response> {
  * stale (proxy.ts couldn't renew it), the page renders anonymously and the
  * browser renews the session and refetches. Other failures throw.
  */
-export async function serverFetch<T>(path: string): Promise<T | null> {
+async function serverFetch<T>(path: string): Promise<T | null> {
   const cookie = await sessionCookieHeader();
   let response = await get(path, cookie);
   if (response.status === 401 && cookie) response = await get(path, '');
@@ -53,7 +53,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUserResponse | null
   const jar = await cookies();
   if (!SESSION_COOKIES.some((name) => jar.has(name))) return null;
   try {
-    const response = await get('/auth/me', await sessionCookieHeader());
+    const response = await get('/users/me', await sessionCookieHeader());
     if (!response.ok) return undefined;
     return (await response.json()) as CurrentUserResponse;
   } catch {

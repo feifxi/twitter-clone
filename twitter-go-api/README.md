@@ -30,7 +30,7 @@ cmd/api (wiring) ──► internal/api (HTTP) ──► feature packages ──
 | A handler (bind input → call service → write DTO) | `internal/api/<feature>_handler.go` |
 | Response JSON shapes | `internal/api/responses.go` |
 | Interfaces the handlers depend on | `internal/api/services.go` |
-| Business logic | `internal/<feature>/service.go`: `auth`, `user`, `tweet`, `feed`, `search`, `discovery`, `notification`, `message`, `assistant`, `media` |
+| Business logic | `internal/<feature>/<feature>.go` (e.g. `tweet/tweet.go`): `auth`, `user`, `tweet`, `feed`, `search`, `notification`, `message`, `assistant`, `media` |
 | SQL | `internal/db/queries/*.sql` (generated Go: `internal/db/*.sql.go`) |
 | Schema | `internal/db/migrations/` (embedded, applied on startup) |
 | Startup and dependency wiring | `cmd/api/main.go` |
@@ -39,6 +39,7 @@ cmd/api (wiring) ──► internal/api (HTTP) ──► feature packages ──
 | Real-time fan-out (SSE) | `internal/realtime/hub.go`, `internal/api/events_handler.go` |
 | Background embedding worker | `internal/embedding/worker.go` |
 | Cursor pagination | `internal/pagination/` |
+| Swagger spec (generated, not committed) | `internal/swagger/`, built by `make swagger` |
 
 Conventions:
 - Feature packages expose a `Service` built with `New(...)`, return concrete types and never import Gin.
@@ -48,58 +49,57 @@ Conventions:
 ## Media Upload Flow
 
 Media (images/videos) are uploaded directly to S3 via presigned URLs:
-1. Client calls `POST /api/v1/uploads/presign` with `{contentType, folder, contentLength}`
+1. Client calls `POST /api/v1/uploads` with `{contentType, folder, contentLength}`
 2. API returns `{presignedUrl, objectKey}`; the key is `{folder}/{userId}/{uuid}{ext}`
 3. Client PUTs the file directly to S3 using the presigned URL (same `Content-Type`/size; both are signed)
 4. Client includes the `objectKey` when creating a tweet or updating profile
 
-Media is served through CloudFront CDN.
+Media is served through CloudFront in production, and from the local RustFS container (`S3_ENDPOINT`) in development.
 
 ## API Behavior (Important)
 
-The full contract for clients is [`docs/api-contract.md`](docs/api-contract.md).
+Endpoints, parameters and response shapes are in Swagger (below). The rules that apply across them:
 
-- Pagination uses opaque keyset cursors (see `internal/pagination`):
-  - Request: `cursor`, `size`
-  - Response: `items`, `hasNext`, `nextCursor` (`null` on the last page)
-- Timelines (feeds and profile tabs) return `{ kind, tweet, retweet }` feed items; other tweet lists return plain tweets
-- Request correlation:
-  - every response includes `X-Request-ID`
-  - error responses include `requestId` for log correlation
-- Health endpoints:
-  - `GET /healthz` (liveness)
-  - `GET /readyz` (readiness: database, and Redis when configured)
+- **Sessions** are two httpOnly cookies set by the API: `access_token` (short-lived JWT) and `refresh_token`
+  (single use, rotated on every refresh). Send them with every request (`credentials: "include"`,
+  axios `withCredentials`, `EventSource(url, { withCredentials: true })`). Non-browser clients may send
+  `Authorization: Bearer <access token>` instead.
+- **401 codes:** `UNAUTHORIZED` means no credentials (signed out); `TOKEN_EXPIRED` means stale ones: call
+  `POST /auth/refresh` once (share one in-flight refresh between concurrent requests) and retry.
+- **CSRF:** `POST`/`PUT`/`PATCH`/`DELETE` from an origin outside `ALLOWED_ORIGINS` answer `403`.
+- **Errors** are `{ code, message, details: [{ field, message }], requestId }`.
+- **Pagination** uses opaque keyset cursors (see `internal/pagination`): send `cursor` and `size` (default 20,
+  max 50); get `items`, `hasNext`, `nextCursor` (`null` on the last page). Don't parse or build cursors.
+- **Nullable fields are never omitted**, and empty lists are `[]`.
+- **Timelines** (feeds and profile tabs) return `{ kind, tweet, retweet }` feed items; other tweet lists return
+  plain tweets. A tweet can appear twice (posted and retweeted): key items by `retweet.id` + `tweet.id`.
+- Every response includes `X-Request-ID` (also `requestId` in error bodies) for log correlation.
 
 ## API Documentation (Swagger)
 
-The API is fully documented using **Swaggo**. You can explore the interactive API reference and test endpoints directly from your browser:
+Every endpoint, with its parameters and request/response schemas:
 
 - **Swagger UI**: `http://localhost:8080/swagger/index.html`
 - **OpenAPI Spec**: `http://localhost:8080/swagger/doc.json`
 
 Both are served outside production only (`ENVIRONMENT=production` disables them).
 
-The documentation includes request/response schemas, authentication requirements, and error structures. Browsers authenticate with httpOnly session cookies; in Swagger UI, sign in through the web app on localhost (the cookie is shared) or paste an access token into **Authorize** as `Bearer <token>`.
+Browsers authenticate with httpOnly session cookies; in Swagger UI, sign in through the web app on localhost (the cookie is shared) or paste an access token into **Authorize** as `Bearer <token>`.
 
 ### Generating API Documentation
 
-If you modify handler annotations or response structs, you must regenerate the documentation:
-
-```bash
-# Install the swag CLI (same version as go.mod) if not already present
-go install github.com/swaggo/swag/cmd/swag@v1.16.6
-
-# Regenerate docs
-make swagger  # swag init -g cmd/api/main.go --parseInternal
-```
+The docs are generated from the handler annotations (`@Summary`, `@Param`, `@Success`, `@Router`) and the
+request/response structs, and are never committed: `make run`, `make lint`, `make test`, the Docker build and
+CI all regenerate them first, so they always match the code. To regenerate by hand: `make swagger`. swag is
+pinned in `go.mod` as a tool (`go tool swag`), so there is nothing to install.
 
 ## Local Setup
 
 ### Prerequisites
 
 - Go 1.26+
-- Postgres with pgvector: `docker compose up -d` from the repo root (Redis comes with it, optional)
-- To regenerate code only: [sqlc](https://sqlc.dev) 1.30 and swag (see above)
+- Postgres with pgvector, Redis (optional) and media storage: `make db` from the repo root
+- To regenerate the database code: [sqlc](https://sqlc.dev) 1.30
 
 ### Run
 
@@ -134,7 +134,7 @@ TEST_DATABASE_URL='postgres://test:test@localhost:55432/twitter_test?sslmode=dis
 
 ## Production Operations
 
-The API runs on EC2 behind nginx, which terminates TLS; port 8080 is never published. See the root README for the AWS setup.
+The API runs on EC2 behind Caddy, which terminates TLS; port 8080 is never published. See [`infra/README.md`](../infra/README.md) for the AWS setup.
 - Liveness: `GET /healthz` (process up). Readiness: `GET /readyz` (database, and Redis when configured); the container health check runs `api healthcheck`, which calls it.
-- Health endpoints have no rate limit; `/metrics` is only reachable on the Docker network (nginx returns 404 for it).
+- Health endpoints have no rate limit; `/metrics` is only reachable on the Docker network (Caddy returns 404 for it).
 - Every response carries `X-Request-ID`; error bodies include `requestId` and every log line for that request carries `request_id`.

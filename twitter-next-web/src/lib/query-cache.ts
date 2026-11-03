@@ -58,7 +58,7 @@ function mapCached<T>(data: unknown, isItem: (x: unknown) => x is T, fn: Updater
 }
 
 const TWEET_ROOTS: readonly QueryKey[] = [queryKeys.feeds.all, queryKeys.tweets.all, queryKeys.users.all, queryKeys.search.all];
-const USER_ROOTS: readonly QueryKey[] = [...TWEET_ROOTS, queryKeys.auth.me, queryKeys.discovery.all];
+const USER_ROOTS: readonly QueryKey[] = [...TWEET_ROOTS, queryKeys.auth.me];
 
 function setEverywhere(queryClient: QueryClient, roots: readonly QueryKey[], map: (data: unknown) => unknown) {
   for (const queryKey of roots) {

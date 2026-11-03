@@ -7,12 +7,13 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Omitted fields are left unchanged; "" clears a field.
+// Omitted fields are left unchanged; "" clears a field (except the name, which can't be blank).
+// omitempty only skips a nil pointer, so the website allows "" explicitly.
 type updateProfileRequest struct {
-	DisplayName *string `json:"displayName" binding:"omitempty,max=50"`
+	DisplayName *string `json:"displayName" binding:"omitnil,min=1,max=50"`
 	Bio         *string `json:"bio" binding:"omitempty,max=160"`
 	Location    *string `json:"location" binding:"omitempty,max=30"`
-	Website     *string `json:"website" binding:"omitempty,max=100,http_url"`
+	Website     *string `json:"website" binding:"omitempty,max=100,len=0|http_url"`
 	AvatarKey   *string `json:"avatarKey" binding:"omitempty,max=200"`
 	BannerKey   *string `json:"bannerKey" binding:"omitempty,max=200"`
 }
@@ -37,7 +38,7 @@ type usernameURIRequest struct {
 // @Failure		400		{object}	ErrorResponse
 // @Failure		401		{object}	ErrorResponse
 // @Security		BearerAuth
-// @Router			/users/profile [put]
+// @Router			/users/me [patch]
 func (s *Server) updateProfile(c *gin.Context) {
 	userID, ok := requireUserID(c)
 	if !ok {
@@ -101,7 +102,7 @@ func (s *Server) getUser(c *gin.Context) {
 // @Tags			Users
 // @Produce		json
 // @Param			id	path		int64	true	"User ID to follow"
-// @Success		200	{object}	SuccessResponse
+// @Success		204	"No Content"
 // @Failure		401	{object}	ErrorResponse
 // @Security		BearerAuth
 // @Router			/users/{id}/follow [post]
@@ -122,7 +123,7 @@ func (s *Server) followUser(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, successResponse())
+	c.Status(http.StatusNoContent)
 }
 
 // unfollowUser godoc
@@ -131,7 +132,7 @@ func (s *Server) followUser(c *gin.Context) {
 // @Tags			Users
 // @Produce		json
 // @Param			id	path		int64	true	"User ID to unfollow"
-// @Success		200	{object}	SuccessResponse
+// @Success		204	"No Content"
 // @Failure		401	{object}	ErrorResponse
 // @Security		BearerAuth
 // @Router			/users/{id}/follow [delete]
@@ -151,7 +152,7 @@ func (s *Server) unfollowUser(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, successResponse())
+	c.Status(http.StatusNoContent)
 }
 
 // listFollowers godoc
@@ -267,4 +268,27 @@ func (s *Server) completeOnboarding(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, newCurrentUserResponse(u))
+}
+
+// getSuggestedUsers godoc
+// @Summary		Suggested Users
+// @Description	Get a paginated list of suggested users to follow.
+// @Tags			Users
+// @Produce		json
+// @Param			cursor	query		string	false	"Pagination cursor"
+// @Param			size	query		int		false	"Number of items per page"
+// @Success		200		{object}	PageResponse[UserResponse]
+// @Router			/users/suggestions [get]
+func (s *Server) getSuggestedUsers(c *gin.Context) {
+	req, ok := parsePageRequest(c)
+	if !ok {
+		return
+	}
+	viewerID := optionalViewerID(c)
+	users, err := s.svc.Users.SuggestedUsers(c.Request.Context(), req, viewerID)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, newPageResponse(users, newUserResponse))
 }

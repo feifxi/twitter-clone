@@ -9,7 +9,7 @@ import type { CurrentUserResponse } from '@/types';
 
 async function fetchCurrentUser(): Promise<CurrentUserResponse | null> {
   try {
-    const { data } = await axiosInstance.get<CurrentUserResponse>('/auth/me');
+    const { data } = await axiosInstance.get<CurrentUserResponse>('/users/me');
     return data;
   } catch (error) {
     if (isUnauthorized(error)) return null;

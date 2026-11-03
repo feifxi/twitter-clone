@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import { axiosInstance, getErrorMessage } from '@/api/axiosInstance';
 import { queryKeys } from '@/lib/query-keys';
 import type { CurrentUserResponse } from '@/types';
-import type { GoogleAuthRequestInput } from '@/lib/validation';
+import type { GoogleAuthRequest } from '@/types';
 
 import { useUIStore } from '@/store/useUIStore';
 
@@ -42,7 +42,7 @@ export default function GoogleLoginBtn() {
     
     setIsLoading(true);
     try {
-      const payload: GoogleAuthRequestInput = { idToken: googleToken };
+      const payload: GoogleAuthRequest = { idToken: googleToken };
       // The API sets the session cookies; the body is the signed-in user.
       const { data } = await axiosInstance.post<CurrentUserResponse>('/auth/google', payload);
       queryClient.setQueryData(queryKeys.auth.me, data);

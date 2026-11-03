@@ -12,13 +12,11 @@ import (
 	"syscall"
 	"time"
 
-	_ "github.com/chanombude/twitter-go-api/docs"
 	"github.com/chanombude/twitter-go-api/internal/api"
 	"github.com/chanombude/twitter-go-api/internal/assistant"
 	"github.com/chanombude/twitter-go-api/internal/auth"
 	"github.com/chanombude/twitter-go-api/internal/config"
 	"github.com/chanombude/twitter-go-api/internal/db"
-	"github.com/chanombude/twitter-go-api/internal/discovery"
 	"github.com/chanombude/twitter-go-api/internal/embedding"
 	"github.com/chanombude/twitter-go-api/internal/feed"
 	"github.com/chanombude/twitter-go-api/internal/logger"
@@ -151,7 +149,7 @@ func newServer(ctx context.Context, cfg config.Config, store db.Store, rdb *redi
 		return nil, fmt.Errorf("create token maker: %w", err)
 	}
 
-	s3, err := storage.NewS3(ctx, storage.Config{Bucket: cfg.S3Bucket, Region: cfg.S3Region, CDNDomain: cfg.CloudFrontDomain})
+	s3, err := storage.NewS3(ctx, storage.Config{Bucket: cfg.S3Bucket, Region: cfg.S3Region, CDNDomain: cfg.CloudFrontDomain, Endpoint: cfg.S3Endpoint})
 	if err != nil {
 		return nil, fmt.Errorf("create storage: %w", err)
 	}
@@ -184,7 +182,6 @@ func newServer(ctx context.Context, cfg config.Config, store db.Store, rdb *redi
 		Tweets:        tweet.New(tweet.Config{EmbedTweets: rag}, store, s3, notifications),
 		Feeds:         feed.New(store),
 		Search:        search.New(store),
-		Discovery:     discovery.New(store),
 		Notifications: notifications,
 		Messages:      message.New(store, hub),
 		Assistant: assistant.New(assistant.Config{

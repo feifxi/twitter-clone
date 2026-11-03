@@ -41,35 +41,35 @@ func (e *Error) Unwrap() error {
 	return e.Err
 }
 
-func E(kind Kind, message string, err error) *Error {
+func newError(kind Kind, message string, err error) *Error {
 	return &Error{Kind: kind, Message: message, Err: err}
 }
 
 func BadRequest(message string) *Error {
-	return E(KindBadRequest, message, nil)
+	return newError(KindBadRequest, message, nil)
 }
 
 func Unauthorized(message string) *Error {
-	return E(KindUnauthorized, message, nil)
+	return newError(KindUnauthorized, message, nil)
 }
 
 func Forbidden(message string) *Error {
-	return E(KindForbidden, message, nil)
+	return newError(KindForbidden, message, nil)
 }
 
 func NotFound(message string) *Error {
-	return E(KindNotFound, message, nil)
+	return newError(KindNotFound, message, nil)
 }
 
 func Conflict(message string) *Error {
-	return E(KindConflict, message, nil)
+	return newError(KindConflict, message, nil)
 }
 
 func Internal(message string, err error) *Error {
 	if err == nil {
 		err = errors.New(message)
 	}
-	return E(KindInternal, message, err)
+	return newError(KindInternal, message, err)
 }
 
 func KindOf(err error) (Kind, bool) {

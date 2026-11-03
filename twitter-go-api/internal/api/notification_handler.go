@@ -64,7 +64,7 @@ func (s *Server) getUnreadNotificationCount(c *gin.Context) {
 // @Summary		Mark All Read
 // @Description	Clear all unread notification badges for the current user.
 // @Tags			Notifications
-// @Success		200	{object}	SuccessResponse
+// @Success		204	"No Content"
 // @Security		BearerAuth
 // @Failure		401	{object}	ErrorResponse
 // @Router			/notifications/mark-read [post]
@@ -77,5 +77,5 @@ func (s *Server) markNotificationRead(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, successResponse())
+	c.Status(http.StatusNoContent)
 }

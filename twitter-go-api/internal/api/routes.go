@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/chanombude/twitter-go-api/docs" // registers the generated Swagger spec
 	"github.com/chanombude/twitter-go-api/internal/middleware"
+	_ "github.com/chanombude/twitter-go-api/internal/swagger" // generated below, not committed
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
@@ -16,6 +16,9 @@ import (
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 )
+
+// The Swagger spec served at /swagger, built from the handlers' annotations.
+//go:generate go tool swag init --dir ../.. --generalInfo cmd/api/main.go --parseInternal --outputTypes go --output ../swagger --packageName swagger --quiet
 
 // routes is the API's table of contents: every endpoint, one per line.
 //
@@ -47,18 +50,20 @@ func (s *Server) routes() *gin.Engine {
 	v1.POST("/auth/google", authLimit, s.loginGoogle)
 	v1.POST("/auth/refresh", authLimit, s.refreshToken)
 	v1.POST("/auth/logout", authLimit, s.logout)
-	v1.GET("/auth/me", auth, s.getMe)
 
-	v1.GET("/users/:id", optional, s.getUser)
+	// "me" and "suggestions" are fixed paths, so they never clash with a numeric :id.
+	v1.GET("/users/me", auth, s.getMe)
+	v1.PATCH("/users/me", auth, write, s.updateProfile)
+	v1.POST("/users/me/onboarding", auth, write, s.completeOnboarding)
+	v1.GET("/users/suggestions", optional, s.getSuggestedUsers)
 	v1.GET("/users/by-username/:username", optional, s.getUserByUsername)
+	v1.GET("/users/:id", optional, s.getUser)
 	v1.GET("/users/:id/posts", optional, s.getUserPosts)
 	v1.GET("/users/:id/replies", optional, s.getUserReplies)
 	v1.GET("/users/:id/media", optional, s.getUserMedia)
 	v1.GET("/users/:id/likes", auth, s.getUserLikes)
 	v1.GET("/users/:id/followers", optional, s.listFollowers)
 	v1.GET("/users/:id/following", optional, s.listFollowing)
-	v1.PUT("/users/profile", auth, write, s.updateProfile)
-	v1.POST("/users/me/onboarding", auth, write, s.completeOnboarding)
 	v1.POST("/users/:id/follow", auth, write, s.followUser)
 	v1.DELETE("/users/:id/follow", auth, write, s.unfollowUser)
 
@@ -70,7 +75,7 @@ func (s *Server) routes() *gin.Engine {
 	v1.DELETE("/tweets/:id/like", auth, write, s.unlikeTweet)
 	v1.POST("/tweets/:id/retweet", auth, write, s.retweet)
 	v1.DELETE("/tweets/:id/retweet", auth, write, s.undoRetweet)
-	v1.POST("/uploads/presign", auth, write, s.presignUpload)
+	v1.POST("/uploads", auth, write, s.createUpload)
 
 	v1.GET("/feeds/global", optional, s.getGlobalFeed)
 	v1.GET("/feeds/following", auth, s.getFollowingFeed)
@@ -78,17 +83,17 @@ func (s *Server) routes() *gin.Engine {
 	v1.GET("/search/users", optional, s.searchUsers)
 	v1.GET("/search/tweets", optional, s.searchTweets)
 	v1.GET("/search/hashtags", optional, s.searchHashtags)
-	v1.GET("/discovery/trending", optional, s.getTrendingHashtags)
-	v1.GET("/discovery/users", optional, s.getSuggestedUsers)
+	v1.GET("/hashtags/trending", optional, s.getTrendingHashtags)
 
 	v1.GET("/notifications", auth, s.listNotifications)
 	v1.GET("/notifications/unread-count", auth, s.getUnreadNotificationCount)
 	v1.POST("/notifications/mark-read", auth, write, s.markNotificationRead)
 
-	v1.GET("/messages/conversations", auth, s.listConversations)
-	v1.GET("/messages/conversations/:id/messages", auth, s.listConversationMessages)
-	v1.POST("/messages/conversations/:id/messages", auth, write, s.sendMessageToConversation)
-	v1.POST("/messages/users/:id/messages", auth, write, s.sendMessageToUser)
+	v1.GET("/conversations", auth, s.listConversations)
+	v1.GET("/conversations/:id/messages", auth, s.listConversationMessages)
+	v1.POST("/conversations/:id/messages", auth, write, s.sendMessageToConversation)
+	// The conversation with user :id (created by the first message)
+	v1.POST("/conversations/with/:id/messages", auth, write, s.sendMessageToUser)
 
 	v1.GET("/events", auth, s.streamEvents)
 	v1.POST("/assistant", auth, aiLimit, s.assistant)

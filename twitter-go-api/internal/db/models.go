@@ -89,7 +89,6 @@ type Tweet struct {
 	RetweetCount int32       `json:"retweet_count"`
 	LikeCount    int32       `json:"like_count"`
 	CreatedAt    time.Time   `json:"created_at"`
-	UpdatedAt    time.Time   `json:"updated_at"`
 	SearchVector interface{} `json:"search_vector"`
 }
 
@@ -122,8 +121,6 @@ type User struct {
 	Website        *string    `json:"website"`
 	AvatarURL      *string    `json:"avatar_url"`
 	BannerURL      *string    `json:"banner_url"`
-	Role           string     `json:"role"`
-	Provider       string     `json:"provider"`
 	FollowersCount int32      `json:"followers_count"`
 	FollowingCount int32      `json:"following_count"`
 	OnboardedAt    *time.Time `json:"onboarded_at"`

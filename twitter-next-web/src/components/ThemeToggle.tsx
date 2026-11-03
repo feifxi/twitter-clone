@@ -1,70 +1,30 @@
 'use client';
 
 import { Moon, Sun } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { useTheme } from 'next-themes';
-import { useEffect, useState } from 'react';
-
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
+import { cn } from '@/lib/utils';
 
-interface ThemeToggleProps {
-  className?: string;
-  variant?: 'button' | 'menu-item';
-}
-
-export function ThemeToggle({ className, variant = 'button' }: ThemeToggleProps) {
-  const { theme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setMounted(true);
-  }, []);
-
-  const toggleTheme = () => setTheme(theme === 'light' ? 'dark' : 'light');
-
-  if (!mounted) {
-    if (variant === 'menu-item') {
-      return (
-        <DropdownMenuItem disabled className="flex items-center gap-4 p-3 opacity-50">
-            <div className="w-5 h-5 border-2 border-muted border-t-foreground rounded-full animate-spin" />
-            <span className="text-[15px]">Theme</span>
-        </DropdownMenuItem>
-      );
-    }
-    return (
-      <Button variant="ghost" size="icon" className={`rounded-full hover:bg-card text-foreground transition-colors ${className || ''}`} disabled>
-        <span className="w-6 h-6 border-2 border-muted border-t-foreground rounded-full animate-spin"></span>
-      </Button>
-    )
-  }
-
-  const Icon = theme === 'light' ? Moon : Sun;
-
-  if (variant === 'menu-item') {
-    return (
-      <DropdownMenuItem 
-        onClick={(e) => {
-            e.preventDefault(); // Prevent closing on toggle if we want to see change immediately
-            toggleTheme();
-        }}
-        className="flex items-center gap-4 p-3 text-[15px] cursor-pointer focus:bg-accent"
-      >
-        <Icon className="w-5 h-5" />
-        <span>Theme</span>
-      </DropdownMenuItem>
-    );
-  }
+/**
+ * Menu item that switches between light and dark. Menus mount their items when opened, after
+ * hydration, so the stored theme is already known here.
+ */
+export function ThemeToggle({ className }: { className?: string }) {
+  const { resolvedTheme, setTheme } = useTheme();
+  const dark = resolvedTheme === 'dark';
+  const Icon = dark ? Sun : Moon;
 
   return (
-    <Button 
-        variant="ghost" 
-        size="icon" 
-        onClick={toggleTheme}
-        className={`rounded-full hover:bg-card text-foreground transition-colors ${className || ''}`}
-        aria-label="Toggle theme"
+    <DropdownMenuItem
+      // Keep the menu open so the change is visible right away
+      onSelect={(e) => {
+        e.preventDefault();
+        setTheme(dark ? 'light' : 'dark');
+      }}
+      className={cn('cursor-pointer gap-4 p-3 text-[15px]', className)}
     >
-      <Icon className="w-6 h-6" />
-    </Button>
+      <Icon className="size-5" />
+      {dark ? 'Light mode' : 'Dark mode'}
+    </DropdownMenuItem>
   );
 }

@@ -11,8 +11,6 @@ CREATE TABLE users (
     website         VARCHAR(100),
     avatar_url      TEXT,
     banner_url      TEXT,
-    role            VARCHAR(20)  NOT NULL DEFAULT 'USER',
-    provider        VARCHAR(50)  NOT NULL,
     followers_count INT          NOT NULL DEFAULT 0,
     following_count INT          NOT NULL DEFAULT 0,
     -- NULL until the user has picked their own username (sign-up assigns a generated one).
@@ -48,7 +46,6 @@ CREATE TABLE tweets (
     retweet_count INT         NOT NULL DEFAULT 0,
     like_count    INT         NOT NULL DEFAULT 0,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     search_vector tsvector GENERATED ALWAYS AS (to_tsvector('english', COALESCE(content, ''))) STORED,
     CONSTRAINT chk_tweet_has_content_or_media CHECK (content IS NOT NULL OR media_url IS NOT NULL),
     CONSTRAINT chk_tweet_media_pair CHECK ((media_url IS NULL) = (media_type IS NULL))

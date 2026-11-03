@@ -22,6 +22,9 @@ type Config struct {
 	// CDNDomain is the CloudFront domain (without scheme). When empty, public
 	// URLs point straight at the bucket.
 	CDNDomain string
+	// Endpoint is an S3-compatible server to use instead of AWS (local dev), e.g.
+	// http://localhost:9000. Objects are then addressed by path: <endpoint>/<bucket>/<key>.
+	Endpoint string
 }
 
 type S3 struct {
@@ -45,11 +48,19 @@ func NewS3(ctx context.Context, cfg Config) (*S3, error) {
 	}
 
 	baseURL := fmt.Sprintf("https://%s.s3.%s.amazonaws.com", cfg.Bucket, cfg.Region)
+	var opts []func(*s3.Options)
+	if endpoint := strings.TrimRight(cfg.Endpoint, "/"); endpoint != "" {
+		baseURL = endpoint + "/" + cfg.Bucket
+		opts = append(opts, func(o *s3.Options) {
+			o.BaseEndpoint = aws.String(endpoint)
+			o.UsePathStyle = true
+		})
+	}
 	if cdn := strings.TrimRight(cfg.CDNDomain, "/"); cdn != "" {
 		baseURL = "https://" + cdn
 	}
 
-	client := s3.NewFromConfig(awsCfg)
+	client := s3.NewFromConfig(awsCfg, opts...)
 	return &S3{
 		client:    client,
 		presigner: s3.NewPresignClient(client),

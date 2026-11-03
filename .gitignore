@@ -10,13 +10,13 @@
 # Terraform (.terraform.lock.hcl IS committed: it pins provider versions)
 **/.terraform/
 *.tfstate
-*.tfstate.backup
+*.tfstate.*
 **/*.tfvars
 **/*.tfvars.json
-infra/terraform/backend.hcl
 
 # Go
 twitter-go-api/twitter-go-api
+twitter-go-api/internal/swagger/
 **/app.env
 **/debug
 **/debug.test
@@ -35,12 +35,6 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
-
-# Java
-twitter-java-api/target/
-twitter-java-api/.mvn/wrapper/maven-wrapper.jar
-**/*.class
-**/out/
 
 # Python
 __pycache__/

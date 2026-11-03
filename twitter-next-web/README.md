@@ -11,8 +11,8 @@ Frontend for the Twitter clone, built with Next.js App Router.
 
 ## API Expectations
 
-This frontend talks to the Go API (or the Java one; same contract), described in
-[`../twitter-go-api/docs/api-contract.md`](../twitter-go-api/docs/api-contract.md):
+This frontend talks to the Go API: endpoints in its Swagger UI (`http://localhost:8080/swagger/index.html`),
+cross-cutting rules in [its README](../twitter-go-api/README.md#api-behavior-important):
 
 - Lists page with `cursor` + `size` and return `{ items, hasNext, nextCursor }` (`nextCursor` is `null` on the last page).
 - Timelines (feeds, profile tabs) return `{ kind, tweet, retweet }` feed items; search and thread replies return plain tweets.
@@ -63,7 +63,7 @@ The Go API keeps the session in two **httpOnly cookies** (`access_token`, `refre
 - **First render:** `src/proxy.ts` renews an expired access cookie before the page renders, and the root layout fetches the signed-in user with the request's cookies (`src/api/server.ts`). The user is known on the first paint, with no auth spinner.
 - **In the browser:** the user lives in TanStack Query (`queryKeys.auth.me`, read with `useAuth()`). `src/api/axiosInstance.ts` sends cookies (`withCredentials`), and on a `TOKEN_EXPIRED` response renews the session once (shared by concurrent requests) and retries.
 - **Realtime:** one native `EventSource` (with credentials) for notifications and DMs, `src/hooks/useRealtimeEvents.ts`.
-- **Local dev:** the web app (`localhost:3000`) and the API (`localhost:8080`) are the same site, and a `localhost` cookie reaches every port, so no extra setup is needed. In production nginx serves both on one domain: the browser calls the relative `/api/v1`, and the Next.js server calls the API directly over the Docker network (`API_INTERNAL_URL`).
+- **Local dev:** the web app (`localhost:3000`) and the API (`localhost:8080`) are the same site, and a `localhost` cookie reaches every port, so no extra setup is needed. In production Caddy serves both on one domain: the browser calls the relative `/api/v1`, and the Next.js server calls the API directly over the Docker network (`API_INTERNAL_URL`).
 
 ## Data fetching
 

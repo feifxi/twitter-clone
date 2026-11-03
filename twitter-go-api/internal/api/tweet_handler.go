@@ -57,7 +57,7 @@ func (s *Server) createTweet(c *gin.Context) {
 // @Description	Remove a tweet by ID. Only the author can delete their own tweet.
 // @Tags			Tweets
 // @Param			id	path		int64	true	"Tweet ID"
-// @Success		200	{object}	SuccessResponse
+// @Success		204	"No Content"
 // @Failure		401	{object}	ErrorResponse
 // @Failure		403	{object}	ErrorResponse
 // @Security		BearerAuth
@@ -76,7 +76,7 @@ func (s *Server) deleteTweet(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, successResponse())
+	c.Status(http.StatusNoContent)
 }
 
 // getTweet godoc
@@ -137,7 +137,7 @@ func (s *Server) getReplies(c *gin.Context) {
 // @Description	Add a like to a tweet.
 // @Tags			Tweets
 // @Param			id	path		int64	true	"Tweet ID"
-// @Success		200	{object}	SuccessResponse
+// @Success		204	"No Content"
 // @Failure		401	{object}	ErrorResponse
 // @Security		BearerAuth
 // @Router			/tweets/{id}/like [post]
@@ -155,7 +155,7 @@ func (s *Server) likeTweet(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, successResponse())
+	c.Status(http.StatusNoContent)
 }
 
 // unlikeTweet godoc
@@ -163,7 +163,7 @@ func (s *Server) likeTweet(c *gin.Context) {
 // @Description	Remove a like from a tweet.
 // @Tags			Tweets
 // @Param			id	path		int64	true	"Tweet ID"
-// @Success		200	{object}	SuccessResponse
+// @Success		204	"No Content"
 // @Failure		401	{object}	ErrorResponse
 // @Security		BearerAuth
 // @Router			/tweets/{id}/like [delete]
@@ -181,7 +181,7 @@ func (s *Server) unlikeTweet(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, successResponse())
+	c.Status(http.StatusNoContent)
 }
 
 // retweet godoc
@@ -190,7 +190,7 @@ func (s *Server) unlikeTweet(c *gin.Context) {
 // @Tags			Tweets
 // @Produce		json
 // @Param			id	path		int64	true	"Tweet ID to retweet"
-// @Success		200	{object}	TweetResponse
+// @Success		204	"No Content"
 // @Failure		401	{object}	ErrorResponse
 // @Security		BearerAuth
 // @Router			/tweets/{id}/retweet [post]
@@ -204,12 +204,11 @@ func (s *Server) retweet(c *gin.Context) {
 	if !ok {
 		return
 	}
-	t, err := s.svc.Tweets.Retweet(c.Request.Context(), userID, path.ID)
-	if err != nil {
+	if err := s.svc.Tweets.Retweet(c.Request.Context(), userID, path.ID); err != nil {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, newTweetResponse(t))
+	c.Status(http.StatusNoContent)
 }
 
 // undoRetweet godoc
@@ -217,7 +216,7 @@ func (s *Server) retweet(c *gin.Context) {
 // @Description	Remove a previously shared retweet.
 // @Tags			Tweets
 // @Param			id	path		int64	true	"Original Tweet ID"
-// @Success		200	{object}	SuccessResponse
+// @Success		204	"No Content"
 // @Failure		401	{object}	ErrorResponse
 // @Security		BearerAuth
 // @Router			/tweets/{id}/retweet [delete]
@@ -235,5 +234,5 @@ func (s *Server) undoRetweet(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, successResponse())
+	c.Status(http.StatusNoContent)
 }

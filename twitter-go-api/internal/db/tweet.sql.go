@@ -39,7 +39,7 @@ const createTweet = `-- name: CreateTweet :one
 
 INSERT INTO tweets (user_id, content, media_type, media_url, parent_id)
 VALUES ($1, $2, $3, $4, $5)
-RETURNING id, user_id, content, media_type, media_url, parent_id, reply_count, retweet_count, like_count, created_at, updated_at, search_vector
+RETURNING id, user_id, content, media_type, media_url, parent_id, reply_count, retweet_count, like_count, created_at, search_vector
 `
 
 type CreateTweetParams struct {
@@ -74,7 +74,6 @@ func (q *Queries) CreateTweet(ctx context.Context, arg CreateTweetParams) (Tweet
 		&i.RetweetCount,
 		&i.LikeCount,
 		&i.CreatedAt,
-		&i.UpdatedAt,
 		&i.SearchVector,
 	)
 	return i, err
@@ -115,7 +114,7 @@ func (q *Queries) DeleteRetweet(ctx context.Context, arg DeleteRetweetParams) (b
 const deleteTweetByOwner = `-- name: DeleteTweetByOwner :one
 DELETE FROM tweets
 WHERE id = $1 AND user_id = $2
-RETURNING id, user_id, content, media_type, media_url, parent_id, reply_count, retweet_count, like_count, created_at, updated_at, search_vector
+RETURNING id, user_id, content, media_type, media_url, parent_id, reply_count, retweet_count, like_count, created_at, search_vector
 `
 
 type DeleteTweetByOwnerParams struct {
@@ -137,17 +136,15 @@ func (q *Queries) DeleteTweetByOwner(ctx context.Context, arg DeleteTweetByOwner
 		&i.RetweetCount,
 		&i.LikeCount,
 		&i.CreatedAt,
-		&i.UpdatedAt,
 		&i.SearchVector,
 	)
 	return i, err
 }
 
 const getTweet = `-- name: GetTweet :one
-SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.updated_at, t.search_vector,
+SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.search_vector,
   EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = $1) AS is_liked,
   EXISTS(SELECT 1 FROM retweets r WHERE r.tweet_id = t.id AND r.user_id = $1) AS is_retweeted,
-  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = $1) AS is_following,
   NULL::bigint AS retweet_id, NULL::bigint AS retweeted_by_id, NULL::timestamptz AS retweeted_at
 FROM tweets t
 WHERE t.id = $2
@@ -162,7 +159,6 @@ type GetTweetRow struct {
 	Tweet         Tweet      `json:"tweet"`
 	IsLiked       bool       `json:"is_liked"`
 	IsRetweeted   bool       `json:"is_retweeted"`
-	IsFollowing   bool       `json:"is_following"`
 	RetweetID     *int64     `json:"retweet_id"`
 	RetweetedByID *int64     `json:"retweeted_by_id"`
 	RetweetedAt   *time.Time `json:"retweeted_at"`
@@ -182,11 +178,9 @@ func (q *Queries) GetTweet(ctx context.Context, arg GetTweetParams) (GetTweetRow
 		&i.Tweet.RetweetCount,
 		&i.Tweet.LikeCount,
 		&i.Tweet.CreatedAt,
-		&i.Tweet.UpdatedAt,
 		&i.Tweet.SearchVector,
 		&i.IsLiked,
 		&i.IsRetweeted,
-		&i.IsFollowing,
 		&i.RetweetID,
 		&i.RetweetedByID,
 		&i.RetweetedAt,
@@ -195,10 +189,9 @@ func (q *Queries) GetTweet(ctx context.Context, arg GetTweetParams) (GetTweetRow
 }
 
 const getTweetsByIDs = `-- name: GetTweetsByIDs :many
-SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.updated_at, t.search_vector,
+SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.search_vector,
   EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = $1) AS is_liked,
   EXISTS(SELECT 1 FROM retweets r WHERE r.tweet_id = t.id AND r.user_id = $1) AS is_retweeted,
-  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = $1) AS is_following,
   NULL::bigint AS retweet_id, NULL::bigint AS retweeted_by_id, NULL::timestamptz AS retweeted_at
 FROM tweets t
 WHERE t.id = ANY($2::bigint[])
@@ -213,7 +206,6 @@ type GetTweetsByIDsRow struct {
 	Tweet         Tweet      `json:"tweet"`
 	IsLiked       bool       `json:"is_liked"`
 	IsRetweeted   bool       `json:"is_retweeted"`
-	IsFollowing   bool       `json:"is_following"`
 	RetweetID     *int64     `json:"retweet_id"`
 	RetweetedByID *int64     `json:"retweeted_by_id"`
 	RetweetedAt   *time.Time `json:"retweeted_at"`
@@ -239,11 +231,9 @@ func (q *Queries) GetTweetsByIDs(ctx context.Context, arg GetTweetsByIDsParams) 
 			&i.Tweet.RetweetCount,
 			&i.Tweet.LikeCount,
 			&i.Tweet.CreatedAt,
-			&i.Tweet.UpdatedAt,
 			&i.Tweet.SearchVector,
 			&i.IsLiked,
 			&i.IsRetweeted,
-			&i.IsFollowing,
 			&i.RetweetID,
 			&i.RetweetedByID,
 			&i.RetweetedAt,
@@ -283,10 +273,9 @@ WITH items AS (
   WHERE f.follower_id = $1
     AND ($2::timestamptz IS NULL OR r.created_at <= $2)
 )
-SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.updated_at, t.search_vector,
+SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.search_vector,
   EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = $1) AS is_liked,
   EXISTS(SELECT 1 FROM retweets r WHERE r.tweet_id = t.id AND r.user_id = $1) AS is_retweeted,
-  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = $1) AS is_following,
   i.retweet_id, i.retweeted_by_id, i.retweeted_at
 FROM items i
 JOIN tweets t ON t.id = i.tweet_id
@@ -308,7 +297,6 @@ type ListFollowingTimelineRow struct {
 	Tweet         Tweet      `json:"tweet"`
 	IsLiked       bool       `json:"is_liked"`
 	IsRetweeted   bool       `json:"is_retweeted"`
-	IsFollowing   bool       `json:"is_following"`
 	RetweetID     *int64     `json:"retweet_id"`
 	RetweetedByID *int64     `json:"retweeted_by_id"`
 	RetweetedAt   *time.Time `json:"retweeted_at"`
@@ -342,11 +330,9 @@ func (q *Queries) ListFollowingTimeline(ctx context.Context, arg ListFollowingTi
 			&i.Tweet.RetweetCount,
 			&i.Tweet.LikeCount,
 			&i.Tweet.CreatedAt,
-			&i.Tweet.UpdatedAt,
 			&i.Tweet.SearchVector,
 			&i.IsLiked,
 			&i.IsRetweeted,
-			&i.IsFollowing,
 			&i.RetweetID,
 			&i.RetweetedByID,
 			&i.RetweetedAt,
@@ -362,10 +348,9 @@ func (q *Queries) ListFollowingTimeline(ctx context.Context, arg ListFollowingTi
 }
 
 const listForYouFeed = `-- name: ListForYouFeed :many
-SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.updated_at, t.search_vector,
+SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.search_vector,
   EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = $1) AS is_liked,
   EXISTS(SELECT 1 FROM retweets r WHERE r.tweet_id = t.id AND r.user_id = $1) AS is_retweeted,
-  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = $1) AS is_following,
   NULL::bigint AS retweet_id, NULL::bigint AS retweeted_by_id, NULL::timestamptz AS retweeted_at,
   tweet_score(t.like_count, t.retweet_count, t.reply_count, t.created_at, $2) AS score
 FROM tweets t
@@ -390,7 +375,6 @@ type ListForYouFeedRow struct {
 	Tweet         Tweet      `json:"tweet"`
 	IsLiked       bool       `json:"is_liked"`
 	IsRetweeted   bool       `json:"is_retweeted"`
-	IsFollowing   bool       `json:"is_following"`
 	RetweetID     *int64     `json:"retweet_id"`
 	RetweetedByID *int64     `json:"retweeted_by_id"`
 	RetweetedAt   *time.Time `json:"retweeted_at"`
@@ -426,11 +410,9 @@ func (q *Queries) ListForYouFeed(ctx context.Context, arg ListForYouFeedParams) 
 			&i.Tweet.RetweetCount,
 			&i.Tweet.LikeCount,
 			&i.Tweet.CreatedAt,
-			&i.Tweet.UpdatedAt,
 			&i.Tweet.SearchVector,
 			&i.IsLiked,
 			&i.IsRetweeted,
-			&i.IsFollowing,
 			&i.RetweetID,
 			&i.RetweetedByID,
 			&i.RetweetedAt,
@@ -490,10 +472,9 @@ WITH items AS (
   WHERE r.user_id = $6
     AND ($2::timestamptz IS NULL OR r.created_at <= $2)
 )
-SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.updated_at, t.search_vector,
+SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.search_vector,
   EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = $1) AS is_liked,
   EXISTS(SELECT 1 FROM retweets r WHERE r.tweet_id = t.id AND r.user_id = $1) AS is_retweeted,
-  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = $1) AS is_following,
   i.retweet_id, i.retweeted_by_id, i.retweeted_at
 FROM items i
 JOIN tweets t ON t.id = i.tweet_id
@@ -516,7 +497,6 @@ type ListProfileTimelineRow struct {
 	Tweet         Tweet      `json:"tweet"`
 	IsLiked       bool       `json:"is_liked"`
 	IsRetweeted   bool       `json:"is_retweeted"`
-	IsFollowing   bool       `json:"is_following"`
 	RetweetID     *int64     `json:"retweet_id"`
 	RetweetedByID *int64     `json:"retweeted_by_id"`
 	RetweetedAt   *time.Time `json:"retweeted_at"`
@@ -550,11 +530,9 @@ func (q *Queries) ListProfileTimeline(ctx context.Context, arg ListProfileTimeli
 			&i.Tweet.RetweetCount,
 			&i.Tweet.LikeCount,
 			&i.Tweet.CreatedAt,
-			&i.Tweet.UpdatedAt,
 			&i.Tweet.SearchVector,
 			&i.IsLiked,
 			&i.IsRetweeted,
-			&i.IsFollowing,
 			&i.RetweetID,
 			&i.RetweetedByID,
 			&i.RetweetedAt,
@@ -570,10 +548,9 @@ func (q *Queries) ListProfileTimeline(ctx context.Context, arg ListProfileTimeli
 }
 
 const listTweetReplies = `-- name: ListTweetReplies :many
-SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.updated_at, t.search_vector,
+SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.search_vector,
   EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = $1) AS is_liked,
   EXISTS(SELECT 1 FROM retweets r WHERE r.tweet_id = t.id AND r.user_id = $1) AS is_retweeted,
-  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = $1) AS is_following,
   NULL::bigint AS retweet_id, NULL::bigint AS retweeted_by_id, NULL::timestamptz AS retweeted_at
 FROM tweets t
 WHERE t.parent_id = $2
@@ -595,7 +572,6 @@ type ListTweetRepliesRow struct {
 	Tweet         Tweet      `json:"tweet"`
 	IsLiked       bool       `json:"is_liked"`
 	IsRetweeted   bool       `json:"is_retweeted"`
-	IsFollowing   bool       `json:"is_following"`
 	RetweetID     *int64     `json:"retweet_id"`
 	RetweetedByID *int64     `json:"retweeted_by_id"`
 	RetweetedAt   *time.Time `json:"retweeted_at"`
@@ -628,11 +604,9 @@ func (q *Queries) ListTweetReplies(ctx context.Context, arg ListTweetRepliesPara
 			&i.Tweet.RetweetCount,
 			&i.Tweet.LikeCount,
 			&i.Tweet.CreatedAt,
-			&i.Tweet.UpdatedAt,
 			&i.Tweet.SearchVector,
 			&i.IsLiked,
 			&i.IsRetweeted,
-			&i.IsFollowing,
 			&i.RetweetID,
 			&i.RetweetedByID,
 			&i.RetweetedAt,
@@ -648,10 +622,9 @@ func (q *Queries) ListTweetReplies(ctx context.Context, arg ListTweetRepliesPara
 }
 
 const listUserLikes = `-- name: ListUserLikes :many
-SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.updated_at, t.search_vector,
+SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.search_vector,
   EXISTS(SELECT 1 FROM tweet_likes tl2 WHERE tl2.tweet_id = t.id AND tl2.user_id = $1) AS is_liked,
   EXISTS(SELECT 1 FROM retweets r WHERE r.tweet_id = t.id AND r.user_id = $1) AS is_retweeted,
-  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = $1) AS is_following,
   NULL::bigint AS retweet_id, NULL::bigint AS retweeted_by_id, NULL::timestamptz AS retweeted_at,
   tl.created_at AS liked_at
 FROM tweet_likes tl
@@ -675,7 +648,6 @@ type ListUserLikesRow struct {
 	Tweet         Tweet      `json:"tweet"`
 	IsLiked       bool       `json:"is_liked"`
 	IsRetweeted   bool       `json:"is_retweeted"`
-	IsFollowing   bool       `json:"is_following"`
 	RetweetID     *int64     `json:"retweet_id"`
 	RetweetedByID *int64     `json:"retweeted_by_id"`
 	RetweetedAt   *time.Time `json:"retweeted_at"`
@@ -709,11 +681,9 @@ func (q *Queries) ListUserLikes(ctx context.Context, arg ListUserLikesParams) ([
 			&i.Tweet.RetweetCount,
 			&i.Tweet.LikeCount,
 			&i.Tweet.CreatedAt,
-			&i.Tweet.UpdatedAt,
 			&i.Tweet.SearchVector,
 			&i.IsLiked,
 			&i.IsRetweeted,
-			&i.IsFollowing,
 			&i.RetweetID,
 			&i.RetweetedByID,
 			&i.RetweetedAt,
@@ -730,10 +700,9 @@ func (q *Queries) ListUserLikes(ctx context.Context, arg ListUserLikesParams) ([
 }
 
 const listUserMedia = `-- name: ListUserMedia :many
-SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.updated_at, t.search_vector,
+SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.search_vector,
   EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = $1) AS is_liked,
   EXISTS(SELECT 1 FROM retweets r WHERE r.tweet_id = t.id AND r.user_id = $1) AS is_retweeted,
-  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = $1) AS is_following,
   NULL::bigint AS retweet_id, NULL::bigint AS retweeted_by_id, NULL::timestamptz AS retweeted_at
 FROM tweets t
 WHERE t.user_id = $2
@@ -756,7 +725,6 @@ type ListUserMediaRow struct {
 	Tweet         Tweet      `json:"tweet"`
 	IsLiked       bool       `json:"is_liked"`
 	IsRetweeted   bool       `json:"is_retweeted"`
-	IsFollowing   bool       `json:"is_following"`
 	RetweetID     *int64     `json:"retweet_id"`
 	RetweetedByID *int64     `json:"retweeted_by_id"`
 	RetweetedAt   *time.Time `json:"retweeted_at"`
@@ -788,11 +756,9 @@ func (q *Queries) ListUserMedia(ctx context.Context, arg ListUserMediaParams) ([
 			&i.Tweet.RetweetCount,
 			&i.Tweet.LikeCount,
 			&i.Tweet.CreatedAt,
-			&i.Tweet.UpdatedAt,
 			&i.Tweet.SearchVector,
 			&i.IsLiked,
 			&i.IsRetweeted,
-			&i.IsFollowing,
 			&i.RetweetID,
 			&i.RetweetedByID,
 			&i.RetweetedAt,
@@ -808,10 +774,9 @@ func (q *Queries) ListUserMedia(ctx context.Context, arg ListUserMediaParams) ([
 }
 
 const listUserReplies = `-- name: ListUserReplies :many
-SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.updated_at, t.search_vector,
+SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.search_vector,
   EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = $1) AS is_liked,
   EXISTS(SELECT 1 FROM retweets r WHERE r.tweet_id = t.id AND r.user_id = $1) AS is_retweeted,
-  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = $1) AS is_following,
   NULL::bigint AS retweet_id, NULL::bigint AS retweeted_by_id, NULL::timestamptz AS retweeted_at
 FROM tweets t
 WHERE t.user_id = $2
@@ -834,7 +799,6 @@ type ListUserRepliesRow struct {
 	Tweet         Tweet      `json:"tweet"`
 	IsLiked       bool       `json:"is_liked"`
 	IsRetweeted   bool       `json:"is_retweeted"`
-	IsFollowing   bool       `json:"is_following"`
 	RetweetID     *int64     `json:"retweet_id"`
 	RetweetedByID *int64     `json:"retweeted_by_id"`
 	RetweetedAt   *time.Time `json:"retweeted_at"`
@@ -866,11 +830,9 @@ func (q *Queries) ListUserReplies(ctx context.Context, arg ListUserRepliesParams
 			&i.Tweet.RetweetCount,
 			&i.Tweet.LikeCount,
 			&i.Tweet.CreatedAt,
-			&i.Tweet.UpdatedAt,
 			&i.Tweet.SearchVector,
 			&i.IsLiked,
 			&i.IsRetweeted,
-			&i.IsFollowing,
 			&i.RetweetID,
 			&i.RetweetedByID,
 			&i.RetweetedAt,
@@ -886,10 +848,9 @@ func (q *Queries) ListUserReplies(ctx context.Context, arg ListUserRepliesParams
 }
 
 const searchTweetsByHashtag = `-- name: SearchTweetsByHashtag :many
-SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.updated_at, t.search_vector,
+SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.search_vector,
   EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = $1) AS is_liked,
   EXISTS(SELECT 1 FROM retweets r WHERE r.tweet_id = t.id AND r.user_id = $1) AS is_retweeted,
-  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = $1) AS is_following,
   NULL::bigint AS retweet_id, NULL::bigint AS retweeted_by_id, NULL::timestamptz AS retweeted_at
 FROM tweets t
 JOIN tweet_hashtags th ON th.tweet_id = t.id
@@ -913,7 +874,6 @@ type SearchTweetsByHashtagRow struct {
 	Tweet         Tweet      `json:"tweet"`
 	IsLiked       bool       `json:"is_liked"`
 	IsRetweeted   bool       `json:"is_retweeted"`
-	IsFollowing   bool       `json:"is_following"`
 	RetweetID     *int64     `json:"retweet_id"`
 	RetweetedByID *int64     `json:"retweeted_by_id"`
 	RetweetedAt   *time.Time `json:"retweeted_at"`
@@ -945,11 +905,9 @@ func (q *Queries) SearchTweetsByHashtag(ctx context.Context, arg SearchTweetsByH
 			&i.Tweet.RetweetCount,
 			&i.Tweet.LikeCount,
 			&i.Tweet.CreatedAt,
-			&i.Tweet.UpdatedAt,
 			&i.Tweet.SearchVector,
 			&i.IsLiked,
 			&i.IsRetweeted,
-			&i.IsFollowing,
 			&i.RetweetID,
 			&i.RetweetedByID,
 			&i.RetweetedAt,
@@ -965,10 +923,9 @@ func (q *Queries) SearchTweetsByHashtag(ctx context.Context, arg SearchTweetsByH
 }
 
 const searchTweetsFullText = `-- name: SearchTweetsFullText :many
-SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.updated_at, t.search_vector,
+SELECT t.id, t.user_id, t.content, t.media_type, t.media_url, t.parent_id, t.reply_count, t.retweet_count, t.like_count, t.created_at, t.search_vector,
   EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = $1) AS is_liked,
   EXISTS(SELECT 1 FROM retweets r WHERE r.tweet_id = t.id AND r.user_id = $1) AS is_retweeted,
-  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = $1) AS is_following,
   NULL::bigint AS retweet_id, NULL::bigint AS retweeted_by_id, NULL::timestamptz AS retweeted_at
 FROM tweets t
 WHERE t.search_vector @@ to_tsquery('english', $2)
@@ -987,7 +944,6 @@ type SearchTweetsFullTextRow struct {
 	Tweet         Tweet      `json:"tweet"`
 	IsLiked       bool       `json:"is_liked"`
 	IsRetweeted   bool       `json:"is_retweeted"`
-	IsFollowing   bool       `json:"is_following"`
 	RetweetID     *int64     `json:"retweet_id"`
 	RetweetedByID *int64     `json:"retweeted_by_id"`
 	RetweetedAt   *time.Time `json:"retweeted_at"`
@@ -1019,11 +975,9 @@ func (q *Queries) SearchTweetsFullText(ctx context.Context, arg SearchTweetsFull
 			&i.Tweet.RetweetCount,
 			&i.Tweet.LikeCount,
 			&i.Tweet.CreatedAt,
-			&i.Tweet.UpdatedAt,
 			&i.Tweet.SearchVector,
 			&i.IsLiked,
 			&i.IsRetweeted,
-			&i.IsFollowing,
 			&i.RetweetID,
 			&i.RetweetedByID,
 			&i.RetweetedAt,

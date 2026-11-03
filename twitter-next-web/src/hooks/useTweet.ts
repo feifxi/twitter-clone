@@ -7,8 +7,7 @@ import { uploadFileWithPresignedUrl } from '@/api/upload';
 import { useAuth } from '@/hooks/useAuth';
 import { snapshotEntities, updateTweet } from '@/lib/query-cache';
 import { PAGE_SIZE, queryKeys } from '@/lib/query-keys';
-import type { TweetRequestInput } from '@/lib/validation';
-import type { FeedItemResponse, PageResponse, TweetResponse } from '@/types';
+import type { FeedItemResponse, PageResponse, TweetRequest, TweetResponse } from '@/types';
 
 export function useTweet(tweetId: number | null) {
   return useQuery({
@@ -41,7 +40,7 @@ export function useCreateTweet() {
   const { user } = useAuth();
 
   return useMutation({
-    mutationFn: async ({ content, media, parentId }: TweetRequestInput & { media?: File }) => {
+    mutationFn: async ({ content, media, parentId }: TweetRequest & { media?: File }) => {
       const mediaKey = media ? await uploadFileWithPresignedUrl(media, 'tweets') : undefined;
       const { data } = await axiosInstance.post<TweetResponse>('/tweets', { content, parentId, mediaKey });
       return data;

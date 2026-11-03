@@ -9,6 +9,7 @@ import { getErrorMessage, getFieldErrors } from '@/api/axiosInstance';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { UserAvatar } from '@/components/UserAvatar';
 import { useUpdateProfile } from '@/hooks/useProfile';
+import { displayNameOf } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { updateProfileSchema, type UpdateProfileInput } from '@/lib/validation';
 import type { UserResponse } from '@/types';
@@ -127,7 +128,8 @@ function EditProfileForm({ user, onClose }: { user: UserResponse; onClose: () =>
   } = useForm<UpdateProfileInput>({
     resolver: zodResolver(updateProfileSchema),
     defaultValues: {
-      displayName: user.displayName ?? '',
+      // The name the app shows (the username when none is set), since a name can't be blank
+      displayName: displayNameOf(user),
       bio: user.bio ?? '',
       location: user.location ?? '',
       website: user.website ?? '',

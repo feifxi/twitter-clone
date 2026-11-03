@@ -1,0 +1,126 @@
+# Local development services. The API (make run) and the web app (npm run dev) run on the host.
+#   docker compose up -d                            Postgres, Redis, S3-compatible media storage
+#   docker compose --profile observability up -d    + Prometheus, Alertmanager, Loki, Alloy, Grafana
+# The monitoring stack uses the same configs as production (infra/observability).
+services:
+  database:
+    image: pgvector/pgvector:pg16
+    ports:
+      - "5432:5432"
+    volumes:
+      - twitter_dev_postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: twitter_db
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: rootpass
+
+  redis:
+    image: redis:7.2-alpine
+    ports:
+      - "6379:6379"
+
+  # Media uploads: an S3-compatible server (RustFS) standing in for the S3 bucket, so the
+  # presigned upload flow works offline. Files: http://localhost:9000/twitter-media/<key>;
+  # browse them at http://localhost:9001/rustfs/console/ (devaccess / devsecret123).
+  storage:
+    image: rustfs/rustfs:1.0.4
+    environment:
+      RUSTFS_ACCESS_KEY: devaccess
+      RUSTFS_SECRET_KEY: devsecret123
+    volumes:
+      - twitter_dev_media:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/health"]
+      interval: 2s
+      retries: 30
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+
+  # Creates the bucket like Terraform does in AWS: browser uploads from the web app, public reads
+  storage-init:
+    image: amazon/aws-cli:2.39.2
+    depends_on:
+      storage: { condition: service_healthy }
+    environment:
+      AWS_ACCESS_KEY_ID: devaccess
+      AWS_SECRET_ACCESS_KEY: devsecret123
+      AWS_REGION: us-east-1
+      AWS_ENDPOINT_URL: http://storage:9000
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        aws s3api head-bucket --bucket twitter-media 2>/dev/null || aws s3api create-bucket --bucket twitter-media
+        aws s3api put-bucket-cors --bucket twitter-media --cors-configuration \
+          '{"CORSRules":[{"AllowedOrigins":["http://localhost:3000"],"AllowedMethods":["PUT"],"AllowedHeaders":["*"],"MaxAgeSeconds":3600}]}'
+        aws s3api put-bucket-policy --bucket twitter-media --policy \
+          '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":"*","Action":"s3:GetObject","Resource":"arn:aws:s3:::twitter-media/*"}]}'
+        echo "bucket twitter-media ready"
+
+  # ---------- Observability (opt-in; ports bound to localhost) ----------
+  # Grafana http://localhost:3001 · Prometheus :9090 · Alertmanager :9093 · Alloy :12345
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    profiles: [observability]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --web.enable-lifecycle # curl -X POST localhost:9090/-/reload after editing rules
+    volumes:
+      - ./infra/observability/prometheus:/etc/prometheus:ro
+      - prometheus-data:/prometheus
+    extra_hosts:
+      - "host.docker.internal:host-gateway" # the API runs on the host
+    ports:
+      - "127.0.0.1:9090:9090"
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    profiles: [observability]
+    volumes:
+      - ./infra/observability/alertmanager:/etc/alertmanager:ro
+      - ./infra/observability/alertmanager/secrets:/etc/alertmanager-secrets:ro # discord_webhook_url (git-ignored)
+    ports:
+      - "127.0.0.1:9093:9093"
+
+  loki:
+    image: grafana/loki:3.5.0
+    profiles: [observability]
+    command: -config.file=/etc/loki/loki.yml
+    volumes:
+      - ./infra/observability/loki:/etc/loki:ro
+      - loki-data:/loki
+
+  alloy:
+    image: grafana/alloy:v1.14.0
+    profiles: [observability]
+    command: run --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
+    volumes:
+      - ./infra/observability/alloy:/etc/alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro # container logs
+    depends_on: [loki]
+    ports:
+      - "127.0.0.1:12345:12345"
+
+  grafana:
+    image: grafana/grafana:12.1.0
+    profiles: [observability]
+    environment:
+      # Local only: no login, you're an admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/overview.json
+    volumes:
+      - ./infra/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on: [prometheus, loki]
+    ports:
+      - "127.0.0.1:3001:3000"
+
+volumes:
+  twitter_dev_postgres_data:
+  twitter_dev_media:
+  prometheus-data:
+  loki-data:
+  grafana-data:

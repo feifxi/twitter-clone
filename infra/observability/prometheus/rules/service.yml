@@ -1,0 +1,65 @@
+# Symptom alerts that aren't SLOs. Each has a runbook in infra/observability/README.md.
+groups:
+  - name: service-health
+    rules:
+      - alert: ApiDown
+        expr: up{job="api"} == 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "Prometheus can't scrape the API"
+          runbook_url: "infra/observability/README.md#api-down"
+
+      - alert: SiteErrors
+        # Every request through Caddy, the web app's pages included (not Grafana or metric scrapes)
+        expr: |
+          sum(rate(caddy_http_request_duration_seconds_count{host!~"grafana\\..*|caddy:9180",code=~"5.."}[5m]))
+            / sum(rate(caddy_http_request_duration_seconds_count{host!~"grafana\\..*|caddy:9180"}[5m])) > 0.05
+          and sum(rate(caddy_http_request_duration_seconds_count{host!~"grafana\\..*|caddy:9180"}[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "More than 5% of the site's requests answer 5xx"
+          description: "Current share: {{ $value | humanizePercentage }}."
+          runbook_url: "infra/observability/README.md#site-errors"
+
+  - name: host
+    rules:
+      - alert: DiskAlmostFull
+        expr: max(1 - node_filesystem_avail_bytes{fstype=~"ext4|xfs"} / node_filesystem_size_bytes{fstype=~"ext4|xfs"}) > 0.85
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A disk is more than 85% full"
+          runbook_url: "infra/observability/README.md#disk-or-memory"
+
+      - alert: MemoryAlmostFull
+        expr: max(1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 0.9
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Less than 10% of memory available for 10 minutes"
+          runbook_url: "infra/observability/README.md#disk-or-memory"
+
+  - name: embeddings
+    rules:
+      - alert: EmbeddingJobsFailing
+        expr: max(embedding_jobs{state="failed"}) > 0
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Tweets whose embedding gave up after every retry (see embedding_jobs.last_error)"
+          runbook_url: "infra/observability/README.md#embedding-queue"
+
+      - alert: EmbeddingBacklog
+        expr: max(embedding_jobs{state="pending"}) > 100
+        for: 30m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "More than 100 tweets waiting to be embedded for 30 minutes (Gemini down or out of quota?)"
+          runbook_url: "infra/observability/README.md#embedding-queue"

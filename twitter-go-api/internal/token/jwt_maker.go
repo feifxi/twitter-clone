@@ -22,7 +22,7 @@ type Payload struct {
 	ExpiredAt time.Time `json:"expired_at"`
 }
 
-func NewPayload(userID int64, duration time.Duration) (*Payload, error) {
+func newPayload(userID int64, duration time.Duration) (*Payload, error) {
 	tokenID, err := uuid.NewRandom()
 	if err != nil {
 		return nil, err
@@ -35,13 +35,6 @@ func NewPayload(userID int64, duration time.Duration) (*Payload, error) {
 		ExpiredAt: time.Now().Add(duration),
 	}
 	return payload, nil
-}
-
-func (p *Payload) Valid() error {
-	if time.Now().After(p.ExpiredAt) {
-		return ErrExpiredToken
-	}
-	return nil
 }
 
 type Maker interface {
@@ -61,7 +54,7 @@ func NewJWTMaker(secretKey string) (Maker, error) {
 }
 
 func (m *JWTMaker) CreateToken(userID int64, duration time.Duration) (string, error) {
-	payload, err := NewPayload(userID, duration)
+	payload, err := newPayload(userID, duration)
 	if err != nil {
 		return "", err
 	}
