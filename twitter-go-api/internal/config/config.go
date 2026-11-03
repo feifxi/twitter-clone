@@ -34,7 +34,7 @@ type Config struct {
 	// AllowedOrigins are the web app origins (scheme://host[:port]) allowed to call the API with cookies.
 	AllowedOrigins []string `env:"ALLOWED_ORIGINS" envSeparator:"," envDefault:"http://localhost:3000"`
 	// CookieDomain scopes the session cookies to a parent domain, needed only if the web app and
-	// the API run on different subdomains. Empty = host-only (production behind nginx, local dev).
+	// the API run on different subdomains. Empty = host-only (production behind Caddy, local dev).
 	CookieDomain string `env:"COOKIE_DOMAIN"`
 
 	TokenSymmetricKey string        `env:"TOKEN_SYMMETRIC_KEY,required,notEmpty"`
@@ -97,8 +97,10 @@ func (c Config) Validate() error {
 	}
 
 	if c.Production() {
-		if strings.Contains(strings.ToLower(c.DatabaseURL), "sslmode=disable") {
-			errs = append(errs, errors.New("DATABASE_URL must not disable TLS in production"))
+		// Plain text is fine to a database on the same Docker network (a host name without
+		// dots, such as the compose service "postgres"): the traffic never leaves the machine.
+		if strings.Contains(strings.ToLower(c.DatabaseURL), "sslmode=disable") && !sameHostDatabase(c.DatabaseURL) {
+			errs = append(errs, errors.New("DATABASE_URL must not disable TLS for a remote database in production"))
 		}
 		for _, field := range []struct{ name, value string }{
 			{"GOOGLE_CLIENT_ID", c.GoogleClientID},
@@ -116,4 +118,9 @@ func (c Config) Validate() error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+func sameHostDatabase(databaseURL string) bool {
+	u, err := url.Parse(databaseURL)
+	return err == nil && u.Hostname() != "" && !strings.Contains(u.Hostname(), ".")
 }
