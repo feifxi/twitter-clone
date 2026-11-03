@@ -36,6 +36,8 @@ export function TweetSkeleton() {
 const stop = (e: React.MouseEvent) => e.stopPropagation();
 
 function TweetMedia({ tweet, onOpenImage }: { tweet: TweetResponse; onOpenImage: (src: string) => void }) {
+  // Until the image arrives its box has no height: hold some space with a placeholder
+  const [loaded, setLoaded] = useState(false);
   if (!tweet.mediaUrl) return null;
   const src = tweet.mediaUrl;
   return (
@@ -53,7 +55,18 @@ function TweetMedia({ tweet, onOpenImage }: { tweet: TweetResponse; onOpenImage:
           aria-label="Open image"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={src} alt="" loading="lazy" className="max-h-[510px] w-full object-cover" />
+          <img
+            src={src}
+            alt=""
+            loading="lazy"
+            // A cached image can finish before React attaches onLoad
+            ref={(img) => {
+              if (img?.complete && img.naturalWidth > 0) setLoaded(true);
+            }}
+            onLoad={() => setLoaded(true)}
+            onError={() => setLoaded(true)}
+            className={cn('max-h-[510px] w-full object-cover', !loaded && 'min-h-[200px] animate-pulse bg-muted')}
+          />
         </button>
       )}
     </div>
