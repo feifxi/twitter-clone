@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Search, Bell, Mail, Users, LogIn } from 'lucide-react';
+import { Bell, BotMessageSquare, Home, LogIn, LogOut, Mail, Search, TvMinimalPlay, User, Users } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { ComposeTweetModal } from '@/components/ComposeTweetModal';
@@ -19,6 +19,7 @@ import { FILL_WHEN_ACTIVE } from '@/components/AppNav';
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { UserAvatar } from '@/components/UserAvatar';
+import { XLogo } from '@/components/XLogo';
 
 type MobileNavProps = {
   unreadCount?: number;
@@ -104,23 +105,36 @@ export function MobileNav({ unreadCount = 0 }: MobileNavProps) {
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" side="top" className="w-[200px] mb-2 font-bold z-50">
-              <DropdownMenuItem asChild className="p-3 text-[15px] cursor-pointer">
-                <Link href={`/${user.username}`}>Profile</Link>
+              <DropdownMenuItem asChild className="cursor-pointer gap-4 p-3 text-[15px]">
+                <Link href={`/${user.username}`}>
+                  <User className="size-5" />
+                  Profile
+                </Link>
               </DropdownMenuItem>
-              <DropdownMenuItem asChild className="p-3 text-[15px] cursor-pointer">
-                <Link href="/chanombot">ChanomBot</Link>
+              <DropdownMenuItem asChild className="cursor-pointer gap-4 p-3 text-[15px]">
+                <Link href="/chanombot">
+                  <BotMessageSquare className="size-5" />
+                  ChanomBot
+                </Link>
               </DropdownMenuItem>
-              <DropdownMenuItem asChild className="p-3 text-[15px] cursor-pointer">
-                <Link href="/premium">Premium</Link>
+              <DropdownMenuItem asChild className="cursor-pointer gap-4 p-3 text-[15px]">
+                <Link href="/premium">
+                  <XLogo className="size-5" />
+                  Premium
+                </Link>
               </DropdownMenuItem>
-              <DropdownMenuItem asChild className="p-3 text-[15px] cursor-pointer">
-                <Link href="/brainrot">Brainrot</Link>
+              <DropdownMenuItem asChild className="cursor-pointer gap-4 p-3 text-[15px]">
+                <Link href="/brainrot">
+                  <TvMinimalPlay className="size-5" />
+                  Brainrot
+                </Link>
               </DropdownMenuItem>
-              <ThemeToggle variant="menu-item" />
+              <ThemeToggle />
               <DropdownMenuItem
-                className="p-3 text-[15px] cursor-pointer text-destructive focus:text-destructive"
+                className="cursor-pointer gap-4 p-3 text-[15px] text-destructive focus:text-destructive"
                 onSelect={() => setConfirmLogout(true)}
               >
+                <LogOut className="size-5 text-destructive" />
                 Log out
               </DropdownMenuItem>
             </DropdownMenuContent>
