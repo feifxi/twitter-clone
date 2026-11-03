@@ -244,15 +244,15 @@ func (s *Service) Unlike(ctx context.Context, userID, tweetID int64) error {
 	return err
 }
 
-// Retweet is idempotent and returns the retweeted tweet as the retweeter now sees it.
-func (s *Service) Retweet(ctx context.Context, userID, tweetID int64) (domain.Tweet, error) {
+// Retweet is idempotent: retweeting again changes nothing and notifies no one.
+func (s *Service) Retweet(ctx context.Context, userID, tweetID int64) error {
 	t, err := s.getTweet(ctx, tweetID, nil)
 	if err != nil {
-		return domain.Tweet{}, err
+		return err
 	}
 
 	var pending db.Notification
-	err = s.store.ExecTxAfterCommit(ctx, func(q db.Querier) error {
+	return s.store.ExecTxAfterCommit(ctx, func(q db.Querier) error {
 		created, err := q.CreateRetweet(ctx, db.CreateRetweetParams{UserID: userID, TweetID: tweetID})
 		if err != nil || !created {
 			return err
@@ -260,10 +260,6 @@ func (s *Service) Retweet(ctx context.Context, userID, tweetID int64) (domain.Tw
 		pending, err = notification.Create(ctx, q, t.Tweet.UserID, userID, &t.Tweet.ID, domain.NotificationRetweet)
 		return err
 	}, func() { s.notifier.Dispatch(pending) })
-	if err != nil {
-		return domain.Tweet{}, err
-	}
-	return s.Get(ctx, tweetID, &userID)
 }
 
 // UndoRetweet is idempotent: undoing a retweet that doesn't exist succeeds.

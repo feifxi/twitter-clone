@@ -7,10 +7,10 @@ import type { PageResponse, HashtagResponse, TweetResponse, UserResponse } from 
 
 export function useTrendingHashtags(limit = 10) {
   return useQuery({
-    queryKey: queryKeys.discovery.trending(limit),
+    queryKey: queryKeys.hashtags.trending(limit),
     queryFn: async (): Promise<HashtagResponse[]> => {
       const { data } = await axiosInstance.get<HashtagResponse[]>(
-        '/discovery/trending',
+        '/hashtags/trending',
         { params: { limit } }
       );
       return data;
@@ -21,10 +21,10 @@ export function useTrendingHashtags(limit = 10) {
 
 export function useSuggestedUsers(pageSize = 5) {
   return useQuery({
-    queryKey: queryKeys.discovery.users(pageSize),
+    queryKey: queryKeys.users.suggestions(pageSize),
     queryFn: async (): Promise<PageResponse<UserResponse>> => {
       const { data } = await axiosInstance.get<PageResponse<UserResponse>>(
-        '/discovery/users',
+        '/users/suggestions',
         { params: { size: pageSize } }
       );
       return data;

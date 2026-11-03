@@ -41,7 +41,7 @@ type TweetService interface {
 	ListReplies(ctx context.Context, tweetID int64, req pagination.Request, viewerID *int64) (pagination.Page[domain.Tweet], error)
 	Like(ctx context.Context, userID, tweetID int64) error
 	Unlike(ctx context.Context, userID, tweetID int64) error
-	Retweet(ctx context.Context, userID, tweetID int64) (domain.Tweet, error)
+	Retweet(ctx context.Context, userID, tweetID int64) error
 	UndoRetweet(ctx context.Context, userID, tweetID int64) error
 }
 

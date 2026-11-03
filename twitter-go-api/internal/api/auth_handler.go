@@ -72,7 +72,7 @@ func (s *Server) refreshToken(c *gin.Context) {
 // @Description	End this browser's session and clear its cookies. Other devices stay signed in.
 // @Tags			Auth
 // @Produce		json
-// @Success		200		{object}	SuccessResponse
+// @Success		204		"No Content"
 // @Router			/auth/logout [post]
 func (s *Server) logout(c *gin.Context) {
 	refreshToken, _ := c.Cookie(middleware.RefreshTokenCookie)
@@ -81,18 +81,18 @@ func (s *Server) logout(c *gin.Context) {
 		return
 	}
 	s.clearSessionCookies(c)
-	c.JSON(http.StatusOK, successResponse())
+	c.Status(http.StatusNoContent)
 }
 
 // getMe godoc
 // @Summary		Get Current User
-// @Description	Fetch the profile of the currently authenticated user.
-// @Tags			Auth
+// @Description	The signed-in user, with their email and onboarding state.
+// @Tags			Users
 // @Produce		json
 // @Success		200		{object}	CurrentUserResponse
 // @Failure		401		{object}	ErrorResponse
 // @Security		BearerAuth
-// @Router			/auth/me [get]
+// @Router			/users/me [get]
 func (s *Server) getMe(c *gin.Context) {
 	userID, ok := requireUserID(c)
 	if !ok {

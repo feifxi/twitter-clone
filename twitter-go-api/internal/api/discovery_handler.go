@@ -10,11 +10,11 @@ import (
 // getTrendingHashtags godoc
 // @Summary		Trending Hashtags
 // @Description	Get a list of currently trending hashtags based on recent usage.
-// @Tags			Discovery
+// @Tags			Hashtags
 // @Produce		json
 // @Param			limit	query		int		false	"Max number of results"
 // @Success		200		{array}		HashtagResponse
-// @Router			/discovery/trending [get]
+// @Router			/hashtags/trending [get]
 func (s *Server) getTrendingHashtags(c *gin.Context) {
 	limit := parseLimit(c, 10, pagination.MaxLimit)
 	hashtags, err := s.svc.Discovery.TrendingHashtags(c.Request.Context(), limit)
@@ -29,12 +29,12 @@ func (s *Server) getTrendingHashtags(c *gin.Context) {
 // getSuggestedUsers godoc
 // @Summary		Suggested Users
 // @Description	Get a paginated list of suggested users to follow.
-// @Tags			Discovery
+// @Tags			Users
 // @Produce		json
 // @Param			cursor	query		string	false	"Pagination cursor"
 // @Param			size	query		int		false	"Number of items per page"
 // @Success		200		{object}	PageResponse[UserResponse]
-// @Router			/discovery/users [get]
+// @Router			/users/suggestions [get]
 func (s *Server) getSuggestedUsers(c *gin.Context) {
 	req, ok := parsePageRequest(c)
 	if !ok {

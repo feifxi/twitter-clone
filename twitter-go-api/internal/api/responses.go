@@ -199,14 +199,6 @@ func newConversationResponse(item domain.Conversation) ConversationResponse {
 	}
 }
 
-type SuccessResponse struct {
-	Success bool `json:"success"`
-}
-
-func successResponse() SuccessResponse {
-	return SuccessResponse{Success: true}
-}
-
 func newHashtagResponseList(hashtags []domain.Hashtag) []HashtagResponse {
 	response := make([]HashtagResponse, 0, len(hashtags))
 	for _, h := range hashtags {

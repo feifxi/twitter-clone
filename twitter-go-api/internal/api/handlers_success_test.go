@@ -86,7 +86,7 @@ func TestUpdateProfileSuccessPassesAvatarKey(t *testing.T) {
 	}
 
 	reqBody := `{"displayName":"new name","avatarKey":"avatars/uuid_avatar.png"}`
-	ctx, rec := newHandlerTestContext(http.MethodPut, "/api/v1/users/profile", bytes.NewBufferString(reqBody), "application/json")
+	ctx, rec := newHandlerTestContext(http.MethodPatch, "/api/v1/users/me", bytes.NewBufferString(reqBody), "application/json")
 	setAuthorizedUser(ctx, 5)
 
 	s := &Server{svc: Services{Users: mock}}

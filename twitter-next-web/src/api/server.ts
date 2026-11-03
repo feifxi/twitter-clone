@@ -53,7 +53,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUserResponse | null
   const jar = await cookies();
   if (!SESSION_COOKIES.some((name) => jar.has(name))) return null;
   try {
-    const response = await get('/auth/me', await sessionCookieHeader());
+    const response = await get('/users/me', await sessionCookieHeader());
     if (!response.ok) return undefined;
     return (await response.json()) as CurrentUserResponse;
   } catch {

@@ -73,7 +73,7 @@ func TestUpdateProfileRejectsEmptyJSON(t *testing.T) {
 	// Sending valid JSON with no fields is fine (nothing to update)
 	// but invalid JSON should fail
 	reqBody := `not-json`
-	ctx, rec := newHandlerTestContext(http.MethodPut, "/api/v1/users/profile", bytes.NewBufferString(reqBody), "application/json")
+	ctx, rec := newHandlerTestContext(http.MethodPatch, "/api/v1/users/me", bytes.NewBufferString(reqBody), "application/json")
 	setAuthorizedUser(ctx, 1)
 
 	s := &Server{}
@@ -118,11 +118,9 @@ func TestLogoutWithoutSessionStillSucceeds(t *testing.T) {
 	}}
 	(&Server{svc: Services{Auth: fake}}).logout(ctx)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rec.Code)
-	}
-	if !strings.Contains(rec.Body.String(), `"success":true`) {
-		t.Fatalf("unexpected response body: %s", rec.Body.String())
+	// The test context never flushes headers, so the 204 set by c.Status is on the gin writer
+	if got := ctx.Writer.Status(); got != http.StatusNoContent || rec.Body.Len() != 0 {
+		t.Fatalf("expected an empty 204, got %d body=%s", got, rec.Body.String())
 	}
 }
 
@@ -144,7 +142,7 @@ func TestUpdateProfileRequestValidation(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			ctx, _ := newHandlerTestContext(http.MethodPut, "/api/v1/users/profile", bytes.NewBufferString(tc.body), "application/json")
+			ctx, _ := newHandlerTestContext(http.MethodPatch, "/api/v1/users/me", bytes.NewBufferString(tc.body), "application/json")
 			var req updateProfileRequest
 			err := ctx.ShouldBindJSON(&req)
 			if (err == nil) != tc.valid {

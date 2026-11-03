@@ -38,7 +38,7 @@ type usernameURIRequest struct {
 // @Failure		400		{object}	ErrorResponse
 // @Failure		401		{object}	ErrorResponse
 // @Security		BearerAuth
-// @Router			/users/profile [put]
+// @Router			/users/me [patch]
 func (s *Server) updateProfile(c *gin.Context) {
 	userID, ok := requireUserID(c)
 	if !ok {
@@ -102,7 +102,7 @@ func (s *Server) getUser(c *gin.Context) {
 // @Tags			Users
 // @Produce		json
 // @Param			id	path		int64	true	"User ID to follow"
-// @Success		200	{object}	SuccessResponse
+// @Success		204	"No Content"
 // @Failure		401	{object}	ErrorResponse
 // @Security		BearerAuth
 // @Router			/users/{id}/follow [post]
@@ -123,7 +123,7 @@ func (s *Server) followUser(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, successResponse())
+	c.Status(http.StatusNoContent)
 }
 
 // unfollowUser godoc
@@ -132,7 +132,7 @@ func (s *Server) followUser(c *gin.Context) {
 // @Tags			Users
 // @Produce		json
 // @Param			id	path		int64	true	"User ID to unfollow"
-// @Success		200	{object}	SuccessResponse
+// @Success		204	"No Content"
 // @Failure		401	{object}	ErrorResponse
 // @Security		BearerAuth
 // @Router			/users/{id}/follow [delete]
@@ -152,7 +152,7 @@ func (s *Server) unfollowUser(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, successResponse())
+	c.Status(http.StatusNoContent)
 }
 
 // listFollowers godoc

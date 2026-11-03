@@ -197,16 +197,11 @@ func TestService_Retweet(t *testing.T) {
 					notified = true
 					return db.Notification{ID: 1}, nil
 				},
-				GetUsersByIDsFn: func(ctx context.Context, arg db.GetUsersByIDsParams) ([]db.GetUsersByIDsRow, error) {
-					return []db.GetUsersByIDsRow{{User: db.User{ID: 1}}}, nil
-				},
 			}
 
-			item, err := tweet.New(tweet.Config{}, store, &storagetest.Fake{}, noopNotifier{}).Retweet(context.Background(), 2, 10)
+			err := tweet.New(tweet.Config{}, store, &storagetest.Fake{}, noopNotifier{}).Retweet(context.Background(), 2, 10)
 
 			require.NoError(t, err)
-			require.Equal(t, int64(10), item.ID, "returns the retweeted tweet itself")
-			require.True(t, item.IsRetweeted)
 			require.Equal(t, created, notified)
 		})
 	}

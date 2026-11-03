@@ -19,7 +19,8 @@ func TestRetweet_IsIdempotentAndKeepsCountsRight(t *testing.T) {
 	svc := tweet.New(tweet.Config{}, store, &storagetest.Fake{}, noopNotifier{})
 
 	for range 2 {
-		got, err := svc.Retweet(ctx, fan.ID, tw.ID)
+		require.NoError(t, svc.Retweet(ctx, fan.ID, tw.ID))
+		got, err := svc.Get(ctx, tw.ID, &fan.ID)
 		require.NoError(t, err)
 		require.Equal(t, int32(1), got.RetweetCount)
 		require.True(t, got.IsRetweeted)
