@@ -16,6 +16,7 @@
 
 # Go
 twitter-go-api/twitter-go-api
+twitter-go-api/internal/swagger/
 **/app.env
 **/debug
 **/debug.test

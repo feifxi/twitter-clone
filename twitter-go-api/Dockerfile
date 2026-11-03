@@ -8,6 +8,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
+RUN go generate ./internal/api
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-w -s" -o /out/api ./cmd/api
 
 # Runtime stage: distroless includes CA certs, tzdata and a non-root user, and no shell.

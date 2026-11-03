@@ -7,7 +7,7 @@ mainstream best practices, keep things simple, skip production hardening that do
 
 | Path | What |
 |---|---|
-| `twitter-go-api/` | Primary backend: Go, Gin, PostgreSQL (sqlc, pgvector), optional Redis. See its README's "Where things live" table; the client contract is `docs/api-contract.md`. |
+| `twitter-go-api/` | Primary backend: Go, Gin, PostgreSQL (sqlc, pgvector), optional Redis. See its README's "Where things live" table; the client contract is Swagger (`/swagger/index.html`, generated from handler annotations, never committed) plus the README's "API Behavior" rules. |
 | `twitter-next-web/` | Next.js (App Router) frontend: TanStack Query, Tailwind v4, Radix/shadcn primitives. |
 | `infra/` | AWS and monitoring as code (see `infra/README.md`): `terraform/{bootstrap,app}`, `compose/` (the host's stack), `observability/` (Prometheus, Alertmanager, Loki, Alloy, Grafana), `scripts/` (up, deploy, down). The stack only exists while the user brings it up: keep everything valid offline. |
 
@@ -27,7 +27,7 @@ make infra-up / deploy / infra-down        # AWS stack (the user runs these)
 # In twitter-go-api/
 make test                                  # go test -race; integration tests need TEST_DATABASE_URL (see README)
 make sqlc                                  # after editing internal/db/queries or migrations: regenerates code + MockStore
-make swagger                               # after changing handler annotations or DTOs
+make swagger                               # regenerate the Swagger docs (run, lint and test already do)
 ```
 
 Enable the pre-commit hook once per clone: `git config core.hooksPath .githooks`.

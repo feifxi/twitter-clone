@@ -38,15 +38,17 @@ sqlc:
 	sqlc generate
 	go generate ./internal/db/...
 
+# The Swagger spec (internal/swagger, not committed) is generated from the handler annotations;
+# run, lint and test regenerate it first. The command is the go:generate line in internal/api/routes.go.
 swagger:
-	swag init -g cmd/api/main.go --parseInternal
+	go generate ./internal/api
 
-lint:
+lint: swagger
 	go vet ./...
 
-test:
+test: swagger
 	go test -race -cover ./...
 
 # The API applies embedded migrations on startup; migrateup/migratedown are for manual use.
-run:
+run: swagger
 	go run ./cmd/api

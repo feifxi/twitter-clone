@@ -11,8 +11,8 @@ Frontend for the Twitter clone, built with Next.js App Router.
 
 ## API Expectations
 
-This frontend talks to the Go API, described in
-[`../twitter-go-api/docs/api-contract.md`](../twitter-go-api/docs/api-contract.md):
+This frontend talks to the Go API: endpoints in its Swagger UI (`http://localhost:8080/swagger/index.html`),
+cross-cutting rules in [its README](../twitter-go-api/README.md#api-behavior-important):
 
 - Lists page with `cursor` + `size` and return `{ items, hasNext, nextCursor }` (`nextCursor` is `null` on the last page).
 - Timelines (feeds, profile tabs) return `{ kind, tweet, retweet }` feed items; search and thread replies return plain tweets.

@@ -12,7 +12,6 @@ import (
 	"syscall"
 	"time"
 
-	_ "github.com/chanombude/twitter-go-api/docs"
 	"github.com/chanombude/twitter-go-api/internal/api"
 	"github.com/chanombude/twitter-go-api/internal/assistant"
 	"github.com/chanombude/twitter-go-api/internal/auth"

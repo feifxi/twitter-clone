@@ -52,6 +52,8 @@ jobs:
       - run: sqlc diff
       - name: Check generated test fakes are up to date
         run: go generate ./internal/db/... && git diff --exit-code
+      - name: Generate the Swagger docs (not committed)
+        run: go generate ./internal/api
       - run: go vet ./...
       - name: Known vulnerabilities in reachable code
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...

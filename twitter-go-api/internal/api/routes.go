@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/chanombude/twitter-go-api/docs" // registers the generated Swagger spec
 	"github.com/chanombude/twitter-go-api/internal/middleware"
+	_ "github.com/chanombude/twitter-go-api/internal/swagger" // generated below, not committed
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
@@ -16,6 +16,9 @@ import (
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 )
+
+// The Swagger spec served at /swagger, built from the handlers' annotations.
+//go:generate go tool swag init --dir ../.. --generalInfo cmd/api/main.go --parseInternal --outputTypes go --output ../swagger --packageName swagger --quiet
 
 // routes is the API's table of contents: every endpoint, one per line.
 //
