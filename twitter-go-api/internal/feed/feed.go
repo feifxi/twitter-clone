@@ -59,7 +59,7 @@ func (s *Service) Global(ctx context.Context, req pagination.Request, viewerID *
 }
 
 func forYouRow(r db.ListForYouFeedRow) tweet.Row {
-	return tweet.Row{Tweet: r.Tweet, IsLiked: r.IsLiked, IsRetweeted: r.IsRetweeted, IsFollowing: r.IsFollowing}
+	return tweet.Row{Tweet: r.Tweet, IsLiked: r.IsLiked, IsRetweeted: r.IsRetweeted}
 }
 
 // Following is the chronological feed of tweets and retweets by accounts userID follows.
@@ -149,7 +149,7 @@ func (s *Service) Likes(ctx context.Context, userID int64, req pagination.Reques
 
 	rows, more := pagination.Trim(rows, req.Limit)
 	items, err := tweet.HydrateItems(ctx, s.store, tweet.Rows(rows, func(r db.ListUserLikesRow) tweet.Row {
-		return tweet.Row{Tweet: r.Tweet, IsLiked: r.IsLiked, IsRetweeted: r.IsRetweeted, IsFollowing: r.IsFollowing}
+		return tweet.Row{Tweet: r.Tweet, IsLiked: r.IsLiked, IsRetweeted: r.IsRetweeted}
 	}), viewerID)
 	if err != nil {
 		return ItemPage{}, err

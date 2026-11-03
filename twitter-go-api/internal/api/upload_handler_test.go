@@ -10,7 +10,7 @@ import (
 	"github.com/chanombude/twitter-go-api/internal/media"
 )
 
-func TestPresignUpload_Success(t *testing.T) {
+func TestCreateUpload_Success(t *testing.T) {
 	t.Parallel()
 
 	mock := &fakeMedia{
@@ -34,7 +34,7 @@ func TestPresignUpload_Success(t *testing.T) {
 	}
 }
 
-func TestPresignUpload_UsecaseError(t *testing.T) {
+func TestCreateUpload_ServiceError(t *testing.T) {
 	t.Parallel()
 
 	mock := &fakeMedia{
@@ -55,7 +55,7 @@ func TestPresignUpload_UsecaseError(t *testing.T) {
 	}
 }
 
-func TestPresignUpload_RequiresContentLengthAndKnownFolder(t *testing.T) {
+func TestCreateUpload_RequiresContentLengthAndKnownFolder(t *testing.T) {
 	t.Parallel()
 
 	for _, body := range []string{

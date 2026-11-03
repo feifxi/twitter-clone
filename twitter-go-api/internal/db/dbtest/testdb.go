@@ -45,8 +45,6 @@ func NewUser(t testing.TB, store db.Querier) db.User {
 	u, err := store.CreateUser(context.Background(), db.CreateUserParams{
 		Username: "u_" + suffix,
 		Email:    suffix + "@example.test",
-		Role:     "USER",
-		Provider: "TEST",
 	})
 	if err != nil {
 		t.Fatalf("create user: %v", err)

@@ -75,13 +75,3 @@ func (q *Queries) DeleteRefreshToken(ctx context.Context, tokenHash string) erro
 	_, err := q.db.Exec(ctx, deleteRefreshToken, tokenHash)
 	return err
 }
-
-const deleteRefreshTokensByUser = `-- name: DeleteRefreshTokensByUser :exec
-DELETE FROM refresh_tokens
-WHERE user_id = $1
-`
-
-func (q *Queries) DeleteRefreshTokensByUser(ctx context.Context, userID int64) error {
-	_, err := q.db.Exec(ctx, deleteRefreshTokensByUser, userID)
-	return err
-}

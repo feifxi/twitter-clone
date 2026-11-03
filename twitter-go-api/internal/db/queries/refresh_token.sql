@@ -14,10 +14,6 @@ RETURNING *;
 DELETE FROM refresh_tokens
 WHERE token_hash = $1;
 
--- name: DeleteRefreshTokensByUser :exec
-DELETE FROM refresh_tokens
-WHERE user_id = $1;
-
 -- name: DeleteExpiredRefreshTokens :exec
 DELETE FROM refresh_tokens
 WHERE user_id = $1 AND expiry_date < now();

@@ -18,10 +18,10 @@ type noopNotifier struct{}
 func (noopNotifier) Dispatch(db.Notification) {}
 
 func TestService_CreateTweet_Validation(t *testing.T) {
-	uc := tweet.New(tweet.Config{}, &dbtest.MockStore{}, &storagetest.Fake{}, noopNotifier{})
+	svc := tweet.New(tweet.Config{}, &dbtest.MockStore{}, &storagetest.Fake{}, noopNotifier{})
 
 	t.Run("empty_tweet", func(t *testing.T) {
-		_, err := uc.Create(context.Background(), tweet.CreateInput{
+		_, err := svc.Create(context.Background(), tweet.CreateInput{
 			UserID: 1,
 		})
 		if err == nil {
@@ -41,7 +41,7 @@ func TestService_CreateTweet_Validation(t *testing.T) {
 		"disallowed_ext":    "tweets/1/x.exe",
 	} {
 		t.Run("rejects_"+name, func(t *testing.T) {
-			_, err := uc.Create(context.Background(), tweet.CreateInput{
+			_, err := svc.Create(context.Background(), tweet.CreateInput{
 				UserID:   1,
 				MediaKey: dbtest.Ptr(key),
 			})
@@ -65,9 +65,9 @@ func TestService_CreateTweet_Validation(t *testing.T) {
 				return []db.GetUsersByIDsRow{{User: db.User{ID: 1}}}, nil
 			},
 		}
-		uc := tweet.New(tweet.Config{}, store, &storagetest.Fake{}, noopNotifier{})
+		svc := tweet.New(tweet.Config{}, store, &storagetest.Fake{}, noopNotifier{})
 
-		_, err := uc.Create(context.Background(), tweet.CreateInput{UserID: 1, MediaKey: dbtest.Ptr("tweets/1/clip.mp4")})
+		_, err := svc.Create(context.Background(), tweet.CreateInput{UserID: 1, MediaKey: dbtest.Ptr("tweets/1/clip.mp4")})
 		require.NoError(t, err)
 		require.Equal(t, domain.MediaVideo, *created.MediaType)
 		require.Equal(t, storagetest.BaseURL+"/tweets/1/clip.mp4", *created.MediaURL)
@@ -128,9 +128,9 @@ func TestService_DeleteTweet(t *testing.T) {
 			},
 		}
 
-		uc := tweet.New(tweet.Config{}, wrongStore, &storagetest.Fake{}, noopNotifier{})
+		svc := tweet.New(tweet.Config{}, wrongStore, &storagetest.Fake{}, noopNotifier{})
 
-		err := uc.Delete(context.Background(), 1, 10) // User 1 tries to delete
+		err := svc.Delete(context.Background(), 1, 10) // User 1 tries to delete
 		if err == nil {
 			t.Fatal("expected error for wrong owner deletion")
 		}
@@ -167,9 +167,9 @@ func TestService_DeleteTweet(t *testing.T) {
 		}
 
 		storage := &storagetest.Fake{}
-		uc := tweet.New(tweet.Config{}, successStore, storage, noopNotifier{})
+		svc := tweet.New(tweet.Config{}, successStore, storage, noopNotifier{})
 
-		err := uc.Delete(context.Background(), 1, 10)
+		err := svc.Delete(context.Background(), 1, 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -220,8 +220,8 @@ func TestService_LikeUnlike(t *testing.T) {
 				return true, nil
 			},
 		}
-		uc := tweet.New(tweet.Config{}, store, nil, noopNotifier{})
-		err := uc.Like(ctx, userID, tweetID)
+		svc := tweet.New(tweet.Config{}, store, nil, noopNotifier{})
+		err := svc.Like(ctx, userID, tweetID)
 		require.NoError(t, err)
 		require.True(t, called)
 	})
@@ -234,8 +234,8 @@ func TestService_LikeUnlike(t *testing.T) {
 				return true, nil
 			},
 		}
-		uc := tweet.New(tweet.Config{}, store, nil, noopNotifier{})
-		err := uc.Unlike(ctx, userID, tweetID)
+		svc := tweet.New(tweet.Config{}, store, nil, noopNotifier{})
+		err := svc.Unlike(ctx, userID, tweetID)
 		require.NoError(t, err)
 		require.True(t, called)
 	})
@@ -254,8 +254,8 @@ func TestService_UndoRetweet(t *testing.T) {
 				return true, nil
 			},
 		}
-		uc := tweet.New(tweet.Config{}, store, nil, noopNotifier{})
-		err := uc.UndoRetweet(ctx, userID, tweetID)
+		svc := tweet.New(tweet.Config{}, store, nil, noopNotifier{})
+		err := svc.UndoRetweet(ctx, userID, tweetID)
 		require.NoError(t, err)
 		require.True(t, called)
 	})
@@ -270,8 +270,8 @@ func TestService_TrendingHashtags(t *testing.T) {
 				return []db.Hashtag{{Text: "trending"}}, nil
 			},
 		}
-		uc := tweet.New(tweet.Config{}, store, nil, noopNotifier{})
-		res, err := uc.TrendingHashtags(ctx, 5)
+		svc := tweet.New(tweet.Config{}, store, nil, noopNotifier{})
+		res, err := svc.TrendingHashtags(ctx, 5)
 		require.NoError(t, err)
 		require.Len(t, res, 1)
 		require.Equal(t, "trending", res[0].Text)
@@ -286,8 +286,8 @@ func TestService_TrendingHashtags(t *testing.T) {
 				return []db.Hashtag{{Text: "alltime"}}, nil
 			},
 		}
-		uc := tweet.New(tweet.Config{}, store, nil, noopNotifier{})
-		res, err := uc.TrendingHashtags(ctx, 5)
+		svc := tweet.New(tweet.Config{}, store, nil, noopNotifier{})
+		res, err := svc.TrendingHashtags(ctx, 5)
 		require.NoError(t, err)
 		require.Len(t, res, 1)
 		require.Equal(t, "alltime", res[0].Text)

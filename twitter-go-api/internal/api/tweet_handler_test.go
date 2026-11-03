@@ -44,7 +44,7 @@ func TestGetTweet_NotFoundReturns404(t *testing.T) {
 	}
 }
 
-func TestCreateTweet_UsecaseErrorReturnsInternalError(t *testing.T) {
+func TestCreateTweet_ServiceErrorReturnsInternalError(t *testing.T) {
 	t.Parallel()
 
 	mock := &fakeTweets{

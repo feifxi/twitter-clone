@@ -12,7 +12,6 @@ RETURNING *;
 SELECT sqlc.embed(t),
   EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = sqlc.narg('viewer_id')) AS is_liked,
   EXISTS(SELECT 1 FROM retweets r WHERE r.tweet_id = t.id AND r.user_id = sqlc.narg('viewer_id')) AS is_retweeted,
-  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = sqlc.narg('viewer_id')) AS is_following,
   NULL::bigint AS retweet_id, NULL::bigint AS retweeted_by_id, NULL::timestamptz AS retweeted_at
 FROM tweets t
 WHERE t.id = sqlc.arg('id');
@@ -21,7 +20,6 @@ WHERE t.id = sqlc.arg('id');
 SELECT sqlc.embed(t),
   EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = sqlc.narg('viewer_id')) AS is_liked,
   EXISTS(SELECT 1 FROM retweets r WHERE r.tweet_id = t.id AND r.user_id = sqlc.narg('viewer_id')) AS is_retweeted,
-  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = sqlc.narg('viewer_id')) AS is_following,
   NULL::bigint AS retweet_id, NULL::bigint AS retweeted_by_id, NULL::timestamptz AS retweeted_at
 FROM tweets t
 WHERE t.id = ANY(sqlc.arg('tweet_ids')::bigint[]);
@@ -75,7 +73,6 @@ SELECT EXISTS (SELECT 1 FROM deleted) AS deleted;
 SELECT sqlc.embed(t),
   EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = sqlc.narg('viewer_id')) AS is_liked,
   EXISTS(SELECT 1 FROM retweets r WHERE r.tweet_id = t.id AND r.user_id = sqlc.narg('viewer_id')) AS is_retweeted,
-  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = sqlc.narg('viewer_id')) AS is_following,
   NULL::bigint AS retweet_id, NULL::bigint AS retweeted_by_id, NULL::timestamptz AS retweeted_at,
   tweet_score(t.like_count, t.retweet_count, t.reply_count, t.created_at, sqlc.arg('anchor')) AS score
 FROM tweets t
@@ -108,7 +105,6 @@ WITH items AS (
 SELECT sqlc.embed(t),
   EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = sqlc.arg('viewer_id')) AS is_liked,
   EXISTS(SELECT 1 FROM retweets r WHERE r.tweet_id = t.id AND r.user_id = sqlc.arg('viewer_id')) AS is_retweeted,
-  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = sqlc.arg('viewer_id')) AS is_following,
   i.retweet_id, i.retweeted_by_id, i.retweeted_at
 FROM items i
 JOIN tweets t ON t.id = i.tweet_id
@@ -135,7 +131,6 @@ WITH items AS (
 SELECT sqlc.embed(t),
   EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = sqlc.narg('viewer_id')) AS is_liked,
   EXISTS(SELECT 1 FROM retweets r WHERE r.tweet_id = t.id AND r.user_id = sqlc.narg('viewer_id')) AS is_retweeted,
-  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = sqlc.narg('viewer_id')) AS is_following,
   i.retweet_id, i.retweeted_by_id, i.retweeted_at
 FROM items i
 JOIN tweets t ON t.id = i.tweet_id
@@ -148,7 +143,6 @@ LIMIT sqlc.arg('page_limit');
 SELECT sqlc.embed(t),
   EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = sqlc.narg('viewer_id')) AS is_liked,
   EXISTS(SELECT 1 FROM retweets r WHERE r.tweet_id = t.id AND r.user_id = sqlc.narg('viewer_id')) AS is_retweeted,
-  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = sqlc.narg('viewer_id')) AS is_following,
   NULL::bigint AS retweet_id, NULL::bigint AS retweeted_by_id, NULL::timestamptz AS retweeted_at
 FROM tweets t
 WHERE t.user_id = sqlc.arg('user_id')
@@ -162,7 +156,6 @@ LIMIT sqlc.arg('page_limit');
 SELECT sqlc.embed(t),
   EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = sqlc.narg('viewer_id')) AS is_liked,
   EXISTS(SELECT 1 FROM retweets r WHERE r.tweet_id = t.id AND r.user_id = sqlc.narg('viewer_id')) AS is_retweeted,
-  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = sqlc.narg('viewer_id')) AS is_following,
   NULL::bigint AS retweet_id, NULL::bigint AS retweeted_by_id, NULL::timestamptz AS retweeted_at
 FROM tweets t
 WHERE t.user_id = sqlc.arg('user_id')
@@ -177,7 +170,6 @@ LIMIT sqlc.arg('page_limit');
 SELECT sqlc.embed(t),
   EXISTS(SELECT 1 FROM tweet_likes tl2 WHERE tl2.tweet_id = t.id AND tl2.user_id = sqlc.narg('viewer_id')) AS is_liked,
   EXISTS(SELECT 1 FROM retweets r WHERE r.tweet_id = t.id AND r.user_id = sqlc.narg('viewer_id')) AS is_retweeted,
-  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = sqlc.narg('viewer_id')) AS is_following,
   NULL::bigint AS retweet_id, NULL::bigint AS retweeted_by_id, NULL::timestamptz AS retweeted_at,
   tl.created_at AS liked_at
 FROM tweet_likes tl
@@ -193,7 +185,6 @@ LIMIT sqlc.arg('page_limit');
 SELECT sqlc.embed(t),
   EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = sqlc.narg('viewer_id')) AS is_liked,
   EXISTS(SELECT 1 FROM retweets r WHERE r.tweet_id = t.id AND r.user_id = sqlc.narg('viewer_id')) AS is_retweeted,
-  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = sqlc.narg('viewer_id')) AS is_following,
   NULL::bigint AS retweet_id, NULL::bigint AS retweeted_by_id, NULL::timestamptz AS retweeted_at
 FROM tweets t
 WHERE t.parent_id = sqlc.arg('parent_id')
@@ -206,7 +197,6 @@ LIMIT sqlc.arg('page_limit');
 SELECT sqlc.embed(t),
   EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = sqlc.narg('viewer_id')) AS is_liked,
   EXISTS(SELECT 1 FROM retweets r WHERE r.tweet_id = t.id AND r.user_id = sqlc.narg('viewer_id')) AS is_retweeted,
-  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = sqlc.narg('viewer_id')) AS is_following,
   NULL::bigint AS retweet_id, NULL::bigint AS retweeted_by_id, NULL::timestamptz AS retweeted_at
 FROM tweets t
 JOIN tweet_hashtags th ON th.tweet_id = t.id
@@ -222,7 +212,6 @@ LIMIT sqlc.arg('page_limit');
 SELECT sqlc.embed(t),
   EXISTS(SELECT 1 FROM tweet_likes tl WHERE tl.tweet_id = t.id AND tl.user_id = sqlc.narg('viewer_id')) AS is_liked,
   EXISTS(SELECT 1 FROM retweets r WHERE r.tweet_id = t.id AND r.user_id = sqlc.narg('viewer_id')) AS is_retweeted,
-  EXISTS(SELECT 1 FROM follows f WHERE f.following_id = t.user_id AND f.follower_id = sqlc.narg('viewer_id')) AS is_following,
   NULL::bigint AS retweet_id, NULL::bigint AS retweeted_by_id, NULL::timestamptz AS retweeted_at
 FROM tweets t
 WHERE t.search_vector @@ to_tsquery('english', sqlc.arg('query'))

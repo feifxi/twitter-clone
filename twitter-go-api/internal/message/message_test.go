@@ -64,8 +64,8 @@ func TestService_SendMessageToUser(t *testing.T) {
 		}
 
 		pub := &recordingPublisher{}
-		uc := message.New(store, pub)
-		msg, err := uc.SendToUser(ctx, senderID, recipientID, content)
+		svc := message.New(store, pub)
+		msg, err := svc.SendToUser(ctx, senderID, recipientID, content)
 
 		require.NoError(t, err)
 		require.Equal(t, int64(100), msg.ID)
@@ -108,8 +108,8 @@ func TestService_SendMessageToUser(t *testing.T) {
 			},
 		}
 
-		uc := message.New(store, &recordingPublisher{})
-		msg, err := uc.SendToUser(ctx, senderID, recipientID, content)
+		svc := message.New(store, &recordingPublisher{})
+		msg, err := svc.SendToUser(ctx, senderID, recipientID, content)
 
 		require.NoError(t, err)
 		require.Equal(t, int64(20), msg.ConversationID)

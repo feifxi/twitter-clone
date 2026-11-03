@@ -23,8 +23,6 @@ const (
 	MediaVideo = "VIDEO"
 )
 
-const RoleUser = "USER"
-
 type User struct {
 	ID             int64
 	Username       string
@@ -35,14 +33,11 @@ type User struct {
 	Website        *string
 	AvatarURL      *string
 	BannerURL      *string
-	Role           string
-	Provider       string
 	FollowersCount int32
 	FollowingCount int32
 	// Onboarded is false until the user picks their own username (sign-up assigns a generated one).
 	Onboarded   bool
 	CreatedAt   time.Time
-	UpdatedAt   time.Time
 	IsFollowing bool
 }
 
@@ -57,11 +52,9 @@ type Tweet struct {
 	RetweetCount   int32
 	LikeCount      int32
 	CreatedAt      time.Time
-	UpdatedAt      time.Time
 	Author         User
 	IsLiked        bool
 	IsRetweeted    bool
-	IsFollowing    bool
 	ParentUsername *string
 }
 
@@ -127,13 +120,10 @@ func NewUser(u db.User, isFollowing bool) User {
 		Website:        u.Website,
 		AvatarURL:      u.AvatarURL,
 		BannerURL:      u.BannerURL,
-		Role:           u.Role,
-		Provider:       u.Provider,
 		FollowersCount: u.FollowersCount,
 		FollowingCount: u.FollowingCount,
 		Onboarded:      u.OnboardedAt != nil,
 		CreatedAt:      u.CreatedAt,
-		UpdatedAt:      u.UpdatedAt,
 		IsFollowing:    isFollowing,
 	}
 }
@@ -151,7 +141,6 @@ func NewTweet(t db.Tweet) Tweet {
 		RetweetCount: t.RetweetCount,
 		LikeCount:    t.LikeCount,
 		CreatedAt:    t.CreatedAt,
-		UpdatedAt:    t.UpdatedAt,
 	}
 }
 

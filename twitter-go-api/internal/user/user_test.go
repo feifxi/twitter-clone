@@ -48,7 +48,7 @@ func TestUpdateProfile_ClearingFields(t *testing.T) {
 
 	storage := &storagetest.Fake{}
 
-	uc := user.New(store, storage, nil)
+	svc := user.New(store, storage, nil)
 
 	empty := ""
 	input := user.UpdateProfileInput{
@@ -56,7 +56,7 @@ func TestUpdateProfile_ClearingFields(t *testing.T) {
 		BannerKey: &empty,
 	}
 
-	_, err := uc.UpdateProfile(ctx, 1, input)
+	_, err := svc.UpdateProfile(ctx, 1, input)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -71,14 +71,14 @@ func TestUpdateProfile_RejectsForeignKeys(t *testing.T) {
 			return db.GetUserRow{User: db.User{ID: arg.ID}}, nil
 		},
 	}
-	uc := user.New(store, &storagetest.Fake{}, nil)
+	svc := user.New(store, &storagetest.Fake{}, nil)
 
 	for _, input := range []user.UpdateProfileInput{
 		{AvatarKey: dbtest.Ptr("avatars/2/x.png")},
 		{AvatarKey: dbtest.Ptr("https://evil.example/pixel.png")},
 		{BannerKey: dbtest.Ptr("avatars/1/x.png")},
 	} {
-		_, err := uc.UpdateProfile(context.Background(), 1, input)
+		_, err := svc.UpdateProfile(context.Background(), 1, input)
 		if kind, ok := apperr.KindOf(err); !ok || kind != apperr.KindBadRequest {
 			t.Fatalf("expected bad request for %+v, got %v", input, err)
 		}
@@ -87,8 +87,8 @@ func TestUpdateProfile_RejectsForeignKeys(t *testing.T) {
 
 func TestFollowUser(t *testing.T) {
 	t.Run("cannot_follow_yourself", func(t *testing.T) {
-		uc := user.New(nil, nil, nil)
-		_, err := uc.Follow(context.Background(), 1, 1)
+		svc := user.New(nil, nil, nil)
+		_, err := svc.Follow(context.Background(), 1, 1)
 		if err == nil {
 			t.Fatal("expected error for self-follow")
 		}
@@ -104,8 +104,8 @@ func TestFollowUser(t *testing.T) {
 				return true, nil
 			},
 		}
-		uc := user.New(store, nil, noopNotifier{})
-		inserted, err := uc.Follow(ctx, 1, 2)
+		svc := user.New(store, nil, noopNotifier{})
+		inserted, err := svc.Follow(ctx, 1, 2)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -125,8 +125,8 @@ func TestUnfollowUser(t *testing.T) {
 			return true, nil
 		},
 	}
-	uc := user.New(store, nil, noopNotifier{})
-	err := uc.Unfollow(ctx, 1, 2)
+	svc := user.New(store, nil, noopNotifier{})
+	err := svc.Unfollow(ctx, 1, 2)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

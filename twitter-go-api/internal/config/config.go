@@ -1,5 +1,5 @@
 // Package config loads runtime settings from environment variables. Values are
-// injected by the environment (Docker, systemd, CI); app.env is only a local-dev
+// injected by the environment (Docker Compose, CI); app.env is only a local-dev
 // convenience and never overrides variables that are already set.
 package config
 

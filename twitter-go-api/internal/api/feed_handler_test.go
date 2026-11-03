@@ -14,7 +14,7 @@ import (
 	"github.com/chanombude/twitter-go-api/internal/pagination"
 )
 
-func TestGetGlobalFeed_UsecaseErrorPropagates(t *testing.T) {
+func TestGetGlobalFeed_ServiceErrorPropagates(t *testing.T) {
 	t.Parallel()
 
 	mock := &fakeFeeds{

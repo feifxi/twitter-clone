@@ -1,4 +1,4 @@
-// Package user manages profiles and the follow graph.
+// Package user manages profiles and the follow graph, and suggests accounts to follow.
 package user
 
 import (
@@ -65,10 +65,10 @@ func (s *Service) GetByUsername(ctx context.Context, username string, viewerID *
 
 // CompleteOnboarding sets the user's chosen username and display name.
 func (s *Service) CompleteOnboarding(ctx context.Context, userID int64, username, displayName string) (domain.User, error) {
-	if !ValidUsername(username) {
+	if !validUsername(username) {
 		return domain.User{}, apperr.BadRequest("username must be 3-20 letters, numbers or underscores")
 	}
-	if ReservedUsername(username) {
+	if isReservedUsername(username) {
 		return domain.User{}, apperr.Conflict("that username isn't available")
 	}
 	displayName = strings.TrimSpace(displayName)
@@ -279,8 +279,8 @@ func (s *Service) getUser(ctx context.Context, userID int64, viewerID *int64) (d
 
 var usernamePattern = regexp.MustCompile(`^[A-Za-z0-9_]{3,20}$`)
 
-// ValidUsername mirrors the users.username CHECK constraint.
-func ValidUsername(username string) bool {
+// validUsername mirrors the users.username CHECK constraint.
+func validUsername(username string) bool {
 	return usernamePattern.MatchString(username)
 }
 
@@ -293,7 +293,7 @@ var reservedUsernames = map[string]bool{
 	"settings": true, "support": true, "tweet": true,
 }
 
-// ReservedUsername reports whether a username is reserved (case-insensitively).
-func ReservedUsername(username string) bool {
+// isReservedUsername reports whether a username is reserved (case-insensitively).
+func isReservedUsername(username string) bool {
 	return reservedUsernames[strings.ToLower(username)]
 }

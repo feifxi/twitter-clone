@@ -2,7 +2,7 @@
 # npm scripts, infra/scripts), so running those directly works the same.
 .DEFAULT_GOAL := help
 SCRIPTS := scripts/*.sh compose/*.sh terraform/app/twitter-deploy
-.PHONY: help dev db monitoring stop api web check check-api check-web check-infra gen infra-up deploy infra-down
+.PHONY: help dev db db-reset monitoring stop api web check check-api check-web check-infra gen infra-up deploy infra-down
 
 help: ## List the targets
 	@grep -hE '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-12s %s\n", $$1, $$2}'
@@ -13,6 +13,10 @@ dev: db ## Start the local services, then the API and the web app together (Ctrl
 	@$(MAKE) -j2 api web
 
 db: ## Start Postgres, Redis and media storage (S3-compatible)
+	docker compose up -d
+
+db-reset: ## Delete the local data and start fresh (after editing the schema)
+	docker compose --profile observability down -v
 	docker compose up -d
 
 monitoring: ## Start the local services and the monitoring stack (Grafana :3001)

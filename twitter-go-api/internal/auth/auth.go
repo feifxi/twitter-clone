@@ -91,9 +91,6 @@ func (s *Service) LoginWithGoogle(ctx context.Context, idToken string) (Session,
 			Email:       email,
 			DisplayName: &name,
 			AvatarURL:   &picture,
-			BannerURL:   nil,
-			Role:        domain.RoleUser,
-			Provider:    "GOOGLE",
 		})
 		if err != nil {
 			return Session{}, err

@@ -15,7 +15,7 @@ func newTestRouter(t *testing.T) http.Handler {
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
-	return srv.Handler()
+	return srv.router
 }
 
 // Registering every route catches conflicts (e.g. static /users/me next to /users/:id) at test time, not at boot.

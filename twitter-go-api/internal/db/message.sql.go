@@ -184,7 +184,7 @@ const listUserConversations = `-- name: ListUserConversations :many
 SELECT
   c.id AS conversation_id,
   c.updated_at AS conversation_updated_at,
-  u.id, u.username, u.email, u.display_name, u.bio, u.location, u.website, u.avatar_url, u.banner_url, u.role, u.provider, u.followers_count, u.following_count, u.onboarded_at, u.created_at, u.updated_at,
+  u.id, u.username, u.email, u.display_name, u.bio, u.location, u.website, u.avatar_url, u.banner_url, u.followers_count, u.following_count, u.onboarded_at, u.created_at, u.updated_at,
   lm.id AS last_message_id,
   lm.sender_id AS last_sender_id,
   lm.content AS last_message_content,
@@ -250,8 +250,6 @@ func (q *Queries) ListUserConversations(ctx context.Context, arg ListUserConvers
 			&i.User.Website,
 			&i.User.AvatarURL,
 			&i.User.BannerURL,
-			&i.User.Role,
-			&i.User.Provider,
 			&i.User.FollowersCount,
 			&i.User.FollowingCount,
 			&i.User.OnboardedAt,

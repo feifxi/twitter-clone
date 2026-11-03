@@ -29,7 +29,6 @@ type MockStore struct {
 	DecrementReplyCountFn            func(p0 context.Context, p1 int64) error
 	DeleteExpiredRefreshTokensFn     func(p0 context.Context, p1 int64) error
 	DeleteRefreshTokenFn             func(p0 context.Context, p1 string) error
-	DeleteRefreshTokensByUserFn      func(p0 context.Context, p1 int64) error
 	DeleteRetweetFn                  func(p0 context.Context, p1 db.DeleteRetweetParams) (bool, error)
 	DeleteTweetByOwnerFn             func(p0 context.Context, p1 db.DeleteTweetByOwnerParams) (db.Tweet, error)
 	DeleteUnusedHashtagFn            func(p0 context.Context, p1 int64) error
@@ -208,13 +207,6 @@ func (m *MockStore) DeleteRefreshToken(p0 context.Context, p1 string) error {
 		return nil
 	}
 	return m.DeleteRefreshTokenFn(p0, p1)
-}
-
-func (m *MockStore) DeleteRefreshTokensByUser(p0 context.Context, p1 int64) error {
-	if m.DeleteRefreshTokensByUserFn == nil {
-		return nil
-	}
-	return m.DeleteRefreshTokensByUserFn(p0, p1)
 }
 
 func (m *MockStore) DeleteRetweet(p0 context.Context, p1 db.DeleteRetweetParams) (bool, error) {

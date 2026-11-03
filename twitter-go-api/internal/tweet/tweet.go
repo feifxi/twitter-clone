@@ -1,5 +1,6 @@
-// Package tweet handles posting, deleting and interacting with tweets, and
-// hydrates tweet rows into domain.Tweet for every feature that lists tweets.
+// Package tweet handles posting, deleting and interacting with tweets, ranks
+// trending hashtags, and hydrates tweet rows into domain.Tweet for every
+// feature that lists tweets.
 package tweet
 
 import (

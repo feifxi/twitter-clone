@@ -65,8 +65,8 @@ func TestService_LoginWithGoogle(t *testing.T) {
 			},
 		}
 
-		uc := auth.New(cfg, store, tm, gv)
-		res, err := uc.LoginWithGoogle(ctx, "id-token")
+		svc := auth.New(cfg, store, tm, gv)
+		res, err := svc.LoginWithGoogle(ctx, "id-token")
 
 		require.NoError(t, err)
 		require.Equal(t, userID, res.User.ID)
@@ -103,8 +103,8 @@ func TestService_LoginWithGoogle(t *testing.T) {
 			},
 		}
 
-		uc := auth.New(cfg, store, tm, gv)
-		res, err := uc.LoginWithGoogle(ctx, "id-token")
+		svc := auth.New(cfg, store, tm, gv)
+		res, err := svc.LoginWithGoogle(ctx, "id-token")
 
 		require.NoError(t, err)
 		require.Equal(t, userID, res.User.ID)
@@ -119,9 +119,9 @@ func TestService_LoginWithGoogle_RejectsUnverifiedEmail(t *testing.T) {
 			return &idtoken.Payload{Claims: map[string]interface{}{"email": "victim@example.com", "email_verified": false}}, nil
 		},
 	}
-	uc := auth.New(auth.Config{}, &dbtest.MockStore{}, &mockTokenMaker{}, gv)
+	svc := auth.New(auth.Config{}, &dbtest.MockStore{}, &mockTokenMaker{}, gv)
 
-	_, err := uc.LoginWithGoogle(context.Background(), "id-token")
+	_, err := svc.LoginWithGoogle(context.Background(), "id-token")
 
 	kind, ok := apperr.KindOf(err)
 	require.True(t, ok)
@@ -157,8 +157,8 @@ func TestService_RefreshSession(t *testing.T) {
 			},
 		}
 
-		uc := auth.New(cfg, store, tm, nil)
-		res, err := uc.Refresh(ctx, refreshToken)
+		svc := auth.New(cfg, store, tm, nil)
+		res, err := svc.Refresh(ctx, refreshToken)
 
 		require.NoError(t, err)
 		require.Equal(t, userID, res.User.ID)
@@ -175,8 +175,8 @@ func TestService_RefreshSession(t *testing.T) {
 			},
 		}
 
-		uc := auth.New(cfg, store, nil, nil)
-		_, err := uc.Refresh(ctx, refreshToken)
+		svc := auth.New(cfg, store, nil, nil)
+		_, err := svc.Refresh(ctx, refreshToken)
 
 		kind, _ := apperr.KindOf(err)
 		require.Equal(t, apperr.KindUnauthorized, kind)
@@ -201,29 +201,8 @@ func TestService_LogoutEndsOnlyThatSession(t *testing.T) {
 			deletedHash = hash
 			return nil
 		},
-		DeleteRefreshTokensByUserFn: func(ctx context.Context, id int64) error {
-			t.Fatal("logout must not end the user's other sessions")
-			return nil
-		},
 	}
 
 	require.NoError(t, auth.New(auth.Config{}, store, nil, nil).Logout(context.Background(), "some-token"))
 	require.Len(t, deletedHash, 64, "tokens are stored as SHA-256 hex, never in plain text")
-}
-
-func TestService_LoginKeepsOtherSessions(t *testing.T) {
-	store := &dbtest.MockStore{
-		GetUserByEmailFn: func(ctx context.Context, e string) (db.User, error) { return db.User{ID: 1, Email: e}, nil },
-		DeleteRefreshTokensByUserFn: func(ctx context.Context, id int64) error {
-			t.Fatal("signing in on one device must not sign out the others")
-			return nil
-		},
-	}
-	gv := &mockGoogleVerifier{validateFn: func(context.Context, string, string) (*idtoken.Payload, error) {
-		return &idtoken.Payload{Claims: map[string]interface{}{"email": "a@example.com", "email_verified": true}}, nil
-	}}
-	tm := &mockTokenMaker{createTokenFn: func(int64, time.Duration) (string, error) { return "access", nil }}
-
-	_, err := auth.New(auth.Config{RefreshTokenTTL: time.Hour}, store, tm, gv).LoginWithGoogle(context.Background(), "id-token")
-	require.NoError(t, err)
 }
