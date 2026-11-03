@@ -194,25 +194,22 @@ Photo/video uploads go to a local S3-compatible server (RustFS, started with the
 
 ## Validation Commands
 
-The same checks CI runs ([`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml)); `make check` runs them from the root:
+CI ([`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml)) runs one root `make` target per job, so locally it's the same commands (needs Docker, Terraform and Python):
 
 ```bash
-# Go API: integration tests need a throwaway Postgres (skipped without TEST_DATABASE_URL)
-docker run -d --name twitter-test-pg -p 55432:5432 -e POSTGRES_USER=test -e POSTGRES_PASSWORD=test \
-  -e POSTGRES_DB=twitter_test pgvector/pgvector:pg16
-cd twitter-go-api && go vet ./... && \
-  TEST_DATABASE_URL='postgres://test:test@localhost:55432/twitter_test?sslmode=disable' go test -race ./...
-
-# Web
-cd twitter-next-web && npm run lint && npx tsc --noEmit && npm test && npm run build
-
-# Terraform, against a mocked AWS provider (no AWS account)
-cd infra && terraform fmt -check -recursive && \
-  for d in terraform/bootstrap terraform/app; do terraform -chdir=$d init -backend=false && terraform -chdir=$d validate; done && \
-  terraform -chdir=terraform/app test
+make check-api     # generated code up to date, go vet, govulncheck, race tests
+make check-web     # lint, types, tests, production build
+make check-infra   # Terraform (mocked AWS), shellcheck, generated monitoring files, compose/Caddy/Prometheus/Alertmanager/Alloy configs
+make check         # all three
 ```
 
-CI also checks the shell scripts (`shellcheck`), the compose file, the Caddy, Prometheus, Alertmanager and Alloy configs, and that generated files (sqlc, test fakes, SLO rules, the dashboard) are up to date.
+The Go integration tests run only when `TEST_DATABASE_URL` points at a throwaway Postgres:
+
+```bash
+docker run -d --name twitter-test-pg -p 55432:5432 -e POSTGRES_USER=test -e POSTGRES_PASSWORD=test \
+  -e POSTGRES_DB=twitter_test pgvector/pgvector:pg16
+TEST_DATABASE_URL='postgres://test:test@localhost:55432/twitter_test?sslmode=disable' make check-api
+```
 
 ## Deploying to AWS
 

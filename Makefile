@@ -2,6 +2,7 @@
 # npm scripts, infra/scripts), so running those directly works the same.
 .DEFAULT_GOAL := help
 SCRIPTS := scripts/*.sh compose/*.sh terraform/app/twitter-deploy
+GENERATED := infra/observability/prometheus/rules/slo.yml infra/observability/grafana/dashboards/overview.json
 .PHONY: help dev db db-reset monitoring stop api web check check-api check-web check-infra gen infra-up deploy infra-down
 
 help: ## List the targets
@@ -31,16 +32,16 @@ api: ## Run the Go API on :8080
 web: ## Run the web app on :3000
 	cd twitter-next-web && npm run dev
 
-# Checks (CI runs these and validates the compose, Caddy and monitoring configs)
+# Checks: CI runs exactly these, one job per target (.github/workflows/ci-cd.yml)
 check: check-api check-web check-infra ## Run every check below
 
-check-api: ## go vet + race tests (integration tests need TEST_DATABASE_URL)
-	$(MAKE) -C twitter-go-api lint test
+check-api: ## Generated code, vet, vulnerabilities, race tests (integration tests need TEST_DATABASE_URL)
+	$(MAKE) -C twitter-go-api check
 
-check-web: ## lint, types, tests, build
+check-web: ## Lint, types, tests, production build
 	cd twitter-next-web && npm run lint && npx tsc --noEmit && npm test && npm run build
 
-check-infra: gen ## terraform fmt/validate/test, shellcheck
+check-infra: ## Terraform, shell scripts, generated monitoring files, compose and monitoring configs
 	terraform fmt -check -recursive infra/terraform
 	for dir in bootstrap app; do \
 		terraform -chdir=infra/terraform/$$dir init -backend=false -input=false >/dev/null && \
@@ -49,6 +50,23 @@ check-infra: gen ## terraform fmt/validate/test, shellcheck
 	terraform -chdir=infra/terraform/app test
 	cd infra && if command -v shellcheck >/dev/null; then shellcheck -x $(SCRIPTS); \
 		else docker run --rm -v "$$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.11.0 -x $(SCRIPTS); fi
+	@before=$$(cat $(GENERATED) | shasum); $(MAKE) -s gen >/dev/null; \
+	if [ "$$before" != "$$(cat $(GENERATED) | shasum)" ]; then \
+		echo "SLO rules or dashboard were out of date: regenerated them, commit the change"; exit 1; fi
+	@state=$$(mktemp -d) && touch "$$state/api.env" && \
+		STATE_DIR="$$state" DOMAIN=twitter.example.com POSTGRES_PASSWORD=ci GF_ADMIN_PASSWORD=ci \
+		docker compose -f infra/compose/compose.prod.yaml config --quiet; rc=$$?; rm -rf "$$state"; exit $$rc
+	@# Same image versions as production (infra/compose/compose.prod.yaml)
+	docker run --rm -e DOMAIN=twitter.example.com -v "$$PWD/infra/compose/caddy:/etc/caddy:ro" \
+		caddy:2.10-alpine caddy validate --config /etc/caddy/Caddyfile
+	for f in prometheus.prod.yml prometheus.yml; do \
+		docker run --rm --entrypoint promtool -v "$$PWD/infra/observability/prometheus:/etc/prometheus:ro" \
+			prom/prometheus:v3.5.0 check config /etc/prometheus/$$f || exit 1; \
+	done
+	docker run --rm --entrypoint amtool -v "$$PWD/infra/observability/alertmanager:/etc/alertmanager:ro" \
+		prom/alertmanager:v0.28.1 check-config /etc/alertmanager/alertmanager.yml
+	docker run --rm -v "$$PWD/infra/observability/alloy/config.alloy:/config.alloy:ro" \
+		grafana/alloy:v1.14.0 fmt /config.alloy >/dev/null
 
 gen: ## Regenerate the SLO rules and the Grafana dashboard
 	python3 infra/observability/prometheus/gen_slo_rules.py

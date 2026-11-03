@@ -50,7 +50,7 @@ cp .example.env .env.local   # then set NEXT_PUBLIC_GOOGLE_CLIENT_ID
 
 ## Quality Checks
 
-The same checks CI runs:
+The same checks CI runs (`make check-web` from the repo root):
 
 ```bash
 npm run lint && npx tsc --noEmit && npm test && npm run build

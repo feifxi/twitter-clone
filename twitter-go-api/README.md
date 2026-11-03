@@ -122,6 +122,7 @@ make sqlc   # regenerates the query code and dbtest.MockStore; CI fails if they'
 
 ```bash
 make test                      # unit tests (+ integration tests when TEST_DATABASE_URL is set)
+make check                     # what CI runs: generated code up to date, vet, govulncheck, tests
 ```
 
 Integration tests run the real SQL against Postgres and are skipped without `TEST_DATABASE_URL`. Use any throwaway database, for example:

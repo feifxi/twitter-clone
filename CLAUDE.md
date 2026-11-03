@@ -21,7 +21,7 @@ make db-reset                              # wipe local data and recreate (after
 make monitoring                            # + local monitoring (Grafana :3001, Prometheus :9090)
 make api                                   # API on :8080, migrations run at startup
 make web                                   # web on :3000
-make check                                 # check-api (vet + race tests), check-web, check-infra (terraform, shellcheck)
+make check                                 # what CI runs: check-api, check-web, check-infra (one CI job each)
 make gen                                   # after editing the SLO table or dashboard panels (CI checks they're up to date)
 make infra-up / deploy / infra-down        # AWS stack (the user runs these)
 

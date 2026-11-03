@@ -53,6 +53,8 @@ Terraform and Docker.
 5. **Continuous deployment (optional):** add the repository **variable** `AWS_DEPLOY_ROLE_ARN`
    (Settings → Secrets and variables → Actions → Variables) =
    `terraform -chdir=infra/terraform/bootstrap output -raw github_deploy_role_arn`. It isn't a secret.
+   The first deploy creates the `production` environment; under Settings → Environments →
+   production, limit **Deployment branches** to `main` so no other branch can use the role.
 
 ## Using it
 
@@ -86,8 +88,13 @@ After `up`:
 **CI/CD:** every push to `main` runs the checks, then the deploy job runs `deploy.sh --skip-if-down`
 on an arm64 runner. When the stack is down it does nothing, so CI stays green. The job trades
 GitHub's OIDC token for the bootstrap role, which can only push this project's images, upload its
-releases and run commands on its instance (no AWS keys in GitHub). Redeploy by hand: Actions →
-CI/CD → Run workflow.
+releases and run commands on its instance (no AWS keys in GitHub). Only jobs in the repository's
+`production` environment can assume it. Redeploy by hand: Actions → CI/CD → Run workflow.
+
+**The role trusts the repository's current name and numeric IDs** (`github_repo` and
+`github_repo_ids` in `terraform/bootstrap/github.tf`). After renaming or recreating the repository,
+update them (`curl -sL https://api.github.com/repos/<owner>/<name>` shows both IDs) and apply
+bootstrap again; until then deploys fail with `Not authorized to perform sts:AssumeRoleWithWebIdentity`.
 
 **Roll back:** `infra/scripts/deploy.sh <earlier-sha>` redeploys that release exactly as it was.
 
@@ -109,14 +116,13 @@ tail -f /var/log/cloud-init-output.log           # first-boot progress
 
 ## Checks
 
-CI runs these on every push (no AWS account needed):
+CI runs `make check-infra` on every push (no AWS account needed): `terraform fmt`, `validate` and
+`test` (plans the stack against a mocked AWS provider), shellcheck, the generated SLO rules and
+dashboard, and the compose, Caddy, Prometheus, Alertmanager and Alloy configs.
 
 ```bash
-cd infra
-terraform fmt -check -recursive
-terraform -chdir=terraform/app init -backend=false && terraform -chdir=terraform/app validate
-terraform -chdir=terraform/app test             # plans the stack against a mocked AWS provider
-terraform -chdir=terraform/app plan             # against your account (read-only)
+make check-infra                                      # from the repo root
+terraform -chdir=infra/terraform/app plan             # against your account (read-only)
 ```
 
 ## Security notes

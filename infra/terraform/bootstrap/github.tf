@@ -1,17 +1,28 @@
 # Continuous deployment from GitHub Actions without stored AWS keys: the workflow trades its
 # OIDC token for short-lived credentials of this role. It lives here, not in the app stack, so
 # it survives up/down cycles. Its permissions name resources by prefix for the same reason:
-# the app stack's resources don't exist while it is down.
+# the app stack's resources don't exist while it is down. Only jobs in the repository's
+# "production" environment can assume it.
 
 variable "github_repo" {
-  description = "owner/name of the repository allowed to deploy"
+  description = "owner/name of the repository allowed to deploy (its current name: tokens carry it)"
   type        = string
-  default     = "feifxi/twitter-monolith"
+  default     = "feifxi/twitter-clone"
 }
 
-variable "github_branch" {
-  type    = string
-  default = "main"
+# GitHub can sign tokens with an immutable subject that adds the owner and repo IDs
+# (repo:owner@ownerId/name@repoId:...), so a deleted-and-recreated repo with the same name can't
+# deploy. Look them up with: curl -sL https://api.github.com/repos/<owner>/<name>
+variable "github_repo_ids" {
+  description = "The repository's owner ID and repo ID, as in its OIDC subject"
+  type        = object({ owner = number, repo = number })
+  default     = { owner = 137422903, repo = 1152995898 }
+}
+
+variable "github_environment" {
+  description = "The GitHub environment the deploy job runs in"
+  type        = string
+  default     = "production"
 }
 
 variable "create_github_oidc_provider" {
@@ -49,14 +60,13 @@ data "aws_iam_policy_document" "github_trust" {
       variable = "token.actions.githubusercontent.com:aud"
       values   = ["sts.amazonaws.com"]
     }
-    # Only workflows on the deploy branch of this repository. GitHub signs either the classic
-    # subject or the immutable one that adds the owner and repo IDs (owner@id/name@id).
+    # Only jobs in the deploy environment of this repository, in either subject format
     condition {
-      test     = "StringLike"
+      test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
       values = [
-        "repo:${var.github_repo}:ref:refs/heads/${var.github_branch}",
-        "repo:${local.repo[0]}@*/${local.repo[1]}@*:ref:refs/heads/${var.github_branch}",
+        "repo:${var.github_repo}:environment:${var.github_environment}",
+        "repo:${local.repo[0]}@${var.github_repo_ids.owner}/${local.repo[1]}@${var.github_repo_ids.repo}:environment:${var.github_environment}",
       ]
     }
   }
