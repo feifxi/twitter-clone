@@ -100,7 +100,7 @@ Self-hosted next to the app, with the same configuration locally (`docker compos
 
 | Tool | Needed for |
 |---|---|
-| [Docker](https://www.docker.com/) | Local Postgres + Redis; building images |
+| [Docker](https://www.docker.com/) | Local Postgres, Redis and media storage; building images |
 | [Go](https://go.dev/dl/) 1.26+ | The Go API |
 | [Node.js](https://nodejs.org/) 22+ | The web app |
 | [Make](https://www.gnu.org/software/make/) | Shortcuts at the repo root (`make` lists them) and Go API tasks |
@@ -154,7 +154,7 @@ This project uses Google Gemini for the AI Assistant and tweet embeddings.
 
 `make dev` runs steps 1–3 in one terminal (once `app.env` and `.env.local` exist); the root `Makefile` also has a shortcut for each step (`make` lists them).
 
-### 1. Start Postgres + Redis
+### 1. Start Postgres, Redis and media storage
 
 ```bash
 docker compose up -d
@@ -185,7 +185,7 @@ npm run dev                  # http://localhost:3000
 docker compose --profile observability up -d   # Grafana http://localhost:3001, Prometheus :9090
 ```
 
-Photo/video uploads also need an S3 bucket (`S3_BUCKET_NAME` + AWS credentials); everything else works without AWS. The assistant needs `GEMINI_API_KEY`.
+Photo/video uploads go to a local S3-compatible server (RustFS, started with the database): the same presigned-upload flow as production, no AWS account needed. Browse uploaded files at http://localhost:9001/rustfs/console/ (`devaccess` / `devsecret123`). The assistant needs `GEMINI_API_KEY`.
 
 ## Contributing
 
@@ -237,6 +237,6 @@ make infra-down   # infra/scripts/down.sh: remove the stack
 ├── docs/assets/         # Screenshots used in this README
 ├── .github/workflows/   # CI/CD: tests, lint, infra checks, then deploy
 ├── .githooks/           # pre-commit: gofmt, terraform fmt, ESLint on staged files
-├── docker-compose.yml   # Local development (Postgres + pgvector, Redis, optional monitoring)
+├── docker-compose.yml   # Local development (Postgres + pgvector, Redis, media storage, optional monitoring)
 └── Makefile             # Shortcuts for the whole repo (`make` lists them)
 ```

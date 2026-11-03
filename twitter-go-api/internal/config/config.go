@@ -45,9 +45,11 @@ type Config struct {
 	S3Bucket         string `env:"S3_BUCKET_NAME"`
 	S3Region         string `env:"S3_REGION" envDefault:"ap-southeast-1"`
 	CloudFrontDomain string `env:"CLOUDFRONT_DOMAIN"`
-	MaxMediaBytes    int64  `env:"MAX_MEDIA_BYTES" envDefault:"104857600"` // 100 MiB
-	MaxAvatarBytes   int64  `env:"MAX_AVATAR_BYTES" envDefault:"5242880"`  // 5 MiB
-	MaxBannerBytes   int64  `env:"MAX_BANNER_BYTES" envDefault:"10485760"` // 10 MiB
+	// S3Endpoint points at an S3-compatible server instead of AWS (the local storage container).
+	S3Endpoint     string `env:"S3_ENDPOINT"`
+	MaxMediaBytes  int64  `env:"MAX_MEDIA_BYTES" envDefault:"104857600"` // 100 MiB
+	MaxAvatarBytes int64  `env:"MAX_AVATAR_BYTES" envDefault:"5242880"`  // 5 MiB
+	MaxBannerBytes int64  `env:"MAX_BANNER_BYTES" envDefault:"10485760"` // 10 MiB
 
 	GeminiAPIKey         string `env:"GEMINI_API_KEY"`
 	GeminiChatModel      string `env:"GEMINI_CHAT_MODEL" envDefault:"gemini-2.5-flash"`

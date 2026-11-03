@@ -8,14 +8,14 @@ help: ## List the targets
 	@grep -hE '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-12s %s\n", $$1, $$2}'
 
 # Local development
-dev: db ## Start Postgres + Redis, then the API and the web app together (Ctrl+C stops both)
+dev: db ## Start the local services, then the API and the web app together (Ctrl+C stops both)
 	@$(MAKE) -s -C twitter-go-api db-wait
 	@$(MAKE) -j2 api web
 
-db: ## Start Postgres + Redis
+db: ## Start Postgres, Redis and media storage (S3-compatible)
 	docker compose up -d
 
-monitoring: ## Start Postgres, Redis and the monitoring stack (Grafana :3001)
+monitoring: ## Start the local services and the monitoring stack (Grafana :3001)
 	docker compose --profile observability up -d
 
 stop: ## Stop every local container (data is kept)

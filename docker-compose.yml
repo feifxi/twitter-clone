@@ -1,5 +1,5 @@
 # Local development services. The API (make run) and the web app (npm run dev) run on the host.
-#   docker compose up -d                            Postgres + Redis
+#   docker compose up -d                            Postgres, Redis, S3-compatible media storage
 #   docker compose --profile observability up -d    + Prometheus, Alertmanager, Loki, Alloy, Grafana
 # The monitoring stack uses the same configs as production (infra/observability).
 services:
@@ -18,6 +18,44 @@ services:
     image: redis:7.2-alpine
     ports:
       - "6379:6379"
+
+  # Media uploads: an S3-compatible server (RustFS) standing in for the S3 bucket, so the
+  # presigned upload flow works offline. Files: http://localhost:9000/twitter-media/<key>;
+  # browse them at http://localhost:9001/rustfs/console/ (devaccess / devsecret123).
+  storage:
+    image: rustfs/rustfs:1.0.4
+    environment:
+      RUSTFS_ACCESS_KEY: devaccess
+      RUSTFS_SECRET_KEY: devsecret123
+    volumes:
+      - twitter_dev_media:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/health"]
+      interval: 2s
+      retries: 30
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+
+  # Creates the bucket like Terraform does in AWS: browser uploads from the web app, public reads
+  storage-init:
+    image: amazon/aws-cli:2.39.2
+    depends_on:
+      storage: { condition: service_healthy }
+    environment:
+      AWS_ACCESS_KEY_ID: devaccess
+      AWS_SECRET_ACCESS_KEY: devsecret123
+      AWS_REGION: us-east-1
+      AWS_ENDPOINT_URL: http://storage:9000
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        aws s3api head-bucket --bucket twitter-media 2>/dev/null || aws s3api create-bucket --bucket twitter-media
+        aws s3api put-bucket-cors --bucket twitter-media --cors-configuration \
+          '{"CORSRules":[{"AllowedOrigins":["http://localhost:3000"],"AllowedMethods":["PUT"],"AllowedHeaders":["*"],"MaxAgeSeconds":3600}]}'
+        aws s3api put-bucket-policy --bucket twitter-media --policy \
+          '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":"*","Action":"s3:GetObject","Resource":"arn:aws:s3:::twitter-media/*"}]}'
+        echo "bucket twitter-media ready"
 
   # ---------- Observability (opt-in; ports bound to localhost) ----------
   # Grafana http://localhost:3001 · Prometheus :9090 · Alertmanager :9093 · Alloy :12345
@@ -82,6 +120,7 @@ services:
 
 volumes:
   twitter_dev_postgres_data:
+  twitter_dev_media:
   prometheus-data:
   loki-data:
   grafana-data:

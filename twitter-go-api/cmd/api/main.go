@@ -151,7 +151,7 @@ func newServer(ctx context.Context, cfg config.Config, store db.Store, rdb *redi
 		return nil, fmt.Errorf("create token maker: %w", err)
 	}
 
-	s3, err := storage.NewS3(ctx, storage.Config{Bucket: cfg.S3Bucket, Region: cfg.S3Region, CDNDomain: cfg.CloudFrontDomain})
+	s3, err := storage.NewS3(ctx, storage.Config{Bucket: cfg.S3Bucket, Region: cfg.S3Region, CDNDomain: cfg.CloudFrontDomain, Endpoint: cfg.S3Endpoint})
 	if err != nil {
 		return nil, fmt.Errorf("create storage: %w", err)
 	}
