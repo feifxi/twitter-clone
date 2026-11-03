@@ -14,21 +14,19 @@ mainstream best practices, keep things simple, skip production hardening that do
 ## Commands
 
 ```bash
-docker compose up -d                       # Postgres (pgvector, pg16) + Redis for local dev
-docker compose --profile observability up -d   # + local monitoring (Grafana :3001, Prometheus :9090)
-cd twitter-go-api && make run              # API on :8080, migrations run at startup
-cd twitter-next-web && npm run dev         # web on :3000
+make                                       # list the root shortcuts below (they call the commands in each app)
+make db                                    # Postgres (pgvector, pg16) + Redis for local dev
+make monitoring                            # + local monitoring (Grafana :3001, Prometheus :9090)
+make api                                   # API on :8080, migrations run at startup
+make web                                   # web on :3000
+make check                                 # check-api (vet + race tests), check-web, check-infra (terraform, shellcheck)
+make gen                                   # after editing the SLO table or dashboard panels (CI checks they're up to date)
+make infra-up / deploy / infra-down        # AWS stack (the user runs these)
 
-# Go
+# In twitter-go-api/
 make test                                  # go test -race; integration tests need TEST_DATABASE_URL (see README)
 make sqlc                                  # after editing internal/db/queries or migrations: regenerates code + MockStore
 make swagger                               # after changing handler annotations or DTOs
-# Web
-npm run lint && npx tsc --noEmit && npm test && npm run build
-# Terraform (mocked AWS provider: no credentials needed)
-cd infra/terraform/app && terraform init -backend=false && terraform validate && terraform test
-# After editing the SLO table or dashboard panels: regenerate (CI checks they're up to date)
-python3 infra/observability/prometheus/gen_slo_rules.py && python3 infra/observability/grafana/gen_dashboard.py
 ```
 
 Enable the pre-commit hook once per clone: `git config core.hooksPath .githooks`.

@@ -103,7 +103,7 @@ Self-hosted next to the app, with the same configuration locally (`docker compos
 | [Docker](https://www.docker.com/) | Local Postgres + Redis; building images |
 | [Go](https://go.dev/dl/) 1.26+ | The Go API |
 | [Node.js](https://nodejs.org/) 22+ | The web app |
-| [Make](https://www.gnu.org/software/make/) | Go API tasks (`make run`, `make test`, `make sqlc`) |
+| [Make](https://www.gnu.org/software/make/) | Shortcuts at the repo root (`make` lists them) and Go API tasks |
 | [Google Cloud Console](https://console.cloud.google.com/) | A Google OAuth Client ID for sign-in |
 | [Google AI Studio](https://aistudio.google.com/) (optional) | A Gemini API key for the assistant |
 | [Terraform](https://developer.hashicorp.com/terraform/install) 1.10+ (optional) | Checking or provisioning the infrastructure |
@@ -152,6 +152,8 @@ This project uses Google Gemini for the AI Assistant and tweet embeddings.
 
 ## Local Development
 
+The root `Makefile` has a shortcut for each step (`make` lists them): `make db`, `make api`, `make web`, `make monitoring`, `make check`.
+
 ### 1. Start Postgres + Redis
 
 ```bash
@@ -192,7 +194,7 @@ Photo/video uploads also need an S3 bucket (`S3_BUCKET_NAME` + AWS credentials);
 
 ## Validation Commands
 
-The same checks CI runs ([`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml)):
+The same checks CI runs ([`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml)); `make check` runs them from the root:
 
 ```bash
 # Go API: integration tests need a throwaway Postgres (skipped without TEST_DATABASE_URL)
@@ -217,9 +219,9 @@ CI also checks the shell scripts (`shellcheck`), the compose file, the Caddy, Pr
 Everything is in [`infra/README.md`](infra/README.md): a one-time setup (bootstrap and DNS), then
 
 ```bash
-infra/scripts/up.sh       # create the stack and deploy (~5 min)
-infra/scripts/deploy.sh   # ship code changes (CI does this on every push to main)
-infra/scripts/down.sh     # remove the stack
+make infra-up     # infra/scripts/up.sh: create the stack and deploy (~5 min)
+make deploy       # infra/scripts/deploy.sh: ship code changes (CI does this on every push to main)
+make infra-down   # infra/scripts/down.sh: remove the stack
 ```
 
 ## Project Structure
@@ -235,5 +237,6 @@ infra/scripts/down.sh     # remove the stack
 ├── docs/assets/         # Screenshots used in this README
 ├── .github/workflows/   # CI/CD: tests, lint, infra checks, then deploy
 ├── .githooks/           # pre-commit: gofmt, terraform fmt, ESLint on staged files
-└── docker-compose.yml   # Local development (Postgres + pgvector, Redis, optional monitoring)
+├── docker-compose.yml   # Local development (Postgres + pgvector, Redis, optional monitoring)
+└── Makefile             # Shortcuts for the whole repo (`make` lists them)
 ```
