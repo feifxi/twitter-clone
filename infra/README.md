@@ -7,7 +7,7 @@ Everything that runs the app in AWS, as code. Local development only needs the r
 |---|---|
 | `terraform/bootstrap` | Created once, kept: Route 53 name servers and the GitHub Actions deploy role (free) |
 | `terraform/app` | The stack: VPC, EC2 host, ECR, S3 media + CloudFront, SSM config, DNS zone, alarms, budget |
-| `compose/` | What runs on the host: the compose file, Caddyfile and deploy script ([README](compose/README.md)) |
+| `compose/` | What runs on the host: the compose file, Caddyfile and rollout script ([README](compose/README.md)) |
 | `observability/` | Prometheus rules, Alertmanager, Loki, Alloy, the Grafana dashboard ([README](observability/README.md)) |
 | `scripts/` | `up.sh`, `deploy.sh`, `down.sh` |
 

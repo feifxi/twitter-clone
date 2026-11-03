@@ -1,5 +1,5 @@
 # The app stack: everything a running site needs, created by `infra/scripts/up.sh` and removed
-# by `down.sh`. Long-lived pieces (state bucket, DNS name servers, the GitHub deploy role) are
+# by `down.sh`. Long-lived pieces (DNS name servers, the GitHub deploy role) are
 # in ../bootstrap.
 
 locals {

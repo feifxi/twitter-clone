@@ -231,11 +231,10 @@ make infra-down   # infra/scripts/down.sh: remove the stack
 ├── twitter-go-api/      # Go backend
 ├── infra/               # AWS and monitoring as code (see infra/README.md)
 │   ├── terraform/       #   bootstrap/ (once: DNS name servers, GitHub deploy role), app/ (the stack)
-│   ├── compose/         #   what runs on the host: compose file, Caddyfile, deploy script
+│   ├── compose/         #   what runs on the host: compose file, Caddyfile, rollout script
 │   ├── observability/   #   Prometheus rules, Alertmanager, Loki, Alloy, Grafana dashboard
 │   └── scripts/         #   up.sh, deploy.sh, down.sh
-├── docs/assets/         # Screenshots used in this README
-├── .github/workflows/   # CI/CD: tests, lint, infra checks, then deploy
+├── .github/             # CI/CD workflow (tests, lint, infra checks, then deploy); README screenshot
 ├── .githooks/           # pre-commit: gofmt, terraform fmt, ESLint on staged files
 ├── compose.yaml         # Local development (Postgres + pgvector, Redis, media storage, optional monitoring)
 └── Makefile             # Shortcuts for the whole repo (`make` lists them)

@@ -47,7 +47,7 @@ ssm_run() { # <command> -> waits, prints the output, fails if the command failed
   [[ "$status" == "Success" ]]
 }
 
-if aws s3 ls "s3://$bucket/stack/$tag/compose/deploy.sh" >/dev/null 2>&1; then
+if aws s3 ls "s3://$bucket/stack/$tag/compose/rollout.sh" >/dev/null 2>&1; then
   echo "==> Release $tag was uploaded before: redeploying it as it was"
 else
   [[ "$tag" == "$(git rev-parse HEAD)"* ]] || {
