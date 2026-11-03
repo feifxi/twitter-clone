@@ -50,7 +50,35 @@ func TestService_List(t *testing.T) {
 	require.Nil(t, res.Next)
 	require.Equal(t, "actor", res.Items[0].Actor.Username)
 	require.Equal(t, domain.NotificationLike, res.Items[0].Type)
-	require.Equal(t, "tweet content", *res.Items[0].TweetContent)
+	require.Equal(t, "tweet content", *res.Items[0].Tweet.Content)
+	require.Nil(t, res.Items[0].OriginalTweet, "only replies carry the original post")
+}
+
+func TestService_ListReplyIncludesTheOriginalPostWithItsMedia(t *testing.T) {
+	original := db.Tweet{ID: 10, Content: dbtest.Ptr("hello"), MediaType: dbtest.Ptr("IMAGE"), MediaURL: dbtest.Ptr("https://cdn/tweets/1/a.png")}
+	reply := db.Tweet{ID: 11, Content: dbtest.Ptr("nice"), ParentID: &original.ID}
+	store := &dbtest.MockStore{
+		ListNotificationsFn: func(ctx context.Context, arg db.ListNotificationsParams) ([]db.Notification, error) {
+			return []db.Notification{{ID: 1, RecipientID: 1, ActorID: 2, Type: "REPLY", TweetID: &reply.ID}}, nil
+		},
+		GetTweetsByIDsFn: func(ctx context.Context, arg db.GetTweetsByIDsParams) ([]db.GetTweetsByIDsRow, error) {
+			byID := map[int64]db.Tweet{10: original, 11: reply}
+			var rows []db.GetTweetsByIDsRow
+			for _, id := range arg.TweetIds {
+				rows = append(rows, db.GetTweetsByIDsRow{Tweet: byID[id]})
+			}
+			return rows, nil
+		},
+	}
+
+	res, err := notification.New(store, &recordingPublisher{}).List(context.Background(), 1, pagination.Request{Limit: 10})
+
+	require.NoError(t, err)
+	item := res.Items[0]
+	require.Equal(t, int64(11), item.Tweet.ID)
+	require.Equal(t, int64(10), item.OriginalTweet.ID)
+	require.Equal(t, "IMAGE", *item.OriginalTweet.MediaType)
+	require.Equal(t, "https://cdn/tweets/1/a.png", *item.OriginalTweet.MediaURL)
 }
 
 func TestService_Counters(t *testing.T) {

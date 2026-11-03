@@ -79,8 +79,7 @@ func (s *Service) Dispatch(n db.Notification) {
 }
 
 type tweetPreview struct {
-	content  *string
-	mediaURL *string
+	domain.TweetPreview
 	parentID *int64
 }
 
@@ -117,17 +116,13 @@ func (s *Service) hydrate(ctx context.Context, rows []db.Notification) ([]domain
 			IsRead:      n.IsRead,
 			CreatedAt:   n.CreatedAt,
 			Actor:       actors[n.ActorID],
-			TweetID:     n.TweetID,
 		}
 		if n.TweetID != nil {
 			if p, ok := previews[*n.TweetID]; ok {
-				item.TweetContent = p.content
-				item.TweetMediaURL = p.mediaURL
+				item.Tweet = &p.TweetPreview
 				if item.Type == domain.NotificationReply && p.parentID != nil {
 					if parent, ok := previews[*p.parentID]; ok {
-						item.OriginalTweetID = p.parentID
-						item.OriginalTweetContent = parent.content
-						item.OriginalTweetMediaURL = parent.mediaURL
+						item.OriginalTweet = &parent.TweetPreview
 					}
 				}
 			}
@@ -158,7 +153,11 @@ func (s *Service) loadPreviews(ctx context.Context, tweetIDs []int64) (map[int64
 
 	add := func(rows []db.GetTweetsByIDsRow) {
 		for _, r := range rows {
-			previews[r.Tweet.ID] = tweetPreview{content: r.Tweet.Content, mediaURL: r.Tweet.MediaURL, parentID: r.Tweet.ParentID}
+			t := r.Tweet
+			previews[t.ID] = tweetPreview{
+				TweetPreview: domain.TweetPreview{ID: t.ID, Content: t.Content, MediaType: t.MediaType, MediaURL: t.MediaURL},
+				parentID:     t.ParentID,
+			}
 		}
 	}
 

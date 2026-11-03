@@ -80,18 +80,24 @@ type Hashtag struct {
 }
 
 type Notification struct {
-	ID                    int64
-	RecipientID           int64
-	Type                  NotificationType
-	IsRead                bool
-	CreatedAt             time.Time
-	Actor                 User
-	TweetID               *int64
-	TweetContent          *string
-	TweetMediaURL         *string
-	OriginalTweetID       *int64
-	OriginalTweetContent  *string
-	OriginalTweetMediaURL *string
+	ID          int64
+	RecipientID int64
+	Type        NotificationType
+	IsRead      bool
+	CreatedAt   time.Time
+	Actor       User
+	// Tweet is the post the notification is about (nil for follows). For a reply,
+	// it's the reply and OriginalTweet is the post that was replied to.
+	Tweet         *TweetPreview
+	OriginalTweet *TweetPreview
+}
+
+// TweetPreview is what a notification shows of a post.
+type TweetPreview struct {
+	ID        int64
+	Content   *string
+	MediaType *string
+	MediaURL  *string
 }
 
 type Message struct {

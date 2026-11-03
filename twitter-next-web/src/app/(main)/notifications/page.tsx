@@ -14,7 +14,7 @@ import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { useMarkAllRead, useNotifications } from '@/hooks/useNotifications';
 import { displayNameOf, formatRelativeTime } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import type { NotificationResponse, NotificationType } from '@/types';
+import type { NotificationResponse, NotificationType, TweetPreviewResponse } from '@/types';
 
 const KINDS: Record<NotificationType, { icon: typeof Heart; color: string; text: string }> = {
   LIKE: { icon: Heart, color: 'text-like', text: 'liked your post' },
@@ -25,17 +25,24 @@ const KINDS: Record<NotificationType, { icon: typeof Heart; color: string; text:
 
 const stop = (e: React.MouseEvent) => e.stopPropagation();
 
-function MediaThumb({ src }: { src: string }) {
-  // eslint-disable-next-line @next/next/no-img-element
-  return <img src={src} alt="" loading="lazy" className="mt-2 max-h-[200px] rounded-2xl border border-border object-cover" />;
+/** A still preview of a post's media; the post itself is one click away. */
+function MediaThumb({ tweet, className }: { tweet: TweetPreviewResponse; className?: string }) {
+  if (!tweet.mediaUrl) return null;
+  const thumb = cn('mt-2 max-h-[200px] rounded-2xl border border-border object-cover', className);
+  return tweet.mediaType === 'VIDEO' ? (
+    <video src={tweet.mediaUrl} muted playsInline preload="metadata" className={thumb} />
+  ) : (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={tweet.mediaUrl} alt="" loading="lazy" className={thumb} />
+  );
 }
 
 /** A reply reads like a tweet; likes, reposts and follows are an icon row plus the post they're about. */
 function NotificationItem({ notification, myUsername }: { notification: NotificationResponse; myUsername?: string }) {
   const router = useRouter();
-  const { actor, type, tweetId, tweetContent, tweetMediaUrl } = notification;
+  const { actor, type, tweet, originalTweet } = notification;
   const kind = KINDS[type];
-  const href = type === 'FOLLOW' || !tweetId ? `/${actor.username}` : `/tweet/${tweetId}`;
+  const href = type === 'FOLLOW' || !tweet ? `/${actor.username}` : `/tweet/${tweet.id}`;
   const Icon = kind.icon;
 
   return (
@@ -65,15 +72,16 @@ function NotificationItem({ notification, myUsername }: { notification: Notifica
             <p className="text-[15px] text-muted-foreground">
               Replying to <span className="text-primary">@{myUsername}</span>
             </p>
-            {tweetContent && <TweetBody content={tweetContent} className="mt-1 whitespace-pre-wrap break-words text-[15px] leading-5" />}
-            {tweetMediaUrl && <MediaThumb src={tweetMediaUrl} />}
-            {notification.originalTweetContent && (
+            {tweet?.content && <TweetBody content={tweet.content} className="mt-1 whitespace-pre-wrap break-words text-[15px] leading-5" />}
+            {tweet && <MediaThumb tweet={tweet} />}
+            {originalTweet && (
               <Link
-                href={`/tweet/${notification.originalTweetId}`}
+                href={`/tweet/${originalTweet.id}`}
                 onClick={stop}
                 className="mt-3 block rounded-2xl border border-border p-3 text-[15px] text-muted-foreground hover:bg-foreground/[0.03]"
               >
-                <span className="line-clamp-3 whitespace-pre-wrap">{notification.originalTweetContent}</span>
+                {originalTweet.content && <span className="line-clamp-3 whitespace-pre-wrap">{originalTweet.content}</span>}
+                <MediaThumb tweet={originalTweet} className={cn('max-h-[120px]', !originalTweet.content && 'mt-0')} />
               </Link>
             )}
           </div>
@@ -95,8 +103,8 @@ function NotificationItem({ notification, myUsername }: { notification: Notifica
                 {formatRelativeTime(notification.createdAt)}
               </time>
             </p>
-            {tweetContent && <p className="mt-2 line-clamp-4 whitespace-pre-wrap break-words text-[15px] text-muted-foreground">{tweetContent}</p>}
-            {tweetMediaUrl && <MediaThumb src={tweetMediaUrl} />}
+            {tweet?.content && <p className="mt-2 line-clamp-4 whitespace-pre-wrap break-words text-[15px] text-muted-foreground">{tweet.content}</p>}
+            {tweet && <MediaThumb tweet={tweet} />}
           </div>
         </>
       )}

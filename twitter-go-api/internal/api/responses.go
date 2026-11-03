@@ -135,18 +135,30 @@ func newHashtagResponse(tag domain.Hashtag) HashtagResponse {
 	}
 }
 
+// NotificationResponse: tweet is the post it's about (null for follows); for a reply,
+// tweet is the reply and originalTweet the post that was replied to (null otherwise).
 type NotificationResponse struct {
-	ID                    int64        `json:"id"`
-	Actor                 UserResponse `json:"actor"`
-	TweetID               *int64       `json:"tweetId"`
-	TweetContent          *string      `json:"tweetContent"`
-	TweetMediaURL         *string      `json:"tweetMediaUrl"`
-	OriginalTweetID       *int64       `json:"originalTweetId,omitempty"`
-	OriginalTweetContent  *string      `json:"originalTweetContent,omitempty"`
-	OriginalTweetMediaURL *string      `json:"originalTweetMediaUrl,omitempty"`
-	Type                  string       `json:"type"`
-	IsRead                bool         `json:"isRead"`
-	CreatedAt             time.Time    `json:"createdAt"`
+	ID            int64                 `json:"id"`
+	Type          string                `json:"type"`
+	Actor         UserResponse          `json:"actor"`
+	Tweet         *TweetPreviewResponse `json:"tweet"`
+	OriginalTweet *TweetPreviewResponse `json:"originalTweet"`
+	IsRead        bool                  `json:"isRead"`
+	CreatedAt     time.Time             `json:"createdAt"`
+}
+
+type TweetPreviewResponse struct {
+	ID        int64   `json:"id"`
+	Content   *string `json:"content"`
+	MediaType *string `json:"mediaType"`
+	MediaURL  *string `json:"mediaUrl"`
+}
+
+func newTweetPreviewResponse(p *domain.TweetPreview) *TweetPreviewResponse {
+	if p == nil {
+		return nil
+	}
+	return &TweetPreviewResponse{ID: p.ID, Content: p.Content, MediaType: p.MediaType, MediaURL: p.MediaURL}
 }
 
 type MessageResponse struct {
@@ -166,17 +178,13 @@ type ConversationResponse struct {
 
 func newNotificationResponse(item domain.Notification) NotificationResponse {
 	return NotificationResponse{
-		ID:                    item.ID,
-		Actor:                 newUserResponse(item.Actor),
-		TweetID:               item.TweetID,
-		TweetContent:          item.TweetContent,
-		TweetMediaURL:         item.TweetMediaURL,
-		OriginalTweetID:       item.OriginalTweetID,
-		OriginalTweetContent:  item.OriginalTweetContent,
-		OriginalTweetMediaURL: item.OriginalTweetMediaURL,
-		Type:                  string(item.Type),
-		IsRead:                item.IsRead,
-		CreatedAt:             item.CreatedAt,
+		ID:            item.ID,
+		Type:          string(item.Type),
+		Actor:         newUserResponse(item.Actor),
+		Tweet:         newTweetPreviewResponse(item.Tweet),
+		OriginalTweet: newTweetPreviewResponse(item.OriginalTweet),
+		IsRead:        item.IsRead,
+		CreatedAt:     item.CreatedAt,
 	}
 }
 
