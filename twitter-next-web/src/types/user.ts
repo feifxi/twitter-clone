@@ -1,5 +1,3 @@
-export type Role = 'USER' | 'ADMIN';
-
 export interface UserResponse {
     id: number;
     username: string;
@@ -20,9 +18,4 @@ export interface CurrentUserResponse extends UserResponse {
     email: string;
     /** False until the user has picked their own username. */
     onboarded: boolean;
-}
-
-export interface UpdateProfileRequest {
-    displayName?: string;
-    bio?: string;
 }

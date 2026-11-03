@@ -47,7 +47,7 @@ function MessagesContent() {
   const chatOpen = !!(conversationId || newPeerId);
 
   return (
-    <div className="flex h-screen">
+    <div className="flex h-[calc(100dvh-60px)] sm:h-dvh">
       <div className={cn('w-full shrink-0 flex-col border-r border-border md:flex md:w-[320px] lg:w-[380px]', chatOpen ? 'hidden' : 'flex')}>
         <ConversationList activeId={conversationId} onOpen={(id) => go(`c=${id}`)} onNewMessage={() => setComposing(true)} />
       </div>
@@ -97,9 +97,11 @@ export default function MessagesPage() {
     return (
       <div className="px-4">
         <EmptyState title="Welcome to your inbox!" body="Sign in to send private messages to people on Chanom Twitter." />
-        <button type="button" onClick={openSignInModal} className="mx-8 cursor-pointer rounded-full bg-primary px-6 py-3 text-[15px] font-bold text-primary-foreground hover:opacity-90">
-          Sign in
-        </button>
+        <div className="mx-auto max-w-[400px] px-8">
+          <button type="button" onClick={openSignInModal} className="cursor-pointer rounded-full bg-primary px-6 py-3 text-[15px] font-bold text-primary-foreground hover:opacity-90">
+            Sign in
+          </button>
+        </div>
       </div>
     );
   }

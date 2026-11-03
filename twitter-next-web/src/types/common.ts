@@ -19,8 +19,3 @@ export interface PageResponse<T> {
     /** Opaque; pass back as ?cursor=. null on the last page. */
     nextCursor: string | null;
 }
-
-export interface ApiResponse {
-    success: boolean;
-    message: string;
-}
