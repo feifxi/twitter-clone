@@ -1,0 +1,49 @@
+#cloud-config
+# First boot only: swap, Docker + Compose, log rotation and the deploy launcher. Everything
+# that changes between releases (infra/compose, infra/observability) ships with each deploy.
+# No secrets here (user data is readable through the EC2 API): deploys read them from SSM.
+package_update: true
+packages:
+  - docker
+
+write_files:
+  # Rotate container logs (every service, including ones added later)
+  - path: /etc/docker/daemon.json
+    content: |
+      { "log-driver": "json-file", "log-opts": { "max-size": "10m", "max-file": "3" } }
+  - path: /usr/local/bin/twitter-deploy
+    encoding: b64
+    permissions: "0755"
+    content: ${twitter_deploy}
+  - path: /opt/twitter/deploy.env
+    content: |
+      PROJECT=${project}
+      REGION=${region}
+      DEPLOY_BUCKET=${deploy_bucket}
+      REGISTRY=${registry}
+      DOMAIN=${domain}
+      API_SSM_PATH=${api_ssm_path}
+      STACK_SSM_PATH=${stack_ssm_path}
+  - path: /opt/twitter/first-boot.sh
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      # 2 GB swap: a safety net against out-of-memory kills
+      fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+      echo '/swapfile none swap sw 0 0' >> /etc/fstab
+
+      systemctl enable --now docker
+
+      # Docker Compose plugin, checked against the checksum pinned in Terraform
+      curl -fsSL -o /tmp/docker-compose \
+        "https://github.com/docker/compose/releases/download/${compose_version}/docker-compose-linux-aarch64"
+      echo "${compose_sha256}  /tmp/docker-compose" | sha256sum -c -
+      install -D -m 0755 /tmp/docker-compose /usr/local/lib/docker/cli-plugins/docker-compose
+
+      # infra/scripts/deploy.sh waits for this before the first deploy
+      touch /opt/twitter/ready
+
+runcmd:
+  - /opt/twitter/first-boot.sh

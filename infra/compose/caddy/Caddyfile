@@ -1,0 +1,54 @@
+# TLS and routing for the whole site. DOMAIN is e.g. twitter.chanombude.me, or "localhost" to try
+# the stack on this machine (Caddy then uses its own local certificates). Certificates are
+# automatic: Let's Encrypt, falling back to ZeroSSL.
+{
+	# Request metrics (caddy_http_*) for Prometheus, served on :9180 below
+	metrics {
+		per_host
+	}
+}
+
+{$DOMAIN} {
+	log # JSON access log to stdout → Loki
+
+	header Strict-Transport-Security "max-age=63072000"
+
+	# Prometheus scrapes the API inside the compose network; not public
+	@metrics path /metrics
+	respond @metrics 404
+
+	# Server-sent events (notifications/DMs, assistant replies): no compression, so each event
+	# is passed through as it is written. Caddy flushes event streams immediately.
+	@streams path /api/v1/events /api/v1/assistant
+	handle @streams {
+		reverse_proxy api:8080 {
+			header_up X-Request-ID {http.request.uuid}
+		}
+	}
+
+	@api path /api/* /healthz /readyz
+	handle @api {
+		encode zstd gzip
+		# Same ID in Caddy's and the API's logs. Caddy sets X-Forwarded-For itself and ignores
+		# a client's (no trusted proxies), so the API's rate limits see the real IP.
+		reverse_proxy api:8080 {
+			header_up X-Request-ID {http.request.uuid}
+		}
+	}
+
+	handle {
+		encode zstd gzip
+		reverse_proxy web:3000
+	}
+}
+
+grafana.{$DOMAIN} {
+	log
+	encode zstd gzip
+	reverse_proxy grafana:3000
+}
+
+# Internal only (the port isn't published): Prometheus scrapes it on the compose network
+:9180 {
+	metrics
+}

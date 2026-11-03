@@ -1,0 +1,151 @@
+name: CI/CD
+
+# Docs-only changes skip CI/CD: nothing to test or deploy. A push that also touches code still runs.
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md", "docs/**"]
+  pull_request:
+    paths-ignore: ["**.md", "docs/**"]
+  workflow_dispatch: # run by hand, e.g. to deploy right after infra/scripts/up.sh
+
+# A newer push to a PR cancels the old run; on main it waits, so a deploy is never cut off halfway
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  go-api:
+    name: Go API
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: twitter-go-api
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: twitter_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U test -d twitter_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://test:test@localhost:5432/twitter_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          # Latest 1.26 patch (go.mod's "go 1.26.0" is a minimum, not the toolchain to test with)
+          go-version: "1.26"
+          check-latest: true
+          cache-dependency-path: twitter-go-api/go.sum
+      - name: Check sqlc output is up to date
+        uses: sqlc-dev/setup-sqlc@v4
+        with:
+          sqlc-version: "1.30.0"
+      - run: sqlc diff
+      - name: Check generated test fakes are up to date
+        run: go generate ./internal/db/... && git diff --exit-code
+      - run: go vet ./...
+      - name: Known vulnerabilities in reachable code
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+      - name: Unit + integration tests (against the Postgres service)
+        run: go test -race -count=1 ./...
+
+  web:
+    name: Next.js web
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: twitter-next-web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: twitter-next-web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npx tsc --noEmit
+      - run: npm test
+      - run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+          NEXT_PUBLIC_API_URL: http://localhost:8080/api/v1
+          NEXT_PUBLIC_GOOGLE_CLIENT_ID: ci-placeholder
+
+  infra:
+    name: Infra (Terraform, stack, monitoring)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.14.6"
+      - name: Terraform (mocked AWS provider, no credentials)
+        run: |
+          terraform fmt -check -recursive
+          for dir in terraform/bootstrap terraform/app; do
+            terraform -chdir="$dir" init -backend=false -input=false
+            terraform -chdir="$dir" validate
+          done
+          terraform -chdir=terraform/app test
+      - name: Shell scripts
+        run: shellcheck -x scripts/*.sh compose/*.sh terraform/app/twitter-deploy
+      - name: Generated SLO rules and dashboard are up to date
+        run: |
+          python3 observability/prometheus/gen_slo_rules.py
+          python3 observability/grafana/gen_dashboard.py
+          git diff --exit-code
+      - name: Compose file
+        run: |
+          mkdir -p "$STATE_DIR" && touch "$STATE_DIR/api.env"
+          docker compose -f compose/compose.prod.yaml config --quiet
+        env:
+          STATE_DIR: ${{ runner.temp }}/state
+          DOMAIN: twitter.example.com
+          POSTGRES_PASSWORD: ci
+          GF_ADMIN_PASSWORD: ci
+      - name: Caddy, Prometheus, Alertmanager and Alloy configs
+        run: |
+          docker run --rm -e DOMAIN=twitter.example.com -v "$PWD/compose/caddy:/etc/caddy:ro" \
+            caddy:2.10-alpine caddy validate --config /etc/caddy/Caddyfile
+          docker run --rm --entrypoint promtool -v "$PWD/observability/prometheus:/etc/prometheus:ro" prom/prometheus:v3.5.0 \
+            check config /etc/prometheus/prometheus.prod.yml
+          docker run --rm --entrypoint promtool -v "$PWD/observability/prometheus:/etc/prometheus:ro" prom/prometheus:v3.5.0 \
+            check config /etc/prometheus/prometheus.yml
+          docker run --rm --entrypoint amtool -v "$PWD/observability/alertmanager:/etc/alertmanager:ro" prom/alertmanager:v0.28.1 \
+            check-config /etc/alertmanager/alertmanager.yml
+          docker run --rm -v "$PWD/observability/alloy/config.alloy:/config.alloy:ro" grafana/alloy:v1.14.0 fmt /config.alloy > /dev/null
+
+  # Continuous deployment: once every check passes on main, ship to the stack if it's up.
+  # No AWS keys here: the job trades GitHub's OIDC token for the bootstrap deploy role. Turn it on
+  # by setting the repository variable AWS_DEPLOY_ROLE_ARN (see infra/README.md).
+  deploy:
+    needs: [go-api, web, infra]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.AWS_DEPLOY_ROLE_ARN != ''
+    runs-on: ubuntu-24.04-arm # native arm64, like the server: no emulation
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ap-southeast-1
+      # Builds and pushes the images, uploads the stack files, deploys over SSM and checks the
+      # site. Exits successfully without doing anything when the stack is down.
+      - run: bash infra/scripts/deploy.sh --skip-if-down
+        env:
+          TAG: ${{ github.sha }}

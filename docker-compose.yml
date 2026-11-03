@@ -1,7 +1,9 @@
+# Local development services. The API (make run) and the web app (npm run dev) run on the host.
+#   docker compose up -d                            Postgres + Redis
+#   docker compose --profile observability up -d    + Prometheus, Alertmanager, Loki, Alloy, Grafana
+# The monitoring stack uses the same configs as production (infra/observability).
 services:
-  # Postgres Database
   database:
-    container_name: twitter-dev-postgres-db
     image: pgvector/pgvector:pg16
     ports:
       - "5432:5432"
@@ -11,19 +13,75 @@ services:
       POSTGRES_DB: twitter_db
       POSTGRES_USER: root
       POSTGRES_PASSWORD: rootpass
-    networks:
-      - twitter_dev_network
 
   redis:
-    container_name: twitter-dev-redis
     image: redis:7.2-alpine
     ports:
       - "6379:6379"
-    networks:
-      - twitter_dev_network
 
-networks:
-  twitter_dev_network:
+  # ---------- Observability (opt-in; ports bound to localhost) ----------
+  # Grafana http://localhost:3001 · Prometheus :9090 · Alertmanager :9093 · Alloy :12345
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    profiles: [observability]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --web.enable-lifecycle # curl -X POST localhost:9090/-/reload after editing rules
+    volumes:
+      - ./infra/observability/prometheus:/etc/prometheus:ro
+      - prometheus-data:/prometheus
+    extra_hosts:
+      - "host.docker.internal:host-gateway" # the API runs on the host
+    ports:
+      - "127.0.0.1:9090:9090"
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    profiles: [observability]
+    volumes:
+      - ./infra/observability/alertmanager:/etc/alertmanager:ro
+      - ./infra/observability/alertmanager/secrets:/etc/alertmanager-secrets:ro # discord_webhook_url (git-ignored)
+    ports:
+      - "127.0.0.1:9093:9093"
+
+  loki:
+    image: grafana/loki:3.5.0
+    profiles: [observability]
+    command: -config.file=/etc/loki/loki.yml
+    volumes:
+      - ./infra/observability/loki:/etc/loki:ro
+      - loki-data:/loki
+
+  alloy:
+    image: grafana/alloy:v1.14.0
+    profiles: [observability]
+    command: run --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
+    volumes:
+      - ./infra/observability/alloy:/etc/alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro # container logs
+    depends_on: [loki]
+    ports:
+      - "127.0.0.1:12345:12345"
+
+  grafana:
+    image: grafana/grafana:12.1.0
+    profiles: [observability]
+    environment:
+      # Local only: no login, you're an admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/overview.json
+    volumes:
+      - ./infra/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on: [prometheus, loki]
+    ports:
+      - "127.0.0.1:3001:3000"
 
 volumes:
   twitter_dev_postgres_data:
+  prometheus-data:
+  loki-data:
+  grafana-data:

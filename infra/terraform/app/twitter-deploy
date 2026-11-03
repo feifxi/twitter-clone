@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# twitter-deploy <commit-sha>: fetches that release's stack files (uploaded by
+# infra/scripts/deploy.sh to s3://<bucket>/stack/<sha>/) and runs its deploy.sh.
+#
+# Installed once by cloud-init and kept deliberately small: everything that changes between
+# releases lives in the stack files, so changing them is a normal deploy, not a new instance.
+set -euo pipefail
+
+APP_DIR=/opt/twitter
+# shellcheck source=/dev/null # PROJECT, REGION, DEPLOY_BUCKET, ... (written by cloud-init)
+source "$APP_DIR/deploy.env"
+tag=${1:?usage: twitter-deploy <commit-sha>}
+
+# One deploy at a time. A rollback started by a failing deploy already holds the lock.
+if [[ -z "${TWITTER_DEPLOY_LOCKED:-}" ]]; then
+  exec 9>"$APP_DIR/deploy.lock"
+  flock --wait 900 9 || { echo "Another deploy is still running" >&2; exit 1; }
+  export TWITTER_DEPLOY_LOCKED=1
+fi
+
+if ! aws s3 ls --region "$REGION" "s3://$DEPLOY_BUCKET/stack/$tag/compose/deploy.sh" >/dev/null; then
+  echo "No stack uploaded for $tag (s3://$DEPLOY_BUCKET/stack/$tag/)" >&2
+  exit 1
+fi
+# Synced in place (not swapped for a new folder): the containers mount config folders from
+# here, and a mount keeps pointing at the folder it started with.
+aws s3 sync --region "$REGION" --delete --only-show-errors "s3://$DEPLOY_BUCKET/stack/$tag/" "$APP_DIR/stack/"
+chmod +x "$APP_DIR"/stack/compose/*.sh
+
+TWITTER_DEPLOY=$(realpath "$0")
+export TWITTER_DEPLOY
+exec "$APP_DIR/stack/compose/deploy.sh" "$tag"

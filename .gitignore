@@ -10,10 +10,9 @@
 # Terraform (.terraform.lock.hcl IS committed: it pins provider versions)
 **/.terraform/
 *.tfstate
-*.tfstate.backup
+*.tfstate.*
 **/*.tfvars
 **/*.tfvars.json
-infra/terraform/backend.hcl
 
 # Go
 twitter-go-api/twitter-go-api

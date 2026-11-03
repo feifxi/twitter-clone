@@ -134,7 +134,7 @@ TEST_DATABASE_URL='postgres://test:test@localhost:55432/twitter_test?sslmode=dis
 
 ## Production Operations
 
-The API runs on EC2 behind nginx, which terminates TLS; port 8080 is never published. See the root README for the AWS setup.
+The API runs on EC2 behind Caddy, which terminates TLS; port 8080 is never published. See [`infra/README.md`](../infra/README.md) for the AWS setup.
 - Liveness: `GET /healthz` (process up). Readiness: `GET /readyz` (database, and Redis when configured); the container health check runs `api healthcheck`, which calls it.
-- Health endpoints have no rate limit; `/metrics` is only reachable on the Docker network (nginx returns 404 for it).
+- Health endpoints have no rate limit; `/metrics` is only reachable on the Docker network (Caddy returns 404 for it).
 - Every response carries `X-Request-ID`; error bodies include `requestId` and every log line for that request carries `request_id`.

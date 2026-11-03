@@ -1,0 +1,174 @@
+# The whole production stack on one host. On AWS, deploy.sh (next to this file) runs it with
+# the env files it renders from SSM. To try it on this machine, see infra/compose/README.md.
+#
+# Public ports: 80/443 (Caddy) only. Paths are relative to this folder (../observability is
+# infra/observability). Config is mounted as folders, not single files: a deploy replaces each
+# file, and a single-file mount would keep showing the old one (reload-configs.sh reloads them).
+name: twitter
+
+services:
+  # HTTPS (automatic certificates) and routing: /api → the Go API, everything else → Next.js
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:?}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    volumes:
+      - ./caddy:/etc/caddy:ro
+      - caddy-data:/data # certificates: kept across deploys
+      - caddy-config:/config
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
+      interval: 10s
+      timeout: 3s
+    depends_on: [web, api, grafana]
+
+  web:
+    image: ${REGISTRY:-local}/chmtwt-web:${TAG:-dev}
+    build:
+      context: ../../twitter-next-web
+      args:
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+    restart: unless-stopped
+    environment:
+      API_INTERNAL_URL: http://api:8080/api/v1 # server rendering calls the API inside this network
+      HOSTNAME: 0.0.0.0
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+
+  api:
+    image: ${REGISTRY:-local}/chmtwt-api:${TAG:-dev}
+    build: ../../twitter-go-api
+    restart: unless-stopped
+    env_file: ${STATE_DIR:?}/api.env
+    healthcheck:
+      # Distroless image: the binary checks its own /readyz (database reachable)
+      test: ["CMD", "/app/api", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Data is disposable in this project: it lives on the host's disk and goes away with `down`.
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: twitter
+      POSTGRES_DB: twitter
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U twitter -d twitter"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ---------- Observability (infra/observability) ----------
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.prod.yml
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle # POST /-/reload after a deploy; internal only
+    volumes:
+      - ../observability/prometheus:/etc/prometheus:ro # prometheus.prod.yml + rules/
+      - prometheus-data:/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9090/-/healthy"]
+      interval: 10s
+      timeout: 3s
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    restart: unless-stopped
+    volumes:
+      - ../observability/alertmanager:/etc/alertmanager:ro
+      - ${STATE_DIR:?}/alertmanager:/etc/alertmanager-secrets:ro # discord_webhook_url, from SSM
+      - alertmanager-data:/alertmanager
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9093/-/healthy"]
+      interval: 10s
+      timeout: 3s
+
+  loki:
+    image: grafana/loki:3.5.0
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki.yml
+    volumes:
+      - ../observability/loki:/etc/loki:ro
+      - loki-data:/loki
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3100/ready"]
+      interval: 10s
+      timeout: 3s
+      start_period: 30s
+
+  # Ships every container's logs to Loki
+  alloy:
+    image: grafana/alloy:v1.14.0
+    restart: unless-stopped
+    command: run --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
+    volumes:
+      - ../observability/alloy:/etc/alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    healthcheck:
+      # No HTTP client in this image
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/12345"]
+      interval: 10s
+      timeout: 3s
+    depends_on: [loki]
+
+  node-exporter:
+    image: prom/node-exporter:v1.10.2
+    restart: unless-stopped
+    command: ["--path.procfs=/host/proc", "--path.sysfs=/host/sys", "--path.rootfs=/rootfs"]
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9100/metrics"]
+      interval: 30s
+      timeout: 5s
+
+  grafana:
+    image: grafana/grafana:12.1.0
+    restart: unless-stopped
+    environment:
+      GF_SERVER_ROOT_URL: https://grafana.${DOMAIN:?}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_ADMIN_PASSWORD:?}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/overview.json
+    volumes:
+      - ../observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/health"]
+      interval: 10s
+      timeout: 3s
+      start_period: 30s
+    depends_on: [prometheus, loki, alertmanager]
+
+volumes:
+  caddy-data:
+  caddy-config:
+  postgres-data:
+  prometheus-data:
+  alertmanager-data:
+  loki-data:
+  grafana-data:
