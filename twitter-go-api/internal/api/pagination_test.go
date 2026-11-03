@@ -5,35 +5,25 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/chanombude/twitter-go-api/internal/pagination"
 	"github.com/gin-gonic/gin"
 )
 
-func TestOptionalViewerID_AuthenticatedReturnsPointer(t *testing.T) {
+func TestPageRequestValidation(t *testing.T) {
 	t.Parallel()
 
-	w := httptest.NewRecorder()
-	ctx, _ := gin.CreateTestContext(w)
-	ctx.Request = httptest.NewRequest(http.MethodGet, "/", nil)
-	setAuthorizedUser(ctx, 42)
-
-	id := optionalViewerID(ctx)
-	if id == nil {
-		t.Fatal("expected non-nil viewer ID for authenticated user")
+	for _, query := range []string{"?cursor=not-a-cursor", "?size=0", "?size=abc"} {
+		ctx, rec := newHandlerTestContext(http.MethodGet, "/api/v1/feeds/global"+query, nil, "")
+		(&Server{svc: Services{Feeds: &fakeFeeds{}}}).getGlobalFeed(ctx)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("%s: expected 400, got %d", query, rec.Code)
+		}
 	}
-	if *id != 42 {
-		t.Fatalf("expected viewer ID 42, got %d", *id)
-	}
-}
 
-func TestOptionalViewerID_UnauthenticatedReturnsNil(t *testing.T) {
-	t.Parallel()
-
-	w := httptest.NewRecorder()
-	ctx, _ := gin.CreateTestContext(w)
-	ctx.Request = httptest.NewRequest(http.MethodGet, "/", nil)
-
-	if id := optionalViewerID(ctx); id != nil {
-		t.Fatalf("expected nil for unauthenticated user, got %d", *id)
+	ctx, _ := newHandlerTestContext(http.MethodGet, "/x?size=500", nil, "")
+	req, ok := parsePageRequest(ctx)
+	if !ok || req.Limit != pagination.MaxLimit {
+		t.Fatalf("expected size to be capped at %d, got %+v", pagination.MaxLimit, req)
 	}
 }
 
@@ -99,5 +89,19 @@ func TestParseLimit_ZeroFallsBackToDefault(t *testing.T) {
 	got := parseLimit(ctx, 10, 50)
 	if got != 10 {
 		t.Fatalf("expected default 10 for limit=0, got %d", got)
+	}
+}
+
+func TestNewPageResponse(t *testing.T) {
+	t.Parallel()
+
+	last := newPageResponse(pagination.Page[int]{Items: []int{1, 2}}, func(i int) int { return i * 10 })
+	if last.HasNext || last.NextCursor != nil || len(last.Items) != 2 || last.Items[1] != 20 {
+		t.Fatalf("unexpected last page: %+v", last)
+	}
+
+	more := newPageResponse(pagination.Page[int]{Items: []int{}, Next: &pagination.Cursor{ID: 7}}, func(i int) int { return i })
+	if !more.HasNext || more.NextCursor == nil || more.Items == nil {
+		t.Fatalf("unexpected page with more: %+v", more)
 	}
 }

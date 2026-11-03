@@ -127,3 +127,43 @@ func TestLogoutEndsTheCookieSessionAndClearsCookies(t *testing.T) {
 		}
 	}
 }
+
+func TestRefreshTokenMissingToken(t *testing.T) {
+	t.Parallel()
+
+	ctx, rec := newHandlerTestContext(http.MethodPost, "/api/v1/auth/refresh", nil, "")
+
+	s := &Server{}
+	s.refreshToken(ctx)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("invalid json response: %v", err)
+	}
+	if got["code"] != "UNAUTHORIZED" {
+		t.Fatalf("expected UNAUTHORIZED code, got %v", got["code"])
+	}
+}
+
+func TestLogoutWithoutSessionStillSucceeds(t *testing.T) {
+	t.Parallel()
+
+	ctx, rec := newHandlerTestContext(http.MethodPost, "/api/v1/auth/logout", nil, "")
+
+	fake := &fakeAuth{logoutFn: func(_ context.Context, refreshToken string) error {
+		if refreshToken != "" {
+			t.Fatalf("expected empty refresh token, got %q", refreshToken)
+		}
+		return nil
+	}}
+	(&Server{svc: Services{Auth: fake}}).logout(ctx)
+
+	// The test context never flushes headers, so the 204 set by c.Status is on the gin writer
+	if got := ctx.Writer.Status(); got != http.StatusNoContent || rec.Body.Len() != 0 {
+		t.Fatalf("expected an empty 204, got %d body=%s", got, rec.Body.String())
+	}
+}

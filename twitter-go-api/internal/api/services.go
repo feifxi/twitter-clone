@@ -32,6 +32,7 @@ type UserService interface {
 	Unfollow(ctx context.Context, followerID, targetID int64) error
 	Followers(ctx context.Context, userID int64, req pagination.Request, viewerID *int64) (pagination.Page[domain.User], error)
 	Following(ctx context.Context, userID int64, req pagination.Request, viewerID *int64) (pagination.Page[domain.User], error)
+	SuggestedUsers(ctx context.Context, req pagination.Request, viewerID *int64) (pagination.Page[domain.User], error)
 }
 
 type TweetService interface {
@@ -43,6 +44,7 @@ type TweetService interface {
 	Unlike(ctx context.Context, userID, tweetID int64) error
 	Retweet(ctx context.Context, userID, tweetID int64) error
 	UndoRetweet(ctx context.Context, userID, tweetID int64) error
+	TrendingHashtags(ctx context.Context, limit int32) ([]domain.Hashtag, error)
 }
 
 type FeedService interface {
@@ -58,11 +60,6 @@ type SearchService interface {
 	Users(ctx context.Context, query string, req pagination.Request, viewerID *int64) (pagination.Page[domain.User], error)
 	Tweets(ctx context.Context, query string, req pagination.Request, viewerID *int64) (pagination.Page[domain.Tweet], error)
 	Hashtags(ctx context.Context, query string, limit int32) ([]domain.Hashtag, error)
-}
-
-type DiscoveryService interface {
-	TrendingHashtags(ctx context.Context, limit int32) ([]domain.Hashtag, error)
-	SuggestedUsers(ctx context.Context, req pagination.Request, viewerID *int64) (pagination.Page[domain.User], error)
 }
 
 type NotificationService interface {
@@ -93,7 +90,6 @@ type Services struct {
 	Tweets        TweetService
 	Feeds         FeedService
 	Search        SearchService
-	Discovery     DiscoveryService
 	Notifications NotificationService
 	Messages      MessageService
 	Assistant     AssistantService

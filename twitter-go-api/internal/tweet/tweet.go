@@ -286,3 +286,17 @@ func trimmedOrNil(s *string) *string {
 	}
 	return &trimmed
 }
+
+// TrendingHashtags ranks hashtags by use in the last 24h, falling back to all-time usage when it's quiet.
+func (s *Service) TrendingHashtags(ctx context.Context, limit int32) ([]domain.Hashtag, error) {
+	rows, err := s.store.GetTrendingHashtagsLast24h(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		if rows, err = s.store.GetTopHashtagsAllTime(ctx, limit); err != nil {
+			return nil, err
+		}
+	}
+	return domain.NewHashtags(rows), nil
+}

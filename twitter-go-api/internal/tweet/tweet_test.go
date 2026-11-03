@@ -260,3 +260,36 @@ func TestService_UndoRetweet(t *testing.T) {
 		require.True(t, called)
 	})
 }
+
+func TestService_TrendingHashtags(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("success_24h", func(t *testing.T) {
+		store := &dbtest.MockStore{
+			GetTrendingHashtagsLast24hFn: func(ctx context.Context, limit int32) ([]db.Hashtag, error) {
+				return []db.Hashtag{{Text: "trending"}}, nil
+			},
+		}
+		uc := tweet.New(tweet.Config{}, store, nil, noopNotifier{})
+		res, err := uc.TrendingHashtags(ctx, 5)
+		require.NoError(t, err)
+		require.Len(t, res, 1)
+		require.Equal(t, "trending", res[0].Text)
+	})
+
+	t.Run("fallback_alltime", func(t *testing.T) {
+		store := &dbtest.MockStore{
+			GetTrendingHashtagsLast24hFn: func(ctx context.Context, limit int32) ([]db.Hashtag, error) {
+				return []db.Hashtag{}, nil
+			},
+			GetTopHashtagsAllTimeFn: func(ctx context.Context, limit int32) ([]db.Hashtag, error) {
+				return []db.Hashtag{{Text: "alltime"}}, nil
+			},
+		}
+		uc := tweet.New(tweet.Config{}, store, nil, noopNotifier{})
+		res, err := uc.TrendingHashtags(ctx, 5)
+		require.NoError(t, err)
+		require.Len(t, res, 1)
+		require.Equal(t, "alltime", res[0].Text)
+	})
+}

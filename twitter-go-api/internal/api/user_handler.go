@@ -269,3 +269,26 @@ func (s *Server) completeOnboarding(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, newCurrentUserResponse(u))
 }
+
+// getSuggestedUsers godoc
+// @Summary		Suggested Users
+// @Description	Get a paginated list of suggested users to follow.
+// @Tags			Users
+// @Produce		json
+// @Param			cursor	query		string	false	"Pagination cursor"
+// @Param			size	query		int		false	"Number of items per page"
+// @Success		200		{object}	PageResponse[UserResponse]
+// @Router			/users/suggestions [get]
+func (s *Server) getSuggestedUsers(c *gin.Context) {
+	req, ok := parsePageRequest(c)
+	if !ok {
+		return
+	}
+	viewerID := optionalViewerID(c)
+	users, err := s.svc.Users.SuggestedUsers(c.Request.Context(), req, viewerID)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, newPageResponse(users, newUserResponse))
+}

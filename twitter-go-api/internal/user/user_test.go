@@ -199,3 +199,18 @@ func TestCompleteOnboarding(t *testing.T) {
 		require.True(t, u.Onboarded)
 	})
 }
+
+func TestService_SuggestedUsers(t *testing.T) {
+	store := &dbtest.MockStore{
+		ListSuggestedUsersFn: func(ctx context.Context, arg db.ListSuggestedUsersParams) ([]db.ListSuggestedUsersRow, error) {
+			return []db.ListSuggestedUsersRow{{User: db.User{ID: 2, Username: "suggested"}}, {User: db.User{ID: 3}}}, nil
+		},
+	}
+
+	page, err := user.New(store, nil, nil).SuggestedUsers(context.Background(), pagination.Request{Limit: 1}, dbtest.Ptr(int64(1)))
+
+	require.NoError(t, err)
+	require.Len(t, page.Items, 1)
+	require.Equal(t, "suggested", page.Items[0].Username)
+	require.Equal(t, int32(1), page.Next.Offset)
+}

@@ -223,6 +223,30 @@ func (s *Service) Following(ctx context.Context, userID int64, req pagination.Re
 	return followPage(rows, req.Limit, func(r db.ListFollowingRow) (db.User, bool, time.Time) { return r.User, r.IsFollowing, r.FollowedAt }), nil
 }
 
+// SuggestedUsers lists the most-followed accounts the viewer doesn't follow yet; it pages by offset.
+func (s *Service) SuggestedUsers(ctx context.Context, req pagination.Request, viewerID *int64) (pagination.Page[domain.User], error) {
+	rows, err := s.store.ListSuggestedUsers(ctx, db.ListSuggestedUsersParams{
+		ViewerID:   viewerID,
+		PageLimit:  req.FetchLimit(),
+		PageOffset: req.Offset(),
+	})
+	if err != nil {
+		return pagination.Page[domain.User]{}, err
+	}
+
+	rows, more := pagination.Trim(rows, req.Limit)
+	users := make([]domain.User, 0, len(rows))
+	for _, r := range rows {
+		users = append(users, domain.NewUser(r.User, r.IsFollowing))
+	}
+	page := pagination.Page[domain.User]{Items: users}
+	if more {
+		next := req.NextOffset()
+		page.Next = &next
+	}
+	return page, nil
+}
+
 // followPage pages follower/following rows; the cursor is (follow time, user id).
 func followPage[T any](rows []T, limit int32, fields func(T) (db.User, bool, time.Time)) pagination.Page[domain.User] {
 	rows, more := pagination.Trim(rows, limit)

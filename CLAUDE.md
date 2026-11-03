@@ -34,7 +34,7 @@ Enable the pre-commit hook once per clone: `git config core.hooksPath .githooks`
 
 ## Go API conventions
 
-- **Package by feature.** `internal/<feature>/service.go` exposes `Service` + `New(...)`, returns domain
+- **Package by feature.** `internal/<feature>/<feature>.go` exposes `Service` + `New(...)`, returns domain
   types, never imports Gin. Handlers in `internal/api/` only bind input, call a service and map to a DTO.
 - **Every route is in `internal/api/routes.go`**, one line each, with its auth and rate-limit middleware.
 - **Interfaces belong to the consumer** (`api/services.go`, or a small private interface in a feature).
@@ -47,8 +47,9 @@ Enable the pre-commit hook once per clone: `git config core.hooksPath .githooks`
   credentials answer `401 TOKEN_EXPIRED`; no credentials answer `401 UNAUTHORIZED`. Refresh tokens are
   single-use (rotation). Cross-origin writes are blocked by `http.CrossOriginProtection`.
 - **Logging:** `slog.InfoContext(ctx, …)` / `ErrorContext`; the request ID is added from `ctx` automatically.
-- **Tests:** table-driven; handler tests use the fakes in `api/fakes_test.go`; DB tests use
-  `dbtest.OpenTestDB` and skip without `TEST_DATABASE_URL`.
+- **Tests:** table-driven, next to the code they test (`tweet_handler.go` → `tweet_handler_test.go`);
+  handler tests use the fakes in `api/fakes_test.go`; DB tests use `dbtest.OpenTestDB` and skip
+  without `TEST_DATABASE_URL`.
 
 ## Web conventions
 

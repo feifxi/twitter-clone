@@ -17,7 +17,6 @@ import (
 	"github.com/chanombude/twitter-go-api/internal/auth"
 	"github.com/chanombude/twitter-go-api/internal/config"
 	"github.com/chanombude/twitter-go-api/internal/db"
-	"github.com/chanombude/twitter-go-api/internal/discovery"
 	"github.com/chanombude/twitter-go-api/internal/embedding"
 	"github.com/chanombude/twitter-go-api/internal/feed"
 	"github.com/chanombude/twitter-go-api/internal/logger"
@@ -183,7 +182,6 @@ func newServer(ctx context.Context, cfg config.Config, store db.Store, rdb *redi
 		Tweets:        tweet.New(tweet.Config{EmbedTweets: rag}, store, s3, notifications),
 		Feeds:         feed.New(store),
 		Search:        search.New(store),
-		Discovery:     discovery.New(store),
 		Notifications: notifications,
 		Messages:      message.New(store, hub),
 		Assistant: assistant.New(assistant.Config{

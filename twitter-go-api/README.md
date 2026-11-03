@@ -30,7 +30,7 @@ cmd/api (wiring) ──► internal/api (HTTP) ──► feature packages ──
 | A handler (bind input → call service → write DTO) | `internal/api/<feature>_handler.go` |
 | Response JSON shapes | `internal/api/responses.go` |
 | Interfaces the handlers depend on | `internal/api/services.go` |
-| Business logic | `internal/<feature>/service.go`: `auth`, `user`, `tweet`, `feed`, `search`, `discovery`, `notification`, `message`, `assistant`, `media` |
+| Business logic | `internal/<feature>/<feature>.go` (e.g. `tweet/tweet.go`): `auth`, `user`, `tweet`, `feed`, `search`, `notification`, `message`, `assistant`, `media` |
 | SQL | `internal/db/queries/*.sql` (generated Go: `internal/db/*.sql.go`) |
 | Schema | `internal/db/migrations/` (embedded, applied on startup) |
 | Startup and dependency wiring | `cmd/api/main.go` |
