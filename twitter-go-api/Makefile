@@ -1,4 +1,4 @@
-COMPOSE_FILE ?= ../docker-compose.yml
+COMPOSE_FILE ?= ../compose.yaml
 DB_SERVICE ?= database
 DB_URL ?= postgres://root:rootpass@localhost:5432/twitter_db?sslmode=disable
 

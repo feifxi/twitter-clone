@@ -1,7 +1,7 @@
 # Infrastructure
 
 Everything that runs the app in AWS, as code. Local development only needs the root
-[`docker-compose.yml`](../docker-compose.yml).
+[`compose.yaml`](../compose.yaml).
 
 | Folder | What |
 |---|---|

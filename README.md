@@ -237,6 +237,6 @@ make infra-down   # infra/scripts/down.sh: remove the stack
 ├── docs/assets/         # Screenshots used in this README
 ├── .github/workflows/   # CI/CD: tests, lint, infra checks, then deploy
 ├── .githooks/           # pre-commit: gofmt, terraform fmt, ESLint on staged files
-├── docker-compose.yml   # Local development (Postgres + pgvector, Redis, media storage, optional monitoring)
+├── compose.yaml         # Local development (Postgres + pgvector, Redis, media storage, optional monitoring)
 └── Makefile             # Shortcuts for the whole repo (`make` lists them)
 ```
