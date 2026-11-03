@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run by deploy.sh after `docker compose up`. Compose only recreates containers whose definition
+# Run by rollout.sh after `docker compose up`. Compose only recreates containers whose definition
 # changed, and the configs are bind-mounted folders, so a changed Caddyfile or alert rule alone
 # restarts nothing. Each step is a graceful reload: an invalid config is refused, the old one
 # keeps running and this script fails, so the deploy fails (and rolls back) loudly.

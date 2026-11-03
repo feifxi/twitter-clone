@@ -9,12 +9,12 @@ Everything runs on one host with Docker Compose ([`compose.prod.yaml`](compose.p
 | `postgres` | PostgreSQL 16 + pgvector; data on the host's disk |
 | `prometheus`, `alertmanager`, `loki`, `alloy`, `grafana`, `node-exporter` | Monitoring ([`../observability`](../observability/README.md)) |
 
-Only Caddy publishes ports. Every service has a health check: `deploy.sh` waits for all of them
+Only Caddy publishes ports. Every service has a health check: `rollout.sh` waits for all of them
 and rolls back if they don't pass.
 
 ## Files
 
-- `deploy.sh`: runs on the host for each release (env files from SSM, `compose up --wait`,
+- `rollout.sh`: runs on the host for each release (env files from SSM, `compose up --wait`,
   config reload, rollback). Started by `twitter-deploy` (installed at first boot, see
   [`../terraform/app/twitter-deploy`](../terraform/app/twitter-deploy)).
 - `reload-configs.sh`: configs are mounted as **folders**, so a deploy's new files are visible

@@ -78,7 +78,7 @@ After `up`:
    changes), and pushes them to ECR. Tags are immutable; an image that's already there is skipped.
 2. Uploads that commit's `infra/compose` and `infra/observability` to `s3://<bucket>/stack/<sha>/`.
 3. Runs `twitter-deploy <sha>` on the host over SSM Run Command. It syncs the stack files, and
-   [`compose/deploy.sh`](compose/deploy.sh) renders the env files from SSM Parameter Store, starts
+   [`compose/rollout.sh`](compose/rollout.sh) renders the env files from SSM Parameter Store, starts
    the stack, waits for every health check and reloads the configs. If the release isn't healthy
    within 3 minutes, the host redeploys the previous one and the deploy fails.
 4. Checks `https://<domain>/readyz` and the home page.

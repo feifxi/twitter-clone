@@ -1,5 +1,5 @@
 # Alerts go to a Discord channel. The webhook URL is a secret, read from a file that isn't in
-# git: on AWS deploy.sh writes it from SSM; locally put it in
+# git: on AWS rollout.sh writes it from SSM; locally put it in
 # infra/observability/alertmanager/secrets/discord_webhook_url (see infra/observability/README.md).
 # Without the file, alerts still show in Alertmanager and Grafana; sending just logs an error.
 route:

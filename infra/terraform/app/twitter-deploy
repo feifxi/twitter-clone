@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # twitter-deploy <commit-sha>: fetches that release's stack files (uploaded by
-# infra/scripts/deploy.sh to s3://<bucket>/stack/<sha>/) and runs its deploy.sh.
+# infra/scripts/deploy.sh to s3://<bucket>/stack/<sha>/) and runs its compose/rollout.sh.
 #
 # Installed once by cloud-init and kept deliberately small: everything that changes between
 # releases lives in the stack files, so changing them is a normal deploy, not a new instance.
@@ -18,7 +18,7 @@ if [[ -z "${TWITTER_DEPLOY_LOCKED:-}" ]]; then
   export TWITTER_DEPLOY_LOCKED=1
 fi
 
-if ! aws s3 ls --region "$REGION" "s3://$DEPLOY_BUCKET/stack/$tag/compose/deploy.sh" >/dev/null; then
+if ! aws s3 ls --region "$REGION" "s3://$DEPLOY_BUCKET/stack/$tag/compose/rollout.sh" >/dev/null; then
   echo "No stack uploaded for $tag (s3://$DEPLOY_BUCKET/stack/$tag/)" >&2
   exit 1
 fi
@@ -29,4 +29,4 @@ chmod +x "$APP_DIR"/stack/compose/*.sh
 
 TWITTER_DEPLOY=$(realpath "$0")
 export TWITTER_DEPLOY
-exec "$APP_DIR/stack/compose/deploy.sh" "$tag"
+exec "$APP_DIR/stack/compose/rollout.sh" "$tag"

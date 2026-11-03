@@ -7,7 +7,7 @@ set -euo pipefail
 APP_DIR=/opt/twitter
 # shellcheck source=/dev/null # PROJECT, REGION, DEPLOY_BUCKET, REGISTRY, DOMAIN, API_SSM_PATH, STACK_SSM_PATH
 source "$APP_DIR/deploy.env"
-tag=${1:?usage: deploy.sh <commit-sha>}
+tag=${1:?usage: rollout.sh <commit-sha>}
 
 export STATE_DIR="$APP_DIR/state"
 mkdir -p "$STATE_DIR/alertmanager"

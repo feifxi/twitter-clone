@@ -1,4 +1,4 @@
-# The whole production stack on one host. On AWS, deploy.sh (next to this file) runs it with
+# The whole production stack on one host. On AWS, rollout.sh (next to this file) runs it with
 # the env files it renders from SSM. To try it on this machine, see infra/compose/README.md.
 #
 # Public ports: 80/443 (Caddy) only. Paths are relative to this folder (../observability is
