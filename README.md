@@ -3,7 +3,7 @@
 A full-stack Twitter/X clone: a Next.js frontend and a Go API, PostgreSQL with pgvector, real-time notifications and direct messages, and an AI assistant that answers from recent posts (RAG with Gemini). AWS infrastructure is defined in Terraform, with a self-hosted monitoring stack (Prometheus, Loki, Grafana) on the same host.
 
 <p align="center">
-  <img src="docs/assets/app-preview.png" alt="App Preview" width="100%" style="border-radius: 8px;">
+  <img src=".github/assets/app-preview.png" alt="App Preview" width="100%" style="border-radius: 8px;">
 </p>
 
 ## Features
