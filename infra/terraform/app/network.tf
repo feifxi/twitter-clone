@@ -57,7 +57,7 @@ resource "aws_vpc_security_group_ingress_rule" "host" {
 
 resource "aws_vpc_security_group_egress_rule" "host" {
   security_group_id = aws_security_group.host.id
-  description       = "ECR, SSM, S3, Gemini, Google, Let's Encrypt"
+  description       = "ECR, SSM, S3, Gemini, Google, Lets Encrypt"
   ip_protocol       = "-1"
   cidr_ipv4         = "0.0.0.0/0"
 }

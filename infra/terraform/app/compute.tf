@@ -101,6 +101,9 @@ resource "aws_instance" "host" {
 
   tags = { Name = "${local.name}-host" }
 
+  # First boot downloads packages and registers with SSM, so the outbound rule must exist first
+  depends_on = [aws_vpc_security_group_egress_rule.host]
+
   lifecycle {
     ignore_changes = [ami] # a newer AMI shouldn't replace a running host; the next up gets it
   }
