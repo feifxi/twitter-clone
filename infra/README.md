@@ -114,6 +114,15 @@ dc exec postgres psql -U twitter                # the database
 tail -f /var/log/cloud-init-output.log           # first-boot progress
 ```
 
+**A new host that never gets ready** (the deploy stops at "Waiting for the host to be ready"):
+first boot runs only once, so a failed one (no Docker, or not registered with SSM) stays failed.
+Read `cloud-init-output.log` above if a session opens, then replace the host; the Elastic IP and
+DNS stay:
+
+```bash
+terraform -chdir=infra/terraform/app apply -replace=aws_instance.host && make deploy
+```
+
 ## Checks
 
 CI runs `make check-infra` on every push (no AWS account needed): `terraform fmt`, `validate` and
